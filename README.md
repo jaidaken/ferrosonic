@@ -52,7 +52,7 @@ Build dependencies (needed to compile from source):
 Supports Arch, Fedora, and Debian/Ubuntu. Installs dependencies, Rust (if needed), builds from source, and installs to `/usr/local/bin/`:
 
 ```bash
-curl -sSf https://github.com/jaidaken/ferrosonic/raw/branch/master/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/jaidaken/ferrosonic/master/install.sh | sh
 ```
 
 ### Manual Build
