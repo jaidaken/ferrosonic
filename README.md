@@ -45,6 +45,7 @@ Build dependencies (needed to compile from source):
 |---|---|---|---|
 | **Rust toolchain** | `rustup` | via rustup.rs | via rustup.rs |
 | **pkg-config** | `pkgconf` | `pkgconf-pkg-config` | `pkg-config` |
+| **OpenSSL dev headers** | `openssl` | `openssl-devel` | `libssl-dev` |
 | **D-Bus dev headers** | `dbus` | `dbus-devel` | `libdbus-1-dev` |
 
 ### Quick Install
