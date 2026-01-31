@@ -1,25 +1,36 @@
 #!/bin/sh
 set -e
 
-REPO="https://github.com/jaidaken/ferrosonic.git"
+REPO="https://github.com/jaidaken/ferrosonic"
 INSTALL_DIR="/usr/local/bin"
 
 echo "Ferrosonic installer"
 echo "===================="
 
-# Detect package manager and install dependencies
+# Detect architecture
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64) ASSET="ferrosonic-linux-x86_64" ;;
+    *)
+        echo "No precompiled binary for $ARCH. Please build from source."
+        echo "See: $REPO#manual-build"
+        exit 1
+        ;;
+esac
+
+# Detect package manager and install runtime dependencies
 if command -v pacman >/dev/null 2>&1; then
     echo "Detected Arch Linux"
-    sudo pacman -S --needed --noconfirm mpv pipewire wireplumber base-devel pkgconf dbus
+    sudo pacman -S --needed --noconfirm mpv pipewire wireplumber dbus
 elif command -v dnf >/dev/null 2>&1; then
     echo "Detected Fedora"
-    sudo dnf install -y mpv pipewire wireplumber gcc pkgconf-pkg-config dbus-devel
+    sudo dnf install -y mpv pipewire wireplumber dbus
 elif command -v apt >/dev/null 2>&1; then
     echo "Detected Debian/Ubuntu"
     sudo apt update
-    sudo apt install -y mpv pipewire wireplumber build-essential pkg-config libdbus-1-dev
+    sudo apt install -y mpv pipewire wireplumber libdbus-1-3
 else
-    echo "Unknown package manager. Please install manually: mpv, pipewire, wireplumber, pkg-config, dbus dev headers"
+    echo "Unknown package manager. Please install manually: mpv, pipewire, wireplumber, dbus"
     echo "Then re-run this script."
     exit 1
 fi
@@ -47,26 +58,17 @@ else
     echo "Skipping cava. You can install it later and enable it in Settings (F5)."
 fi
 
-# Install Rust if not present
-if ! command -v cargo >/dev/null 2>&1; then
-    echo "Installing Rust toolchain..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    . "$HOME/.cargo/env"
-fi
-
-# Clone and build
-TMPDIR=$(mktemp -d)
-echo "Building ferrosonic..."
-git clone "$REPO" "$TMPDIR/ferrosonic"
-cd "$TMPDIR/ferrosonic"
-cargo build --release
+# Download latest release binary
+echo "Downloading ferrosonic..."
+LATEST=$(curl -sI "$REPO/releases/latest" | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r')
+DOWNLOAD_URL="$REPO/releases/download/$LATEST/$ASSET"
+TMPFILE=$(mktemp)
+curl -sL "$DOWNLOAD_URL" -o "$TMPFILE"
+chmod +x "$TMPFILE"
 
 # Install
-sudo cp target/release/ferrosonic "$INSTALL_DIR/ferrosonic"
-
-# Cleanup
-rm -rf "$TMPDIR"
+sudo mv "$TMPFILE" "$INSTALL_DIR/ferrosonic"
 
 echo ""
-echo "Ferrosonic installed to $INSTALL_DIR/ferrosonic"
+echo "Ferrosonic $LATEST installed to $INSTALL_DIR/ferrosonic"
 echo "Run 'ferrosonic' to start."

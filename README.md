@@ -39,26 +39,17 @@ Ferrosonic requires the following at runtime:
 | **D-Bus** | MPRIS2 desktop media controls | Recommended |
 | **cava** | Audio visualizer | Optional |
 
-Build dependencies (needed to compile from source):
-
-| Dependency | Package (Arch) | Package (Fedora) | Package (Debian/Ubuntu) |
-|---|---|---|---|
-| **Rust toolchain** | `rustup` | via rustup.rs | via rustup.rs |
-| **pkg-config** | `pkgconf` | `pkgconf-pkg-config` | `pkg-config` |
-| **OpenSSL dev headers** | `openssl` | `openssl-devel` | `libssl-dev` |
-| **D-Bus dev headers** | `dbus` | `dbus-devel` | `libdbus-1-dev` |
-
 ### Quick Install
 
-Supports Arch, Fedora, and Debian/Ubuntu. Installs dependencies, Rust (if needed), builds from source, and installs to `/usr/local/bin/`:
+Supports Arch, Fedora, and Debian/Ubuntu. Installs runtime dependencies, downloads the latest precompiled binary, and installs to `/usr/local/bin/`:
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/jaidaken/ferrosonic/master/install.sh | sh
 ```
 
-### Manual Build
+### Build from Source
 
-If you prefer to build manually, install the dependencies listed above, then:
+If you prefer to build from source, you'll also need: Rust toolchain, pkg-config, OpenSSL dev headers, and D-Bus dev headers. Then:
 
 ```bash
 git clone https://github.com/jaidaken/ferrosonic.git
