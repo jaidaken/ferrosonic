@@ -156,6 +156,7 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &The
     }
 
     let mut list_state = ListState::default();
+    *list_state.offset_mut() = state.artists.tree_scroll_offset;
     if focused {
         list_state.select(state.artists.selected_index);
     }
@@ -267,6 +268,7 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &Th
     }
 
     let mut list_state = ListState::default();
+    *list_state.offset_mut() = state.artists.song_scroll_offset;
     if focused {
         list_state.select(artists.selected_song);
     }
