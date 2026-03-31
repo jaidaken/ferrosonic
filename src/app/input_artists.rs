@@ -214,8 +214,43 @@ impl App {
                                         }
                                     }
                                 }
-                                _ => {
-                                    state.notify(format!("Not implemented"));
+                                TreeItem::Album { album } => {
+                                    let album_id = album.id.clone();
+                                    let album_name = album.name.clone();
+
+                                    drop(state);
+
+                                    if let Some(ref client) = self.subsonic {
+                                        match client.get_album(&album_id).await {
+                                            Ok((_album, songs)) => {
+                                                if songs.is_empty() {
+                                                    let mut state = self.state.write().await;
+                                                    state.notify_error("Album has no songs");
+                                                    return Ok(());
+                                                }
+
+                                                let mut shuffled_songs: Vec<_> = Vec::from(songs);
+                                                shuffled_songs.shuffle(&mut thread_rng());
+
+                                                let mut state = self.state.write().await;
+
+                                                state.queue.clear();
+                                                state.queue.extend(shuffled_songs);
+                                                state.queue_position = Some(0);
+
+                                                state.notify(format!("Shuffling {}", album_name));
+
+                                                drop(state);
+
+                                                return self.play_queue_position(0).await;
+                                            }
+                                            Err(e) => {
+                                                let mut state = self.state.write().await;
+                                                state
+                                                    .notify_error(format!("Failed to load: {}", e));
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
