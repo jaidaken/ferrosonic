@@ -5,6 +5,9 @@ use crate::error::Error;
 
 use super::*;
 
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+
 impl App {
     /// Handle artists page keys
     pub(super) async fn handle_artists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
@@ -143,6 +146,82 @@ impl App {
                     }
                 }
             }
+            KeyCode::Char('s') => {
+                if state.artists.focus == 0 {
+                    let tree_items = build_tree_items(&state);
+                    if let Some(idx) = state.artists.selected_index {
+                        if let Some(item) = tree_items.get(idx) {
+                            match item {
+                                TreeItem::Artist {
+                                    artist,
+                                    expanded: _,
+                                } => {
+                                    let artist_id = artist.id.clone();
+                                    let artist_name = artist.name.clone();
+
+                                    drop(state);
+
+                                    if let Some(ref client) = self.subsonic {
+                                        match client.get_artist(&artist_id).await {
+                                            Ok((_artist, albums)) => {
+                                                let mut artists_songs: Vec<_> = Vec::new();
+
+                                                for (_i, album) in albums.into_iter().enumerate() {
+                                                    match client.get_album(&album.id).await {
+                                                        Ok((_album, songs)) => {
+                                                            artists_songs.extend(songs);
+                                                        }
+                                                        Err(e) => {
+                                                            // Skip failed album and shuffle the
+                                                            // rest. Could be handled better.
+                                                            error!("Failed to load: {}", e);
+                                                        }
+                                                    }
+                                                }
+
+                                                if artists_songs.is_empty() {
+                                                    let mut state = self.state.write().await;
+                                                    state.notify_error(format!(
+                                                        "No songs found for {}",
+                                                        artist_name,
+                                                    ));
+                                                    return Ok(());
+                                                }
+
+                                                artists_songs.shuffle(&mut thread_rng());
+
+                                                let song_count = artists_songs.len();
+                                                let mut state = self.state.write().await;
+
+                                                state.queue.clear();
+                                                state.queue.extend(artists_songs);
+                                                state.queue_position = Some(0);
+
+                                                state.notify(format!(
+                                                    "Shuffling {} songs by {}",
+                                                    song_count, artist_name
+                                                ));
+
+                                                drop(state);
+
+                                                return self.play_queue_position(0).await;
+                                            }
+                                            Err(e) => {
+                                                let mut state = self.state.write().await;
+                                                state
+                                                    .notify_error(format!("Failed to load: {}", e));
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    state.notify(format!("Not implemented"));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             KeyCode::Enter => {
                 if state.artists.focus == 0 {
                     // Get current tree item
@@ -164,13 +243,22 @@ impl App {
                                                 Ok((_artist, albums)) => {
                                                     let mut state = self.state.write().await;
                                                     let count = albums.len();
-                                                    state.artists.albums_cache.insert(artist_id.clone(), albums);
+                                                    state
+                                                        .artists
+                                                        .albums_cache
+                                                        .insert(artist_id.clone(), albums);
                                                     state.artists.expanded.insert(artist_id);
-                                                    info!("Loaded {} albums for {}", count, artist_name);
+                                                    info!(
+                                                        "Loaded {} albums for {}",
+                                                        count, artist_name
+                                                    );
                                                 }
                                                 Err(e) => {
                                                     let mut state = self.state.write().await;
-                                                    state.notify_error(format!("Failed to load: {}", e));
+                                                    state.notify_error(format!(
+                                                        "Failed to load: {}",
+                                                        e
+                                                    ));
                                                 }
                                             }
                                         }
@@ -194,7 +282,8 @@ impl App {
                                                 }
 
                                                 let first_song = songs[0].clone();
-                                                let stream_url = client.get_stream_url(&first_song.id);
+                                                let stream_url =
+                                                    client.get_stream_url(&first_song.id);
 
                                                 let mut state = self.state.write().await;
                                                 let count = songs.len();
@@ -207,12 +296,16 @@ impl App {
                                                 state.now_playing.song = Some(first_song.clone());
                                                 state.now_playing.state = PlaybackState::Playing;
                                                 state.now_playing.position = 0.0;
-                                                state.now_playing.duration = first_song.duration.unwrap_or(0) as f64;
+                                                state.now_playing.duration =
+                                                    first_song.duration.unwrap_or(0) as f64;
                                                 state.now_playing.sample_rate = None;
                                                 state.now_playing.bit_depth = None;
                                                 state.now_playing.format = None;
                                                 state.now_playing.channels = None;
-                                                state.notify(format!("Playing album: {} ({} songs)", album_name, count));
+                                                state.notify(format!(
+                                                    "Playing album: {} ({} songs)",
+                                                    album_name, count
+                                                ));
                                                 drop(state);
 
                                                 match stream_url {
@@ -231,7 +324,10 @@ impl App {
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
-                                                state.notify_error(format!("Failed to load album: {}", e));
+                                                state.notify_error(format!(
+                                                    "Failed to load album: {}",
+                                                    e
+                                                ));
                                             }
                                         }
                                     }
