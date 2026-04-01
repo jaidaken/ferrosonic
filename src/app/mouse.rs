@@ -11,15 +11,9 @@ impl App {
         let y = mouse.row;
 
         match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.handle_mouse_click(x, y).await
-            }
-            MouseEventKind::ScrollUp => {
-                self.handle_mouse_scroll_up().await
-            }
-            MouseEventKind::ScrollDown => {
-                self.handle_mouse_scroll_down().await
-            }
+            MouseEventKind::Down(MouseButton::Left) => self.handle_mouse_click(x, y).await,
+            MouseEventKind::ScrollUp => self.handle_mouse_scroll_up().await,
+            MouseEventKind::ScrollDown => self.handle_mouse_scroll_down().await,
             _ => Ok(()),
         }
     }
@@ -72,7 +66,9 @@ impl App {
                     let rel_x = x - inner_x_start;
                     let time_width = 15u16;
                     let bar_width = inner_width.saturating_sub(time_width + 2);
-                    let bar_start = (inner_width.saturating_sub(time_width + 2 + bar_width)) / 2 + time_width + 2;
+                    let bar_start = (inner_width.saturating_sub(time_width + 2 + bar_width)) / 2
+                        + time_width
+                        + 2;
                     if bar_width > 0 && rel_x >= bar_start && rel_x < bar_start + bar_width {
                         let fraction = (rel_x - bar_start) as f64 / bar_width as f64;
                         let seek_pos = fraction * duration;
@@ -102,6 +98,11 @@ impl App {
         layout: &LayoutAreas,
     ) -> Result<(), Error> {
         match page {
+            Page::Songs => {
+                let mut state = self.state.write().await;
+                state.notify("Mouse input not supported for this page yet");
+                Ok(())
+            }
             Page::Artists => self.handle_artists_click(x, y, layout).await,
             Page::Queue => self.handle_queue_click(y, layout).await,
             Page::Playlists => self.handle_playlists_click(x, y, layout).await,
@@ -123,9 +124,9 @@ impl App {
             state.queue_state.selected = Some(item_index);
 
             let is_second_click = was_selected
-                && self.last_click.is_some_and(|(_, ly, t)| {
-                    ly == y && t.elapsed().as_millis() < 500
-                });
+                && self
+                    .last_click
+                    .is_some_and(|(_, ly, t)| ly == y && t.elapsed().as_millis() < 500);
 
             if is_second_click {
                 drop(state);

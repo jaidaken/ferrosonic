@@ -8,10 +8,13 @@ mod input_playlists;
 mod input_queue;
 mod input_server;
 mod input_settings;
+mod input_songs;
+pub mod models;
 mod mouse;
 mod mouse_artists;
 mod mouse_playlists;
 mod playback;
+mod repo;
 pub mod state;
 
 use std::io;
@@ -26,6 +29,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
+use crate::app::models::SongOption;
 use crate::audio::mpv::MpvController;
 use crate::audio::pipewire::PipeWireController;
 use crate::config::Config;
@@ -119,7 +123,10 @@ impl App {
                 self.mpris_server = Some(server);
             }
             Err(e) => {
-                warn!("Failed to start MPRIS server: {} — media keys won't work", e);
+                warn!(
+                    "Failed to start MPRIS server: {} — media keys won't work",
+                    e
+                );
             }
         }
 
@@ -197,7 +204,7 @@ impl App {
             LeaveAlternateScreen,
             DisableMouseCapture
         )
-            .map_err(UiError::TerminalInit)?;
+        .map_err(UiError::TerminalInit)?;
         terminal.show_cursor().map_err(UiError::Render)?;
 
         info!("Terminal restored");
@@ -206,40 +213,13 @@ impl App {
 
     /// Load initial data from server
     async fn load_initial_data(&mut self) {
-        if let Some(ref client) = self.subsonic {
-            // Load artists
-            match client.get_artists().await {
-                Ok(artists) => {
-                    let mut state = self.state.write().await;
-                    let count = artists.len();
-                    state.artists.artists = artists;
-                    // Select first artist by default
-                    if count > 0 {
-                        state.artists.selected_index = Some(0);
-                    }
-                    info!("Loaded {} artists", count);
-                }
-                Err(e) => {
-                    error!("Failed to load artists: {}", e);
-                    let mut state = self.state.write().await;
-                    state.notify_error(format!("Failed to load artists: {}", e));
-                }
-            }
+        let mut state = self.state.write().await;
+        state.songs.selected_option = Some(SongOption::Starred);
+        drop(state);
 
-            // Load playlists
-            match client.get_playlists().await {
-                Ok(playlists) => {
-                    let mut state = self.state.write().await;
-                    let count = playlists.len();
-                    state.playlists.playlists = playlists;
-                    info!("Loaded {} playlists", count);
-                }
-                Err(e) => {
-                    error!("Failed to load playlists: {}", e);
-                    // Don't show error for playlists if artists loaded
-                }
-            }
-        }
+        self.get_starred_songs().await;
+        self.get_artists().await;
+        self.get_playlists().await;
     }
 
     /// Main event loop
@@ -283,12 +263,24 @@ impl App {
             // Process any pending audio actions (from MPRIS)
             while let Ok(action) = self.audio_rx.try_recv() {
                 match action {
-                    AudioAction::TogglePause => { let _ = self.toggle_pause().await; }
-                    AudioAction::Pause => { let _ = self.pause_playback().await; }
-                    AudioAction::Resume => { let _ = self.resume_playback().await; }
-                    AudioAction::Next => { let _ = self.next_track().await; }
-                    AudioAction::Previous => { let _ = self.prev_track().await; }
-                    AudioAction::Stop => { let _ = self.stop_playback().await; }
+                    AudioAction::TogglePause => {
+                        let _ = self.toggle_pause().await;
+                    }
+                    AudioAction::Pause => {
+                        let _ = self.pause_playback().await;
+                    }
+                    AudioAction::Resume => {
+                        let _ = self.resume_playback().await;
+                    }
+                    AudioAction::Next => {
+                        let _ = self.next_track().await;
+                    }
+                    AudioAction::Previous => {
+                        let _ = self.prev_track().await;
+                    }
+                    AudioAction::Stop => {
+                        let _ = self.stop_playback().await;
+                    }
                     AudioAction::Seek(pos) => {
                         if let Err(e) = self.mpv.seek(pos) {
                             warn!("MPRIS seek failed: {}", e);

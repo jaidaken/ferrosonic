@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 
 use ratatui::layout::Rect;
 
+use crate::app::models::SongOption;
 use crate::config::Config;
 use crate::subsonic::models::{Album, Artist, Child, Playlist};
 use crate::ui::theme::{ThemeColors, ThemeData};
@@ -14,6 +15,7 @@ use crate::ui::theme::{ThemeColors, ThemeData};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Page {
     #[default]
+    Songs,
     Artists,
     Queue,
     Playlists,
@@ -24,17 +26,18 @@ pub enum Page {
 impl Page {
     pub fn index(&self) -> usize {
         match self {
-            Page::Artists => 0,
-            Page::Queue => 1,
-            Page::Playlists => 2,
-            Page::Server => 3,
-            Page::Settings => 4,
+            Page::Songs => 0,
+            Page::Artists => 1,
+            Page::Queue => 2,
+            Page::Playlists => 3,
+            Page::Server => 4,
+            Page::Settings => 5,
         }
     }
 
-
     pub fn label(&self) -> &'static str {
         match self {
+            Page::Songs => "Songs",
             Page::Artists => "Artists",
             Page::Queue => "Queue",
             Page::Playlists => "Playlists",
@@ -45,11 +48,12 @@ impl Page {
 
     pub fn shortcut(&self) -> &'static str {
         match self {
-            Page::Artists => "F1",
-            Page::Queue => "F2",
-            Page::Playlists => "F3",
-            Page::Server => "F4",
-            Page::Settings => "F5",
+            Page::Songs => "F1",
+            Page::Artists => "F2",
+            Page::Queue => "F3",
+            Page::Playlists => "F4",
+            Page::Server => "F5",
+            Page::Settings => "F6",
         }
     }
 }
@@ -114,6 +118,15 @@ pub fn format_duration(seconds: f64) -> String {
     } else {
         format!("{:02}:{:02}", mins, secs)
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SongsState {
+    pub songs: Vec<Child>,
+    pub selected_option: Option<SongOption>,
+    pub selected_index: Option<usize>,
+    pub focus: usize,
+    pub scroll_offset: usize,
 }
 
 /// Artists page state
@@ -239,7 +252,11 @@ impl SettingsState {
 
     /// Set theme by name, returning true if found
     pub fn set_theme_by_name(&mut self, name: &str) -> bool {
-        if let Some(idx) = self.themes.iter().position(|t| t.name.eq_ignore_ascii_case(name)) {
+        if let Some(idx) = self
+            .themes
+            .iter()
+            .position(|t| t.name.eq_ignore_ascii_case(name))
+        {
             self.theme_index = idx;
             true
         } else {
@@ -283,6 +300,8 @@ pub struct AppState {
     pub queue: Vec<Child>,
     /// Current position in queue
     pub queue_position: Option<usize>,
+    /// Songs page state
+    pub songs: SongsState,
     /// Artists page state
     pub artists: ArtistsState,
     /// Queue page state

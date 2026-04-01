@@ -27,17 +27,17 @@ pub fn draw(frame: &mut Frame, state: &mut AppState) {
 
     let (header_area, cava_area, content_area, now_playing_area, footer_area) = if cava_active {
         let chunks = Layout::vertical([
-            Constraint::Length(1),    // Header
+            Constraint::Length(1),                                         // Header
             Constraint::Percentage(state.settings_state.cava_size as u16), // Cava visualizer
-            Constraint::Min(10),      // Page content
-            Constraint::Length(7),    // Now playing
-            Constraint::Length(1),    // Footer
+            Constraint::Min(10),                                           // Page content
+            Constraint::Length(7),                                         // Now playing
+            Constraint::Length(1),                                         // Footer
         ])
         .split(area);
         (chunks[0], Some(chunks[1]), chunks[2], chunks[3], chunks[4])
     } else {
         let chunks = Layout::vertical([
-            Constraint::Length(1),  // Header
+            Constraint::Length(1), // Header
             Constraint::Min(10),   // Page content
             Constraint::Length(7), // Now playing
             Constraint::Length(1), // Footer
@@ -49,11 +49,9 @@ pub fn draw(frame: &mut Frame, state: &mut AppState) {
     // Compute dual-pane splits for pages that use them
     let (content_left, content_right) = match state.page {
         Page::Artists | Page::Playlists => {
-            let panes = Layout::horizontal([
-                Constraint::Percentage(40),
-                Constraint::Percentage(60),
-            ])
-            .split(content_area);
+            let panes =
+                Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
+                    .split(content_area);
             (Some(panes[0]), Some(panes[1]))
         }
         _ => (None, None),
@@ -81,6 +79,9 @@ pub fn draw(frame: &mut Frame, state: &mut AppState) {
 
     // Render current page
     match state.page {
+        Page::Songs => {
+            pages::songs::render(frame, content_area, state);
+        }
         Page::Artists => {
             pages::artists::render(frame, content_area, state);
         }

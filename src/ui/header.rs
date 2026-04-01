@@ -38,11 +38,14 @@ impl Widget for Header {
         let chunks = Layout::horizontal([Constraint::Min(40), Constraint::Length(30)]).split(area);
 
         // Page tabs
-        let titles: Vec<Line> = [Page::Artists,
+        let titles: Vec<Line> = [
+            Page::Songs,
+            Page::Artists,
             Page::Queue,
             Page::Playlists,
             Page::Server,
-            Page::Settings]
+            Page::Settings,
+        ]
         .iter()
         .map(|p: &Page| Line::from(format!("{} {}", p.shortcut(), p.label())))
         .collect();
@@ -113,6 +116,7 @@ impl Header {
             // Tabs renders: [pad][title][pad] [divider] [pad][title][pad] ...
             // Default padding = 1 space each side. Divider = " │ " = 3 chars.
             let pages = [
+                Page::Songs,
                 Page::Artists,
                 Page::Queue,
                 Page::Playlists,

@@ -67,22 +67,26 @@ impl App {
             }
             // Page switching
             (KeyCode::F(1), _) => {
-                state.page = Page::Artists;
+                state.page = Page::Songs;
                 return Ok(());
             }
             (KeyCode::F(2), _) => {
-                state.page = Page::Queue;
+                state.page = Page::Artists;
                 return Ok(());
             }
             (KeyCode::F(3), _) => {
-                state.page = Page::Playlists;
+                state.page = Page::Queue;
                 return Ok(());
             }
             (KeyCode::F(4), _) => {
-                state.page = Page::Server;
+                state.page = Page::Playlists;
                 return Ok(());
             }
             (KeyCode::F(5), _) => {
+                state.page = Page::Server;
+                return Ok(());
+            }
+            (KeyCode::F(6), _) => {
                 state.page = Page::Settings;
                 return Ok(());
             }
@@ -136,6 +140,7 @@ impl App {
         let page = state.page;
         drop(state);
         match page {
+            Page::Songs => self.handle_songs_key(key).await,
             Page::Artists => self.handle_artists_key(key).await,
             Page::Queue => self.handle_queue_key(key).await,
             Page::Playlists => self.handle_playlists_key(key).await,
