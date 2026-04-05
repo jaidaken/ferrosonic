@@ -10,7 +10,7 @@ echo "===================="
 # Detect architecture
 ARCH=$(uname -m)
 case "$ARCH" in
-    x86_64) ASSET="ferrosonic-linux-x86_64" ;;
+    x86_64) ASSET_REGEX='ferrosonic-[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*-linux-x86_64' ;;
     *)
         echo "No precompiled binary for $ARCH. Please build from source."
         echo "See: $REPO#manual-build"
@@ -60,10 +60,39 @@ fi
 
 # Download latest release binary
 echo "Downloading ferrosonic..."
-LATEST=$(curl -sI "$REPO/releases/latest" | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r')
-DOWNLOAD_URL="$REPO/releases/download/$LATEST/$ASSET"
+API_LATEST="https://api.github.com/repos/jaidaken/ferrosonic/releases/latest"
+if ! RELEASE_JSON=$(curl -fsSL "$API_LATEST"); then
+    echo "Failed to query latest release metadata from GitHub."
+    exit 1
+fi
+
+DOWNLOAD_URL=$(printf '%s\n' "$RELEASE_JSON" \
+    | grep '"browser_download_url"' \
+    | sed -n "s#.*\"\(https://[^\"]*/$ASSET_REGEX\)\".*#\1#p" \
+    | head -n1 \
+)
+
+if [ -z "$DOWNLOAD_URL" ]; then
+    echo "No release asset matching pattern '$ASSET_REGEX' was found."
+    exit 1
+fi
+
+LATEST=$(printf '%s\n' "$DOWNLOAD_URL" \
+    | sed -n 's#.*/ferrosonic-\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)-linux-x86_64$#\1#p')
+
 TMPFILE=$(mktemp)
-curl -sL "$DOWNLOAD_URL" -o "$TMPFILE"
+if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMPFILE"; then
+    echo "Failed to download binary from: $DOWNLOAD_URL"
+    rm -f "$TMPFILE"
+    exit 1
+fi
+
+if [ ! -s "$TMPFILE" ]; then
+    echo "Download failed: no binary file was downloaded."
+    rm -f "$TMPFILE"
+    exit 1
+fi
+
 chmod +x "$TMPFILE"
 
 # Install
