@@ -9,7 +9,9 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Bit-perfect audio** - Automatic PipeWire sample rate switching to match the source material (44.1kHz, 48kHz, 96kHz, 192kHz, etc.)
 - **Gapless playback** - Seamless transitions between tracks with pre-buffered next track
 - **MPRIS2 integration** - Full desktop media control support (play, pause, stop, next, previous, seek)
+- **Songs page** - Browse starred and random songs from your server with a dedicated songs view
 - **Artist/album browser** - Tree-based navigation with expandable artists and album listings
+- **Shuffle play** - Shuffle all songs by a selected artist or album directly from the artists page
 - **Playlist support** - Browse and play server playlists with shuffle capability
 - **Play queue management** - Add, remove, reorder, shuffle, and clear queue history
 - **Audio quality display** - Real-time display of sample rate, bit depth, codec format, and channel layout
@@ -73,7 +75,7 @@ ferrosonic -v
 
 ## Configuration
 
-Configuration is stored at `~/.config/ferrosonic/config.toml`. You can edit it manually or configure the server connection through the application's Server page (F4).
+Configuration is stored at `~/.config/ferrosonic/config.toml`. You can edit it manually or configure the server connection through the application's Server page (F5).
 
 ```toml
 BaseURL = "https://your-subsonic-server.com"
@@ -103,13 +105,25 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `h` | Previous track |
 | `Ctrl+R` | Refresh data from server |
 | `t` | Cycle to next theme |
-| `F1` | Artists page |
-| `F2` | Queue page |
-| `F3` | Playlists page |
-| `F4` | Server configuration page |
-| `F5` | Settings page |
+| `F1` | Songs page |
+| `F2` | Artists page |
+| `F3` | Queue page |
+| `F4` | Playlists page |
+| `F5` | Server configuration page |
+| `F6` | Settings page |
 
-### Artists Page (F1)
+### Songs Page (F1)
+
+| Key | Action |
+|---|---|
+| `Tab` | Switch focus between song options and song list |
+| `Up` / `k` | Move selection up (navigate options or songs) |
+| `Down` / `j` | Move selection down (navigate options or songs) |
+| `Enter` | Play selected song (queues all visible songs and starts from selection) |
+
+The Songs page has two modes selectable from the options pane: **Starred** (shows your starred/favourited songs from the server) and **Random** (loads a random selection of songs from the server).
+
+### Artists Page (F2)
 
 | Key | Action |
 |---|---|
@@ -122,8 +136,9 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `Backspace` | Return to tree from song list |
 | `e` | Add selected item to end of queue |
 | `n` | Add selected item as next in queue |
+| `s` | Shuffle play all songs by the selected artist or album |
 
-### Queue Page (F2)
+### Queue Page (F3)
 
 | Key | Action |
 |---|---|
@@ -136,7 +151,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `r` | Shuffle queue (current song stays in place) |
 | `c` | Clear played history (remove songs before current) |
 
-### Playlists Page (F3)
+### Playlists Page (F4)
 
 | Key | Action |
 |---|---|
@@ -148,7 +163,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `n` | Add selected song as next in queue |
 | `r` | Shuffle play all songs in selected playlist |
 
-### Server Page (F4)
+### Server Page (F5)
 
 | Key | Action |
 |---|---|
@@ -156,7 +171,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `Enter` | Test connection or Save configuration |
 | `Backspace` | Delete character in text field |
 
-### Settings Page (F5)
+### Settings Page (F6)
 
 | Key | Action |
 |---|---|
@@ -210,7 +225,7 @@ Ferrosonic ships with 13 themes. On first run, the built-in themes are written a
 | **One Dark** | Atom One Dark color scheme |
 | **Ayu Dark** | Ayu Dark color scheme |
 
-Change themes with `t` from any page, from the Settings page (F5), or by editing the `Theme` field in `config.toml`.
+Change themes with `t` from any page, from the Settings page (F6), or by editing the `Theme` field in `config.toml`.
 
 ### Custom Themes
 
