@@ -1,13 +1,14 @@
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
-    text::{Line, Span},
+    text::Span,
     widgets::{Block, Borders, List, ListItem, ListState},
     Frame,
 };
 
 use crate::app::models::SongOption;
 use crate::app::state::AppState;
+use crate::ui::styled_lines::get_song_with_artist_line;
 use crate::ui::theme::ThemeColors;
 use strum::IntoEnumIterator;
 
@@ -98,44 +99,7 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &Th
                 .map(|s| s.id == song.id)
                 .unwrap_or(false);
 
-            let indicator = if is_playing { "▶ " } else { "  " };
-
-            let (title_style, artist_style, number_style) = if is_playing {
-                (
-                    Style::default()
-                        .fg(colors.playing)
-                        .add_modifier(Modifier::BOLD),
-                    Style::default().fg(colors.playing),
-                    Style::default().fg(colors.playing),
-                )
-            } else if is_selected {
-                (
-                    Style::default()
-                        .fg(colors.primary)
-                        .add_modifier(Modifier::BOLD),
-                    Style::default().fg(colors.muted),
-                    Style::default().fg(colors.muted),
-                )
-            } else {
-                (
-                    Style::default().fg(colors.song),
-                    Style::default().fg(colors.muted),
-                    Style::default().fg(colors.muted),
-                )
-            };
-
-            let artist = match &song.artist {
-                Some(value) => value,
-                None => "n/a",
-            };
-
-            let line = Line::from(vec![
-                Span::styled(indicator.to_string(), Style::default().fg(colors.playing)),
-                Span::styled(song.title.clone(), title_style),
-                Span::styled(format!(" - {}", artist), artist_style),
-                Span::styled(format!(" [{}]", song.format_duration()), number_style),
-            ]);
-
+            let line = get_song_with_artist_line(&song, is_selected, is_playing, &colors);
             ListItem::new(line)
         })
         .collect();
