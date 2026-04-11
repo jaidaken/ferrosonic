@@ -3,15 +3,14 @@
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
-    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
 use crate::app::state::AppState;
-use crate::ui::theme::ThemeColors;
 use crate::subsonic::models::{Album, Artist};
-
+use crate::ui::styled_lines::get_song_without_artist_line;
+use crate::ui::theme::ThemeColors;
 
 /// A tree item - either an artist or an album
 #[derive(Clone)]
@@ -217,43 +216,13 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &Th
                 .map(|s| s.id == song.id)
                 .unwrap_or(false);
 
-            let indicator = if is_playing { "▶ " } else { "  " };
-            // Show disc.track format for multi-disc albums
-            let track = if has_multiple_discs {
-                match (song.disc_number, song.track) {
-                    (Some(d), Some(t)) => format!("{}.{:02}. ", d, t),
-                    (None, Some(t)) => format!("{:02}. ", t),
-                    _ => String::new(),
-                }
-            } else {
-                song.track
-                    .map(|t| format!("{:02}. ", t))
-                    .unwrap_or_default()
-            };
-            let duration = song.format_duration();
-            let title = song.title.clone();
-
-            // Colors based on state
-            let (title_color, track_color, time_color) = if is_selected {
-                // When highlighted, use highlight foreground for readability
-                (
-                    colors.highlight_fg,
-                    colors.highlight_fg,
-                    colors.highlight_fg,
-                )
-            } else if is_playing {
-                (colors.playing, colors.muted, colors.muted)
-            } else {
-                (colors.song, colors.muted, colors.muted)
-            };
-
-            let line = Line::from(vec![
-                Span::styled(indicator.to_string(), Style::default().fg(colors.playing)),
-                Span::styled(track, Style::default().fg(track_color)),
-                Span::styled(title, Style::default().fg(title_color)),
-                Span::styled(format!(" [{}]", duration), Style::default().fg(time_color)),
-            ]);
-
+            let line = get_song_without_artist_line(
+                &song,
+                is_selected,
+                is_playing,
+                has_multiple_discs,
+                &colors,
+            );
             ListItem::new(line)
         })
         .collect();

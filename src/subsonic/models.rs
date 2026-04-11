@@ -172,6 +172,7 @@ pub struct Child {
     pub path: Option<String>,
     #[serde(default, rename = "discNumber")]
     pub disc_number: Option<i32>,
+    pub starred: Option<String>,
 }
 
 impl Child {

@@ -67,6 +67,7 @@ impl App {
                 };
 
                 state.queue.clear();
+                state.w
                 let songs = state.songs.songs.clone();
                 state.queue.extend(songs);
 
