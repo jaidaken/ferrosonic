@@ -25,7 +25,7 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 
 ## Screenshots
 
-![Ferrosonic](screenshots/ferrosonic.png)
+![Ferrosonic](docs/screenshots/ferrosonic.png)
 
 ## Installation
 
@@ -206,55 +206,14 @@ The Now Playing widget shows:
 - Visual progress bar with elapsed/total time
 
 ## Themes
+Ferrosonic ships multiple built-in themes, as well as support for custom themes. Here are two examples:
+<!-- A file in docs/ should be added with every built-in theme to show them off fully, these are just examples -->
 
-Ferrosonic ships with 13 themes. On first run, the built-in themes are written as TOML files to `~/.config/ferrosonic/themes/`.
-
-| Theme | Description |
+| Nord | Gruvbox |
 |---|---|
-| **Default** | Cyan/yellow on dark background (hardcoded) |
-| **Monokai** | Classic Monokai syntax highlighting palette |
-| **Dracula** | Purple/pink Dracula color scheme |
-| **Nord** | Arctic blue Nord palette |
-| **Gruvbox** | Warm retro Gruvbox colors |
-| **Catppuccin** | Soothing pastel Catppuccin Mocha palette |
-| **Solarized** | Ethan Schoonover's Solarized Dark |
-| **Tokyo Night** | Dark Tokyo Night color scheme |
-| **Rosé Pine** | Soho vibes Rosé Pine palette |
-| **Everforest** | Comfortable green Everforest Dark |
-| **Kanagawa** | Dark Kanagawa wave palette |
-| **One Dark** | Atom One Dark color scheme |
-| **Ayu Dark** | Ayu Dark color scheme |
+| <img src="docs/screenshots/nord_theme.avif" alt="Nord theme" width="640" height="327" /> | <img src="docs/screenshots/gruvbox_theme.avif" alt="Gruvbox theme" width="640" height="327" /> |
 
-Change themes with `t` from any page, from the Settings page (F6), or by editing the `Theme` field in `config.toml`.
-
-### Custom Themes
-
-Create a `.toml` file in `~/.config/ferrosonic/themes/` and it will appear in the theme list. The filename becomes the display name (e.g. `my-theme.toml` becomes "My Theme").
-
-```toml
-[colors]
-primary = "#89b4fa"
-secondary = "#585b70"
-accent = "#f9e2af"
-artist = "#a6e3a1"
-album = "#f5c2e7"
-song = "#94e2d5"
-muted = "#6c7086"
-highlight_bg = "#45475a"
-highlight_fg = "#cdd6f4"
-success = "#a6e3a1"
-error = "#f38ba8"
-playing = "#f9e2af"
-played = "#6c7086"
-border_focused = "#89b4fa"
-border_unfocused = "#45475a"
-
-[cava]
-gradient = ["#a6e3a1", "#94e2d5", "#89dceb", "#74c7ec", "#cba6f7", "#f5c2e7", "#f38ba8", "#f38ba8"]
-horizontal_gradient = ["#f38ba8", "#eba0ac", "#fab387", "#f9e2af", "#a6e3a1", "#94e2d5", "#89b4fa", "#cba6f7"]
-```
-
-You can also edit the built-in theme files to customize them. They will not be overwritten unless deleted.
+To know more about themes, **visit the [themes documentation](docs/themes.md)**.
 
 ## Compatible Servers
 
@@ -268,8 +227,6 @@ Ferrosonic works with any server implementing the Subsonic API, including:
 
 ## Acknowledgements
 
+This is a fork from [jaidaken/ferrosonic](https://github.com/jaidaken/ferrosonic), with the intent of keeping the project alive.
+
 Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about/) by SixFoisNeuf, a terminal Subsonic client written in Go. Ferrosonic builds on that concept with a Rust implementation, bit-perfect audio via PipeWire, and additional features.
-
-## License
-
-MIT
