@@ -95,7 +95,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('s') => {
                 // Shuffle queue
                 use rand::seq::SliceRandom;
                 let mut rng = rand::thread_rng();

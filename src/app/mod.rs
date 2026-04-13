@@ -13,6 +13,7 @@ pub mod models;
 mod mouse;
 mod mouse_artists;
 mod mouse_playlists;
+mod mouse_songs;
 mod playback;
 mod repo;
 pub mod state;

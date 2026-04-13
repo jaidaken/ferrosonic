@@ -1,29 +1,25 @@
 # Ferrosonic
+![Release](https://github.com/jaidaken/ferrosonic/actions/workflows/release.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 A terminal-based Subsonic music client written in Rust, featuring bit-perfect audio playback, gapless transitions, and full desktop integration.
 
-Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about/), the original terminal Subsonic client written in Go by [SixFoisNeuf](https://www.sixfoisneuf.fr/posts/termsonic-a-terminal-client-for-subsonic/). Ferrosonic is a ground-up rewrite in Rust with additional features including PipeWire sample rate switching for bit-perfect audio, MPRIS2 media controls, multiple color themes, and mouse support.
-
-Note: Work on this on my end is currently slow due to other time sensitive projects, but check out this fork for now: [ferrosonic-ng](https://github.com/Jamie098/ferrosonic-ng)
+Originally a ground-up rewrite of [Termsonic](https://git.sixfoisneuf.fr/termsonic/about/) in Rust, Ferrosonic features PipeWire sample rate switching for bit-perfect audio, MPRIS2 media controls, multiple color themes, and mouse support.
 
 ## Features
 
-- **Bit-perfect audio** - Automatic PipeWire sample rate switching to match the source material (44.1kHz, 48kHz, 96kHz, 192kHz, etc.)
-- **Gapless playback** - Seamless transitions between tracks with pre-buffered next track
-- **MPRIS2 integration** - Full desktop media control support (play, pause, stop, next, previous, seek)
-- **Songs page** - Browse starred and random songs from your server with a dedicated songs view
-- **Artist/album browser** - Tree-based navigation with expandable artists and album listings
-- **Shuffle play** - Shuffle all songs by a selected artist or album directly from the artists page
-- **Playlist support** - Browse and play server playlists with shuffle capability
-- **Play queue management** - Add, remove, reorder, shuffle, and clear queue history
-- **Audio quality display** - Real-time display of sample rate, bit depth, codec format, and channel layout
-- **Audio visualizer** - Integrated cava audio visualizer with theme-matched gradient colors
-- **13 built-in themes** - Default, Monokai, Dracula, Nord, Gruvbox, Catppuccin, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, One Dark, and Ayu Dark
-- **Custom themes** - Create your own themes as TOML files in `~/.config/ferrosonic/themes/`
-- **Mouse support** - Clickable buttons, tabs, lists, and progress bar seeking
-- **Artist filtering** - Real-time search/filter on the artist list
-- **Multi-disc album support** - Proper disc and track number display
-- **Keyboard-driven** - Vim-style navigation (j/k) alongside arrow keys
+- **Bit-perfect audio** — Automatic PipeWire sample rate switching to match source material (44.1kHz, 48kHz, 96kHz, 192kHz, etc.), with the original rate restored on exit
+- **Gapless playback** — Next track is pre-loaded into mpv's internal playlist for seamless transitions
+- **MPRIS2 integration** — Full desktop media controls (play, pause, stop, next, previous, seek)
+- **Artist/album browser** — Tree-based navigation with expandable artists, album listings, and artist filtering
+- **Songs page** — Browse starred and random songs from your server
+- **Playlists & queue management** — Browse server playlists, add/remove/reorder/shuffle queue, clear history
+- **Audio quality display** — Real-time sample rate, bit depth, codec, and channel layout
+- **Audio visualizer** — Integrated [cava](https://github.com/karlstav/cava) visualizer with theme-matched gradient colors
+- **13 built-in themes + custom themes** — Monokai, Dracula, Nord, Catppuccin, Tokyo Night, and more. Create your own as TOML files in `~/.config/ferrosonic/themes/`. See the [themes documentation](docs/themes.md)
+- **Mouse support** — Clickable tabs, playback controls, list items, and progress bar seeking
+- **Keyboard-driven** — Vim-style navigation (j/k) alongside arrow keys. See the [full keybindings reference](docs/keybindings.md)
+- **Multi-disc album support** — Proper disc and track number display
 
 ## Screenshots
 
@@ -48,7 +44,13 @@ Ferrosonic requires the following at runtime:
 Supports Arch, Fedora, and Debian/Ubuntu. Installs runtime dependencies, downloads the latest precompiled binary, and installs to `/usr/local/bin/`:
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/Jamie098/ferrosonic/master/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/jaidaken/ferrosonic/master/install.sh | sh
+```
+
+### Install via Cargo
+
+```
+cargo install ferrosonic
 ```
 
 ### Build from Source
@@ -56,7 +58,7 @@ curl -sSf https://raw.githubusercontent.com/Jamie098/ferrosonic/master/install.s
 If you prefer to build from source, you'll also need: Rust toolchain, pkg-config, OpenSSL dev headers, and D-Bus dev headers. Then:
 
 ```bash
-git clone https://github.com/Jamie098/ferrosonic.git
+git clone https://github.com/jaidaken/ferrosonic.git
 cd ferrosonic
 cargo build --release
 sudo cp target/release/ferrosonic /usr/local/bin/
@@ -95,118 +97,6 @@ Theme = "Default"
 
 Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 
-## Keyboard Shortcuts
-
-### Global
-
-| Key | Action |
-|---|---|
-| `q` | Quit |
-| `p` / `Space` | Toggle play/pause |
-| `l` | Next track |
-| `h` | Previous track |
-| `Ctrl+R` | Refresh data from server |
-| `t` | Cycle to next theme |
-| `F1` | Songs page |
-| `F2` | Artists page |
-| `F3` | Queue page |
-| `F4` | Playlists page |
-| `F5` | Server configuration page |
-| `F6` | Settings page |
-
-### Songs Page (F1)
-
-| Key | Action |
-|---|---|
-| `Tab` | Switch focus between song options and song list |
-| `Up` / `k` | Move selection up (navigate options or songs) |
-| `Down` / `j` | Move selection down (navigate options or songs) |
-| `Enter` | Play selected song (queues all visible songs and starts from selection) |
-
-The Songs page has two modes selectable from the options pane: **Starred** (shows your starred/favourited songs from the server) and **Random** (loads a random selection of songs from the server).
-
-### Artists Page (F2)
-
-| Key | Action |
-|---|---|
-| `/` | Filter artists by name |
-| `Esc` | Clear filter |
-| `Up` / `k` | Move selection up |
-| `Down` / `j` | Move selection down |
-| `Left` / `Right` | Switch focus between tree and song list |
-| `Enter` | Expand/collapse artist, or play album/song |
-| `Backspace` | Return to tree from song list |
-| `e` | Add selected item to end of queue |
-| `n` | Add selected item as next in queue |
-| `s` | Shuffle play all songs by the selected artist or album |
-
-### Queue Page (F3)
-
-| Key | Action |
-|---|---|
-| `Up` / `k` | Move selection up |
-| `Down` / `j` | Move selection down |
-| `Enter` | Play selected song |
-| `d` | Remove selected song from queue |
-| `J` (Shift+J) | Move selected song down |
-| `K` (Shift+K) | Move selected song up |
-| `r` | Shuffle queue (current song stays in place) |
-| `c` | Clear played history (remove songs before current) |
-
-### Playlists Page (F4)
-
-| Key | Action |
-|---|---|
-| `Tab` / `Left` / `Right` | Switch focus between playlists and songs |
-| `Up` / `k` | Move selection up |
-| `Down` / `j` | Move selection down |
-| `Enter` | Load playlist songs or play selected song |
-| `e` | Add selected item to end of queue |
-| `n` | Add selected song as next in queue |
-| `r` | Shuffle play all songs in selected playlist |
-
-### Server Page (F5)
-
-| Key | Action |
-|---|---|
-| `Tab` | Move between fields |
-| `Enter` | Test connection or Save configuration |
-| `Backspace` | Delete character in text field |
-
-### Settings Page (F6)
-
-| Key | Action |
-|---|---|
-| `Up` / `Down` | Move between settings |
-| `Left` | Previous option |
-| `Right` / `Enter` | Next option |
-
-Settings include theme selection and cava visualizer toggle. Changes are saved automatically.
-
-## Mouse Support
-
-- Click page tabs in the header to switch pages
-- Click playback control buttons (Previous, Play, Pause, Stop, Next) in the header
-- Click items in lists to select them
-- Click the progress bar in the Now Playing widget to seek
-
-## Audio Features
-
-### Bit-Perfect Playback
-
-Ferrosonic uses PipeWire's `pw-metadata` to automatically switch the system sample rate to match the source material. When a track at 96kHz starts playing, PipeWire is instructed to output at 96kHz, avoiding unnecessary resampling. The original sample rate is restored when the application exits.
-
-### Gapless Playback
-
-The next track in the queue is pre-loaded into MPV's internal playlist before the current track finishes, allowing seamless transitions with no gap or click between songs.
-
-### Now Playing Display
-
-The Now Playing widget shows:
-- Artist, album, and track title
-- Audio quality: format/codec, bit depth, sample rate, and channel layout
-- Visual progress bar with elapsed/total time
-
 ## Themes
 Ferrosonic ships multiple built-in themes, as well as support for custom themes. Here are two examples:
 <!-- A file in docs/ should be added with every built-in theme to show them off fully, these are just examples -->
@@ -227,8 +117,14 @@ Ferrosonic works with any server implementing the Subsonic API, including:
 - [Gonic](https://github.com/sentriz/gonic)
 - [Supysonic](https://github.com/spl0k/supysonic)
 
-## Acknowledgements
+## Contributing
+ 
+Contributions are welcome! Feel free to open an issue or submit a pull request.
+ 
+## License
+ 
+This project is licensed under the [MIT License](LICENSE).
 
-This is a fork from [jaidaken/ferrosonic](https://github.com/jaidaken/ferrosonic), with the intent of keeping the project alive.
+## Acknowledgements
 
 Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about/) by SixFoisNeuf, a terminal Subsonic client written in Go. Ferrosonic builds on that concept with a Rust implementation, bit-perfect audio via PipeWire, and additional features.

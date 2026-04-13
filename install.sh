@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-REPO="https://github.com/Jamie098/ferrosonic"
+REPO="https://github.com/jaidaken/ferrosonic"
 INSTALL_DIR="/usr/local/bin"
 
 echo "Ferrosonic installer"
@@ -60,7 +60,7 @@ fi
 
 # Download latest release binary
 echo "Downloading ferrosonic..."
-API_LATEST="https://api.github.com/repos/Jamie098/ferrosonic/releases/latest"
+API_LATEST="https://api.github.com/repos/jaidaken/ferrosonic/releases/latest"
 if ! RELEASE_JSON=$(curl -fsSL "$API_LATEST"); then
     echo "Failed to query latest release metadata from GitHub."
     exit 1

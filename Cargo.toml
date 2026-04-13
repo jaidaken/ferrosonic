@@ -5,6 +5,12 @@ edition = "2021"
 description = "A terminal-based Subsonic music client with bit-perfect audio playback"
 license = "MIT"
 authors = ["ferrosonic contributors"]
+readme = "README.md"
+repository = "https://github.com/jaidaken/ferrosonic"
+homepage = "https://github.com/jaidaken/ferrosonic"
+keywords = ["subsonic", "music", "terminal", "tui", "audio"]
+categories = ["command-line-utilities", "multimedia::audio"]
+exclude = ["docs/screenshots/*"]
 
 [dependencies]
 # Async runtime

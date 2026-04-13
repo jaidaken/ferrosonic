@@ -15,6 +15,7 @@ impl App {
                         Some(SongOption::Starred) => {}
                         Some(SongOption::Random) => {
                             state.songs.selected_option = Some(SongOption::Starred);
+                            state.songs.scroll_offset = 0;
                             drop(state);
                             self.get_starred_songs().await;
                         }
@@ -37,6 +38,7 @@ impl App {
                     match state.songs.selected_option {
                         Some(SongOption::Starred) => {
                             state.songs.selected_option = Some(SongOption::Random);
+                            state.songs.scroll_offset = 0;
                             drop(state);
                             self.get_random_songs().await;
                         }

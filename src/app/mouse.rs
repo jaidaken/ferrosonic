@@ -98,11 +98,7 @@ impl App {
         layout: &LayoutAreas,
     ) -> Result<(), Error> {
         match page {
-            Page::Songs => {
-                let mut state = self.state.write().await;
-                state.notify("Mouse input not supported for this page yet");
-                Ok(())
-            }
+            Page::Songs => self.handle_songs_click(x, y, layout).await,
             Page::Artists => self.handle_artists_click(x, y, layout).await,
             Page::Queue => self.handle_queue_click(y, layout).await,
             Page::Playlists => self.handle_playlists_click(x, y, layout).await,
@@ -143,6 +139,15 @@ impl App {
     async fn handle_mouse_scroll_up(&mut self) -> Result<(), Error> {
         let mut state = self.state.write().await;
         match state.page {
+            Page::Songs => {
+                if state.songs.focus == 1 {
+                    if let Some(sel) = state.songs.selected_index {
+                        if sel > 0 {
+                            state.songs.selected_index = Some(sel - 1);
+                        }
+                    }
+                }
+            }
             Page::Artists => {
                 if state.artists.focus == 0 {
                     if let Some(sel) = state.artists.selected_index {
@@ -187,6 +192,18 @@ impl App {
     async fn handle_mouse_scroll_down(&mut self) -> Result<(), Error> {
         let mut state = self.state.write().await;
         match state.page {
+            Page::Songs => {
+                if state.songs.focus == 1 {
+                    let max = state.songs.songs.len().saturating_sub(1);
+                    if let Some(sel) = state.songs.selected_index {
+                        if sel < max {
+                            state.songs.selected_index = Some(sel + 1);
+                        }
+                    } else if !state.songs.songs.is_empty() {
+                        state.songs.selected_index = Some(0);
+                    }
+                }
+            }
             Page::Artists => {
                 if state.artists.focus == 0 {
                     let tree_items = crate::ui::pages::artists::build_tree_items(&state);

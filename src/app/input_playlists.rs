@@ -85,15 +85,15 @@ impl App {
                                             if count > 0 { Some(0) } else { None };
                                         state.playlists.focus = 1;
                                         state.notify(format!(
-                                                "Loaded playlist: {} ({} songs)",
-                                                playlist_name, count
+                                            "Loaded playlist: {} ({} songs)",
+                                            playlist_name, count
                                         ));
                                     }
                                     Err(e) => {
                                         let mut state = self.state.write().await;
                                         state.notify_error(format!(
-                                                "Failed to load playlist: {}",
-                                                e
+                                            "Failed to load playlist: {}",
+                                            e
                                         ));
                                     }
                                 }
@@ -147,7 +147,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('s') => {
                 // Shuffle play playlist
                 use rand::seq::SliceRandom;
                 if !state.playlists.songs.is_empty() {
