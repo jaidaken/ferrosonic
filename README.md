@@ -1,5 +1,5 @@
 # Ferrosonic-ng
-![Release](https://github.com/Jamie098/ferrosonic-ng/actions/workflows/release.yml/badge.svg)
+![Release](https://github.com/jaidaken/ferrosonic/actions/workflows/release.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 A terminal-based Subsonic music client written in Rust, featuring bit-perfect audio playback, gapless transitions, and full desktop integration.
@@ -44,7 +44,7 @@ Ferrosonic requires the following at runtime:
 Supports Arch, Fedora, and Debian/Ubuntu. Installs runtime dependencies, downloads the latest precompiled binary, and installs to `/usr/local/bin/`:
 
 ```bash
-curl -sSf https://raw.githubusercontent.com/Jamie098/ferrosonic-ng/master/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/jaidaken/ferrosonic/master/install.sh | sh
 ```
 
 ### Install via Cargo
@@ -58,8 +58,8 @@ cargo install ferrosonic
 If you prefer to build from source, you'll also need: Rust toolchain, pkg-config, OpenSSL dev headers, and D-Bus dev headers. Then:
 
 ```bash
-git clone https://github.com/Jamie098/ferrosonic-ng.git
-cd ferrosonic-ng
+git clone https://github.com/jaidaken/ferrosonic.git
+cd ferrosonic
 cargo build --release
 sudo cp target/release/ferrosonic /usr/local/bin/
 ```
