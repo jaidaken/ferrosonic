@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-REPO="https://github.com/Jamie098/ferrosonic"
+REPO="https://github.com/jaidaken/ferrosonic"
 INSTALL_DIR="/usr/local/bin"
 
 echo "Ferrosonic installer"
