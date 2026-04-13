@@ -9,7 +9,9 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Bit-perfect audio** - Automatic PipeWire sample rate switching to match the source material (44.1kHz, 48kHz, 96kHz, 192kHz, etc.)
 - **Gapless playback** - Seamless transitions between tracks with pre-buffered next track
 - **MPRIS2 integration** - Full desktop media control support (play, pause, stop, next, previous, seek)
+- **Songs page** - Browse starred and random songs from your server with a dedicated songs view
 - **Artist/album browser** - Tree-based navigation with expandable artists and album listings
+- **Shuffle play** - Shuffle all songs by a selected artist or album directly from the artists page
 - **Playlist support** - Browse and play server playlists with shuffle capability
 - **Play queue management** - Add, remove, reorder, shuffle, and clear queue history
 - **Audio quality display** - Real-time display of sample rate, bit depth, codec format, and channel layout
@@ -23,7 +25,7 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 
 ## Screenshots
 
-![Ferrosonic](screenshots/ferrosonic.png)
+![Ferrosonic](docs/screenshots/ferrosonic.png)
 
 ## Installation
 
@@ -73,7 +75,7 @@ ferrosonic -v
 
 ## Configuration
 
-Configuration is stored at `~/.config/ferrosonic/config.toml`. You can edit it manually or configure the server connection through the application's Server page (F4).
+Configuration is stored at `~/.config/ferrosonic/config.toml`. You can edit it manually or configure the server connection through the application's Server page (F5).
 
 ```toml
 BaseURL = "https://your-subsonic-server.com"
@@ -103,13 +105,25 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `h` | Previous track |
 | `Ctrl+R` | Refresh data from server |
 | `t` | Cycle to next theme |
-| `F1` | Artists page |
-| `F2` | Queue page |
-| `F3` | Playlists page |
-| `F4` | Server configuration page |
-| `F5` | Settings page |
+| `F1` | Songs page |
+| `F2` | Artists page |
+| `F3` | Queue page |
+| `F4` | Playlists page |
+| `F5` | Server configuration page |
+| `F6` | Settings page |
 
-### Artists Page (F1)
+### Songs Page (F1)
+
+| Key | Action |
+|---|---|
+| `Tab` | Switch focus between song options and song list |
+| `Up` / `k` | Move selection up (navigate options or songs) |
+| `Down` / `j` | Move selection down (navigate options or songs) |
+| `Enter` | Play selected song (queues all visible songs and starts from selection) |
+
+The Songs page has two modes selectable from the options pane: **Starred** (shows your starred/favourited songs from the server) and **Random** (loads a random selection of songs from the server).
+
+### Artists Page (F2)
 
 | Key | Action |
 |---|---|
@@ -122,8 +136,9 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `Backspace` | Return to tree from song list |
 | `e` | Add selected item to end of queue |
 | `n` | Add selected item as next in queue |
+| `s` | Shuffle play all songs by the selected artist or album |
 
-### Queue Page (F2)
+### Queue Page (F3)
 
 | Key | Action |
 |---|---|
@@ -136,7 +151,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `r` | Shuffle queue (current song stays in place) |
 | `c` | Clear played history (remove songs before current) |
 
-### Playlists Page (F3)
+### Playlists Page (F4)
 
 | Key | Action |
 |---|---|
@@ -148,7 +163,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `n` | Add selected song as next in queue |
 | `r` | Shuffle play all songs in selected playlist |
 
-### Server Page (F4)
+### Server Page (F5)
 
 | Key | Action |
 |---|---|
@@ -156,7 +171,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log`.
 | `Enter` | Test connection or Save configuration |
 | `Backspace` | Delete character in text field |
 
-### Settings Page (F5)
+### Settings Page (F6)
 
 | Key | Action |
 |---|---|
@@ -191,55 +206,14 @@ The Now Playing widget shows:
 - Visual progress bar with elapsed/total time
 
 ## Themes
+Ferrosonic ships multiple built-in themes, as well as support for custom themes. Here are two examples:
+<!-- A file in docs/ should be added with every built-in theme to show them off fully, these are just examples -->
 
-Ferrosonic ships with 13 themes. On first run, the built-in themes are written as TOML files to `~/.config/ferrosonic/themes/`.
-
-| Theme | Description |
+| Nord | Gruvbox |
 |---|---|
-| **Default** | Cyan/yellow on dark background (hardcoded) |
-| **Monokai** | Classic Monokai syntax highlighting palette |
-| **Dracula** | Purple/pink Dracula color scheme |
-| **Nord** | Arctic blue Nord palette |
-| **Gruvbox** | Warm retro Gruvbox colors |
-| **Catppuccin** | Soothing pastel Catppuccin Mocha palette |
-| **Solarized** | Ethan Schoonover's Solarized Dark |
-| **Tokyo Night** | Dark Tokyo Night color scheme |
-| **Rosé Pine** | Soho vibes Rosé Pine palette |
-| **Everforest** | Comfortable green Everforest Dark |
-| **Kanagawa** | Dark Kanagawa wave palette |
-| **One Dark** | Atom One Dark color scheme |
-| **Ayu Dark** | Ayu Dark color scheme |
+| <img src="docs/screenshots/nord_theme.avif" alt="Nord theme" width="640" height="327" /> | <img src="docs/screenshots/gruvbox_theme.avif" alt="Gruvbox theme" width="640" height="327" /> |
 
-Change themes with `t` from any page, from the Settings page (F5), or by editing the `Theme` field in `config.toml`.
-
-### Custom Themes
-
-Create a `.toml` file in `~/.config/ferrosonic/themes/` and it will appear in the theme list. The filename becomes the display name (e.g. `my-theme.toml` becomes "My Theme").
-
-```toml
-[colors]
-primary = "#89b4fa"
-secondary = "#585b70"
-accent = "#f9e2af"
-artist = "#a6e3a1"
-album = "#f5c2e7"
-song = "#94e2d5"
-muted = "#6c7086"
-highlight_bg = "#45475a"
-highlight_fg = "#cdd6f4"
-success = "#a6e3a1"
-error = "#f38ba8"
-playing = "#f9e2af"
-played = "#6c7086"
-border_focused = "#89b4fa"
-border_unfocused = "#45475a"
-
-[cava]
-gradient = ["#a6e3a1", "#94e2d5", "#89dceb", "#74c7ec", "#cba6f7", "#f5c2e7", "#f38ba8", "#f38ba8"]
-horizontal_gradient = ["#f38ba8", "#eba0ac", "#fab387", "#f9e2af", "#a6e3a1", "#94e2d5", "#89b4fa", "#cba6f7"]
-```
-
-You can also edit the built-in theme files to customize them. They will not be overwritten unless deleted.
+To know more about themes, **visit the [themes documentation](docs/themes.md)**.
 
 ## Compatible Servers
 
@@ -253,8 +227,6 @@ Ferrosonic works with any server implementing the Subsonic API, including:
 
 ## Acknowledgements
 
+This is a fork from [jaidaken/ferrosonic](https://github.com/jaidaken/ferrosonic), with the intent of keeping the project alive.
+
 Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about/) by SixFoisNeuf, a terminal Subsonic client written in Go. Ferrosonic builds on that concept with a Rust implementation, bit-perfect audio via PipeWire, and additional features.
-
-## License
-
-MIT

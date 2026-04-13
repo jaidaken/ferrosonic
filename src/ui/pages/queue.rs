@@ -10,7 +10,6 @@ use ratatui::{
 
 use crate::app::state::AppState;
 
-
 /// Render the queue page
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let colors = *state.settings_state.theme_colors();
@@ -33,11 +32,14 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
         .iter()
         .enumerate()
         .map(|(i, song)| {
+            // TODO: update this code to use styled_lines
             let is_current = state.queue_position == Some(i);
             let is_selected = state.queue_state.selected == Some(i);
             let is_played = state.queue_position.map(|pos| i < pos).unwrap_or(false);
+            let is_starred = song.starred.is_some();
 
             let indicator = if is_current { "▶ " } else { "  " };
+            let star_indicator = if is_starred { "★ " } else { "  " };
 
             let artist = song.artist.clone().unwrap_or_default();
             let duration = song.format_duration();
@@ -88,6 +90,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
             let line = Line::from(vec![
                 Span::styled(format!("{:3}. ", i + 1), number_style),
                 Span::styled(indicator, Style::default().fg(colors.playing)),
+                Span::styled(
+                    star_indicator.to_string(),
+                    Style::default().fg(colors.playing),
+                ),
                 Span::styled(song.title.clone(), title_style),
                 Span::styled(track_info, Style::default().fg(colors.muted)),
                 if !artist.is_empty() {

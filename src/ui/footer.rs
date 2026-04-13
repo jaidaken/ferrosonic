@@ -43,12 +43,16 @@ impl<'a> Footer<'a> {
         let mut binds = vec![
             ("q", "Quit"),
             ("p/Space", "Pause"),
+            ("s", "Shuffle"),
             ("h", "Prev"),
             ("l", "Next"),
             ("t", "Theme"),
         ];
 
         match self.page {
+            Page::Songs => {
+                binds.extend([("Enter", "Play")]);
+            }
             Page::Artists => {
                 binds.extend([
                     ("/", "Filter"),

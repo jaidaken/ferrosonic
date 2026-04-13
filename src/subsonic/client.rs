@@ -122,6 +122,22 @@ impl SubsonicClient {
         Ok(())
     }
 
+    pub async fn get_starred_songs(&self) -> Result<Vec<Child>, SubsonicError> {
+        let data: StarredSongsData = self.request("getStarred2").await?;
+        let songs = data.starred_songs.song;
+
+        debug!("Fetched {} songs", songs.len());
+        Ok(songs)
+    }
+
+    pub async fn get_random_songs(&self) -> Result<Vec<Child>, SubsonicError> {
+        let data: RandomSongsData = self.request("getRandomSongs?size=500").await?;
+        let songs = data.random_songs.song;
+
+        debug!("Fetched {} songs", songs.len());
+        Ok(songs)
+    }
+
     /// Get all artists
     pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
         let data: ArtistsData = self.request("getArtists").await?;
@@ -296,7 +312,6 @@ impl SubsonicClient {
 
         Ok(url.to_string())
     }
-
 }
 
 #[cfg(test)]

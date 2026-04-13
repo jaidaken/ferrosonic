@@ -41,6 +41,8 @@ urlencoding = "2"
 md5 = "0.7"
 rand = "0.8"
 unicode-width = "0.2"
+strum = "0.26"
+strum_macros = "0.26"
 
 # Logging
 tracing = "0.1"

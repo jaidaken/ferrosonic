@@ -27,6 +27,30 @@ pub struct ApiError {
     pub message: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct StarredSongsData {
+    #[serde(rename = "starred2")]
+    pub starred_songs: StarredSongs,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StarredSongs {
+    #[serde(default)]
+    pub song: Vec<Child>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RandomSongsData {
+    #[serde(rename = "randomSongs")]
+    pub random_songs: RandomSongs,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RandomSongs {
+    #[serde(default)]
+    pub song: Vec<Child>,
+}
+
 /// Artists response wrapper
 #[derive(Debug, Deserialize)]
 pub struct ArtistsData {
@@ -148,6 +172,8 @@ pub struct Child {
     pub path: Option<String>,
     #[serde(default, rename = "discNumber")]
     pub disc_number: Option<i32>,
+    #[serde(default)]
+    pub starred: Option<String>,
 }
 
 impl Child {
@@ -218,4 +244,3 @@ pub struct PlaylistDetail {
 /// Ping response (for testing connection)
 #[derive(Debug, Deserialize)]
 pub struct PingData {}
-
