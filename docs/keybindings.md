@@ -55,7 +55,7 @@ The Songs page has two modes selectable from the options pane: **Starred** (your
 | `d` | Remove selected song from queue |
 | `J` (Shift+J) | Move selected song down |
 | `K` (Shift+K) | Move selected song up |
-| `s` | Shuffle queue (current song stays in place) |
+| `s` | Shuffle queue (current song moves to the front) |
 | `c` | Clear played history (remove songs before current) |
 
 ## Playlists Page (F4)
