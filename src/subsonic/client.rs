@@ -312,6 +312,31 @@ impl SubsonicClient {
 
         Ok(url.to_string())
     }
+
+    /// Mark a song as played (if submit = true), or currently playing (submit = false)
+    pub async fn scrobble(&self, song_id: &str, submit: bool) -> Result<(), SubsonicError> {
+        let url = self.build_url(&format!("scrobble?id={}&submission={}", song_id, submit))?;
+        debug!("Scrobbling {} (submit = {})", song_id, submit);
+
+        let response = self.http.get(url).send().await?;
+        let text = response.text().await?;
+
+        let parsed: SubsonicResponse<()> = serde_json::from_str(&text)
+            .map_err(|e| SubsonicError::Parse(format!("Failed to parse ping response: {}", e)))?;
+
+        if parsed.subsonic_response.status != "ok" {
+            if let Some(error) = parsed.subsonic_response.error {
+                return Err(SubsonicError::Api {
+                    code: error.code,
+                    message: error.message,
+                });
+            }
+        }
+
+        info!("Scrobbled track {} successfully (submit = {})!", song_id, submit);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -86,6 +86,10 @@ pub struct NowPlaying {
     pub format: Option<String>,
     /// Audio channel layout (e.g., "Stereo", "Mono", "5.1ch")
     pub channels: Option<String>,
+    /// If the currently playing song has already been marked as playing on the subsonic server
+    pub marked_playing: bool,
+    /// If the currently playing song has already been marked as played on the subsonic server
+    pub marked_played: bool
 }
 
 impl NowPlaying {

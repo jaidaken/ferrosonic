@@ -72,6 +72,8 @@ impl App {
                                 state.now_playing.song = Some(song.clone());
                                 state.now_playing.position = 0.0;
                                 state.now_playing.duration = song.duration.unwrap_or(0) as f64;
+                                state.now_playing.marked_played = false;
+                                state.now_playing.marked_playing = false;
                                 // Don't reset audio properties - let them update naturally
                                 // This avoids triggering PipeWire rate changes unnecessarily
                             }
@@ -115,6 +117,57 @@ impl App {
                     if duration > 0.0 {
                         let mut state = self.state.write().await;
                         state.now_playing.duration = duration;
+                    }
+                }
+            }
+        }
+
+        {
+            if let Some(client) = &self.subsonic {
+                let state = self.state.read().await;
+                if state.now_playing.state == PlaybackState::Playing {
+                    if let Some(song) = state.now_playing.song.clone() {
+                        // If the currently playing song has not been marked as so yet, do so.
+                        if !state.now_playing.marked_playing && state.now_playing.duration > 0.0 {
+                            let song_id = song.id.clone();
+                            drop(state);
+
+                            {
+                                let mut state = self.state.write().await;
+                                state.now_playing.marked_playing = true;
+                            }
+
+                            let client = client.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = client.scrobble(&song_id, false).await {
+                                    error!("Failed to scrobble: {}", e);
+                                } else {
+                                    info!("Successfully scrobbled track {}", song_id);
+                                }});
+                        } else {
+                            drop(state);
+                        }
+
+                        let state = self.state.read().await;
+                        // If the currently playing song is > 70% done, mark it as played
+                        if !state.now_playing.marked_played && state.now_playing.duration > 0.0 && state.now_playing.progress_percent() > 0.7 {
+
+                            let song_id = song.id.clone();
+                            drop(state);
+
+                            {
+                                let mut state = self.state.write().await;
+                                state.now_playing.marked_played = true;
+                            }
+
+                            let client = client.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = client.scrobble(&song_id, true).await {
+                                    error!("Failed to scrobble: {}", e);
+                                } else {
+                                    info!("Successfully scrobbled track {}", song_id);
+                                }});
+                        }
                     }
                 }
             }
@@ -337,6 +390,8 @@ impl App {
             state.now_playing.bit_depth = None;
             state.now_playing.format = None;
             state.now_playing.channels = None;
+            state.now_playing.marked_playing = false;
+            state.now_playing.marked_played = false;
         }
 
         info!("Playing: {} (queue pos {})", song.title, pos);
@@ -406,6 +461,8 @@ impl App {
         state.now_playing.channels = None;
         state.queue.clear();
         state.queue_position = None;
+        state.now_playing.marked_playing = false;
+        state.now_playing.marked_played = false;
         Ok(())
     }
 }
