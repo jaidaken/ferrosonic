@@ -19,9 +19,18 @@ pub struct Config {
     #[serde(rename = "Username", default)]
     pub username: String,
 
-    /// Password for authentication
+    /// Password for authentication. Plaintext fallback. Prefer `PasswordFile`
+    /// or the `FERROSONIC_PASSWORD` environment variable to keep secrets out
+    /// of the on-disk config.
     #[serde(rename = "Password", default)]
     pub password: String,
+
+    /// Path to a file containing the password (one line, trailing whitespace
+    /// trimmed). Useful with `pass`, `gopass`, or any secret manager that can
+    /// write to a path. Lower priority than `FERROSONIC_PASSWORD` env var,
+    /// higher priority than inline `Password`.
+    #[serde(rename = "PasswordFile", default, skip_serializing_if = "Option::is_none")]
+    pub password_file: Option<String>,
 
     /// UI Theme name
     #[serde(rename = "Theme", default)]
@@ -60,7 +69,10 @@ impl Config {
         }
     }
 
-    /// Load config from a specific file
+    /// Load config from a specific file. Resolves the password from (in order
+    /// of priority): `FERROSONIC_PASSWORD` env var > `PasswordFile` > inline
+    /// `Password`. Higher-priority sources overwrite lower ones in-place so
+    /// downstream code can keep using `config.password`.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
         debug!("Loading config from {}", path.display());
 
@@ -71,10 +83,46 @@ impl Config {
         }
 
         let contents = std::fs::read_to_string(path)?;
-        let config: Config = toml::from_str(&contents)?;
+        let mut config: Config = toml::from_str(&contents)?;
+        config.resolve_password();
 
         debug!("Config loaded successfully");
         Ok(config)
+    }
+
+    /// Resolve the effective password. Checks sources in priority order and
+    /// overwrites `self.password` with the first one that yields a value.
+    fn resolve_password(&mut self) {
+        if let Ok(env) = std::env::var("FERROSONIC_PASSWORD") {
+            if !env.is_empty() {
+                debug!("Using password from FERROSONIC_PASSWORD env var");
+                self.password = env;
+                return;
+            }
+        }
+        if let Some(pf) = self.password_file.as_ref().filter(|s| !s.is_empty()) {
+            // Expand a leading ~ for convenience
+            let expanded = if let Some(rest) = pf.strip_prefix("~/") {
+                if let Ok(home) = std::env::var("HOME") {
+                    format!("{}/{}", home, rest)
+                } else {
+                    pf.clone()
+                }
+            } else {
+                pf.clone()
+            };
+            match std::fs::read_to_string(&expanded) {
+                Ok(contents) => {
+                    debug!("Using password from {}", expanded);
+                    self.password = contents.trim_end_matches(['\n', '\r', ' ', '\t']).to_string();
+                    return;
+                }
+                Err(e) => {
+                    warn!("PasswordFile {} unreadable: {}; falling back to inline password", expanded, e);
+                }
+            }
+        }
+        // else: keep the inline self.password as-is
     }
 
     /// Save config to the default location

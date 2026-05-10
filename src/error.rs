@@ -1,7 +1,5 @@
 //! Error types for ferrosonic
 
-#![allow(dead_code)]
-
 use thiserror::Error;
 
 /// Main error type for ferrosonic
@@ -54,9 +52,11 @@ pub enum SubsonicError {
     #[error("API error {code}: {message}")]
     Api { code: i32, message: String },
 
+    #[allow(dead_code)] // reserved for future auth-failure surface
     #[error("Authentication failed")]
     AuthFailed,
 
+    #[allow(dead_code)] // reserved for future "no server configured" surface
     #[error("Server not configured")]
     NotConfigured,
 
@@ -85,9 +85,11 @@ pub enum AudioError {
     #[error("PipeWire command failed: {0}")]
     PipeWire(String),
 
+    #[allow(dead_code)] // reserved for queue-operation error paths
     #[error("Queue is empty")]
     QueueEmpty,
 
+    #[allow(dead_code)] // reserved for queue-operation error paths
     #[error("Invalid queue index: {index}")]
     InvalidIndex { index: usize },
 
@@ -112,4 +114,5 @@ pub enum UiError {
 }
 
 /// Result type alias using our Error
+#[allow(dead_code)] // exported for downstream use; not yet referenced internally
 pub type Result<T> = std::result::Result<T, Error>;

@@ -135,7 +135,10 @@ impl App {
                 let mut cur_bg = CavaColor::Default;
 
                 for col in 0..cols {
-                    let cell = screen.cell(row, col).unwrap();
+                    // bounds come from screen.size() above so this should
+                    // always succeed, but defensively skip rather than panic
+                    // in the 60Hz render path if vt100 ever changes semantics.
+                    let Some(cell) = screen.cell(row, col) else { continue };
                     let fg = vt100_color_to_cava(cell.fgcolor());
                     let bg = vt100_color_to_cava(cell.bgcolor());
 

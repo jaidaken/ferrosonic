@@ -1,4 +1,4 @@
-//! Termsonic - A terminal-based Subsonic music client
+//! Ferrosonic - A terminal-based Subsonic music client
 //!
 //! Features:
 //! - Bit-perfect audio playback via MPV and PipeWire sample rate switching
@@ -16,7 +16,7 @@ mod subsonic;
 mod ui;
 
 use clap::Parser;
-use std::fs::{self, File};
+use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -25,7 +25,7 @@ use crate::app::App;
 use crate::config::paths::config_dir;
 use crate::config::Config;
 
-/// Termsonic - Terminal Subsonic Music Client
+/// Ferrosonic - Terminal Subsonic Music Client
 #[derive(Parser, Debug)]
 #[command(name = "ferrosonic")]
 #[command(author, version, about, long_about = None)]
@@ -52,11 +52,16 @@ fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerG
 
     let log_file = log_dir.join("ferrosonic.log");
 
-    // Open log file (truncate on each run)
-    let file = match File::create(&log_file) {
+    // Open log file in append mode so crash debugging context survives restarts.
+    // (TODO: rotate when file exceeds some size threshold.)
+    let file = match OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)
+    {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("Warning: Could not create log file: {}", e);
+            eprintln!("Warning: Could not open log file: {}", e);
             return None;
         }
     };
@@ -93,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize file-based logging (keep guard alive for duration of program)
     let _log_guard = init_logging(args.verbose);
 
-    info!("Termsonic starting...");
+    info!("Ferrosonic starting...");
 
     // Load configuration
     let config = match args.config {
@@ -126,6 +131,6 @@ async fn main() -> anyhow::Result<()> {
         return Err(e.into());
     }
 
-    info!("Termsonic exiting...");
+    info!("Ferrosonic exiting...");
     Ok(())
 }

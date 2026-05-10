@@ -100,7 +100,7 @@ impl RootInterface for MprisPlayer {
     }
 
     async fn identity(&self) -> fdo::Result<String> {
-        Ok("Termsonic".to_string())
+        Ok("Ferrosonic".to_string())
     }
 
     async fn desktop_entry(&self) -> fdo::Result<String> {

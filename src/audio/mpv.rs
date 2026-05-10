@@ -51,8 +51,10 @@ pub struct MpvController {
     process: Option<Child>,
     /// Request ID counter
     request_id: AtomicU64,
-    /// Socket connection
-    socket: Option<UnixStream>,
+    /// Socket connection wrapped in a persistent BufReader. Avoids
+    /// `try_clone` allocation churn per command (was previously cloning the
+    /// UnixStream on every send_command just to make a fresh BufReader).
+    reader: Option<BufReader<UnixStream>>,
 }
 
 impl MpvController {
@@ -62,7 +64,7 @@ impl MpvController {
             socket_path: mpv_socket_path(),
             process: None,
             request_id: AtomicU64::new(1),
-            socket: None,
+            reader: None,
         }
     }
 
@@ -121,19 +123,19 @@ impl MpvController {
             .set_read_timeout(Some(Duration::from_millis(100)))
             .map_err(AudioError::MpvSocket)?;
 
-        self.socket = Some(stream);
+        self.reader = Some(BufReader::new(stream));
         debug!("Connected to MPV socket");
         Ok(())
     }
 
     /// Check if MPV is running
     pub fn is_running(&self) -> bool {
-        self.socket.is_some()
+        self.reader.is_some()
     }
 
     /// Send a command to MPV
     fn send_command(&mut self, args: Vec<Value>) -> Result<Option<Value>, AudioError> {
-        let socket = self.socket.as_mut().ok_or(AudioError::MpvNotRunning)?;
+        let reader = self.reader.as_mut().ok_or(AudioError::MpvNotRunning)?;
 
         let request_id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let cmd = MpvCommand {
@@ -144,13 +146,16 @@ impl MpvController {
         let json = serde_json::to_string(&cmd)?;
         debug!("Sending MPV command: {}", json);
 
-        writeln!(socket, "{}", json).map_err(|e| AudioError::MpvIpc(e.to_string()))?;
-        socket
-            .flush()
-            .map_err(|e| AudioError::MpvIpc(e.to_string()))?;
+        // Write through the BufReader's underlying UnixStream — same socket
+        // we read from, no clone needed.
+        {
+            let socket = reader.get_mut();
+            writeln!(socket, "{}", json).map_err(|e| AudioError::MpvIpc(e.to_string()))?;
+            socket
+                .flush()
+                .map_err(|e| AudioError::MpvIpc(e.to_string()))?;
+        }
 
-        // Read response
-        let mut reader = BufReader::new(socket.try_clone().map_err(AudioError::MpvSocket)?);
         let mut line = String::new();
 
         loop {
@@ -350,7 +355,7 @@ impl MpvController {
 
     /// Quit MPV
     pub fn quit(&mut self) -> Result<(), AudioError> {
-        if self.socket.is_some() {
+        if self.reader.is_some() {
             let _ = self.send_command(vec![json!("quit")]);
         }
 
@@ -359,7 +364,7 @@ impl MpvController {
             let _ = child.wait();
         }
 
-        self.socket = None;
+        self.reader = None;
         let _ = std::fs::remove_file(&self.socket_path);
 
         info!("MPV shut down");
