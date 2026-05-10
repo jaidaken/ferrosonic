@@ -208,11 +208,28 @@ impl DaemonCore {
         self.emit(DaemonEvent::QueueChanged { queue, position });
     }
 
-    /// Build a full snapshot of the daemon state. Used to seed the TUI
-    /// mirror at connect time. Allocates a fresh `DaemonState` clone.
+    /// Build a snapshot of the daemon state for a connecting client.
+    /// The Subsonic password is scrubbed before sending — the TUI never
+    /// makes server requests directly, only the daemon does, so it
+    /// doesn't need the credential.
     pub async fn snapshot(&self) -> DaemonState {
-        let state = self.state.read().await;
-        state.daemon.clone()
+        let mut snap = {
+            let state = self.state.read().await;
+            state.daemon.clone()
+        };
+        snap.config.password.clear();
+        snap.config.password_file = None;
+        snap
+    }
+
+    async fn emit_config_changed(&self) {
+        let mut cfg = {
+            let state = self.state.read().await;
+            state.daemon.config.clone()
+        };
+        cfg.password.clear();
+        cfg.password_file = None;
+        self.emit(DaemonEvent::ConfigChanged(cfg));
     }
 }
 
@@ -1043,11 +1060,7 @@ impl DaemonCore {
         self.refresh_artists().await;
         self.refresh_playlists().await;
 
-        let cfg = {
-            let state = self.state.read().await;
-            state.daemon.config.clone()
-        };
-        self.emit(DaemonEvent::ConfigChanged(cfg));
+        self.emit_config_changed().await;
         Ok(())
     }
 
@@ -1079,11 +1092,7 @@ impl DaemonCore {
                 .save_default()
                 .map_err(Error::Config)?;
         }
-        let cfg = {
-            let state = self.state.read().await;
-            state.daemon.config.clone()
-        };
-        self.emit(DaemonEvent::ConfigChanged(cfg));
+        self.emit_config_changed().await;
         Ok(())
     }
 
@@ -1098,11 +1107,7 @@ impl DaemonCore {
                 .save_default()
                 .map_err(Error::Config)?;
         }
-        let cfg = {
-            let state = self.state.read().await;
-            state.daemon.config.clone()
-        };
-        self.emit(DaemonEvent::ConfigChanged(cfg));
+        self.emit_config_changed().await;
         Ok(())
     }
 
@@ -1119,11 +1124,7 @@ impl DaemonCore {
                 .save_default()
                 .map_err(Error::Config)?;
         }
-        let cfg = {
-            let state = self.state.read().await;
-            state.daemon.config.clone()
-        };
-        self.emit(DaemonEvent::ConfigChanged(cfg));
+        self.emit_config_changed().await;
         Ok(())
     }
 
@@ -1139,11 +1140,7 @@ impl DaemonCore {
                 .save_default()
                 .map_err(Error::Config)?;
         }
-        let cfg = {
-            let state = self.state.read().await;
-            state.daemon.config.clone()
-        };
-        self.emit(DaemonEvent::ConfigChanged(cfg));
+        self.emit_config_changed().await;
         Ok(())
     }
 }

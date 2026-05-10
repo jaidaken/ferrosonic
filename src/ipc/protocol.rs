@@ -231,22 +231,6 @@ pub enum DaemonEvent {
     Shutdown,
 }
 
-/// Which slice of the library cache to query (used by `LoadAlbum` /
-/// `LoadPlaylist` request paths). Retained for callers that want to
-/// poke a specific cache slot; phase 6 events carry payloads inline
-/// instead of a section discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum LibrarySection {
-    Starred,
-    Random,
-    Artists,
-    Albums,
-    AlbumSongs,
-    Playlists,
-    PlaylistSongs,
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // Errors
 // ────────────────────────────────────────────────────────────────────────────

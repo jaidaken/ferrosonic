@@ -132,8 +132,7 @@ impl App {
                             // Fix up client selection so it points at
                             // the same song relative to the trimmed queue.
                             if let (Some(p), Some(sel)) = (pos, sel_before) {
-                                state.client.queue_state.selected =
-                                    Some(if sel < p { 0 } else { sel - p });
+                                state.client.queue_state.selected = Some(sel.saturating_sub(p));
                             }
                         }
                     }

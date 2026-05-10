@@ -326,10 +326,10 @@ pub async fn start_mpris_server(
     Ok(server)
 }
 
-/// Update MPRIS properties when state changes. Phase 6 wires this to
-/// `DaemonEvent::NowPlayingChanged` / `QueueChanged` so D-Bus property
-/// notifications stay in sync without the TUI driving them.
-#[allow(dead_code)]
+/// Push `PropertiesChanged` to MPRIS subscribers. Called by the
+/// app-side MPRIS pump task on `NowPlayingChanged` / `QueueChanged`
+/// events so D-Bus clients (waybar, GNOME shell) see updates without
+/// polling.
 pub async fn update_mpris_properties(
     server: &Server<MprisPlayer>,
     state: &SharedState,

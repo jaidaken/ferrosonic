@@ -32,7 +32,7 @@ use crate::config::Config;
 use crate::daemon::DaemonCore;
 use crate::error::{Error, UiError};
 use crate::ipc::{DaemonClient, DaemonRequest, EnqueueMode, InProcessClient};
-use crate::mpris::server::{start_mpris_server, MprisPlayer};
+use crate::mpris::server::{start_mpris_server, update_mpris_properties};
 use crate::ui;
 
 pub use state::*;
@@ -66,8 +66,6 @@ pub struct App {
     pub(crate) cava_parser: Option<vt100::Parser>,
     /// Last mouse click position and time (for second-click detection)
     pub(crate) last_click: Option<(u16, u16, std::time::Instant)>,
-    /// MPRIS D-Bus server
-    pub(crate) mpris_server: Option<mpris_server::Server<MprisPlayer>>,
 }
 
 impl App {
@@ -88,7 +86,6 @@ impl App {
             cava_pty_master: None,
             cava_parser: None,
             last_click: None,
-            mpris_server: None,
         }
     }
 
@@ -110,7 +107,6 @@ impl App {
             cava_pty_master: None,
             cava_parser: None,
             last_click: None,
-            mpris_server: None,
         }
     }
 
@@ -146,7 +142,7 @@ impl App {
         match start_mpris_server(self.state.clone(), self.client.clone()).await {
             Ok(server) => {
                 info!("MPRIS server started");
-                self.mpris_server = Some(server);
+                self.spawn_mpris_pump(server);
             }
             Err(e) => {
                 warn!(
@@ -298,6 +294,27 @@ impl App {
                 warn!("Failed to fetch daemon snapshot: {}", e);
             }
         }
+    }
+
+    fn spawn_mpris_pump(&self, server: mpris_server::Server<crate::mpris::server::MprisPlayer>) {
+        use crate::ipc::DaemonEvent;
+        let mut rx = self.client.subscribe();
+        let state = self.state.clone();
+        tokio::spawn(async move {
+            let server = server;
+            loop {
+                match rx.recv().await {
+                    Ok(DaemonEvent::NowPlayingChanged(_))
+                    | Ok(DaemonEvent::QueueChanged { .. }) => {
+                        let _ = update_mpris_properties(&server, &state).await;
+                    }
+                    Ok(DaemonEvent::Shutdown) => break,
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
     }
 
     /// Spawn the event-pump task. Subscribes to daemon events and
