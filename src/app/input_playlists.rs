@@ -75,7 +75,7 @@ impl App {
                             let playlist_name = playlist.name.clone();
                             drop(state);
 
-                            if let Some(ref client) = self.subsonic {
+                            if let Some(client) = self.subsonic_client().await {
                                 match client.get_playlist(&playlist_id).await {
                                     Ok((_playlist, songs)) => {
                                         let mut state = self.state.write().await;
@@ -109,7 +109,7 @@ impl App {
                             state.daemon.queue.clear();
                             state.daemon.queue.extend(songs);
                             drop(state);
-                            return self.play_queue_position(idx).await;
+                            return self.core.play_queue_position(idx).await;
                         }
                     }
                 }
@@ -156,7 +156,7 @@ impl App {
                     state.daemon.queue.clear();
                     state.daemon.queue.extend(songs);
                     drop(state);
-                    return self.play_queue_position(0).await;
+                    return self.core.play_queue_position(0).await;
                 }
             }
             _ => {}

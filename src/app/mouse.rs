@@ -37,19 +37,19 @@ impl App {
                         state.client.page = tab_page;
                     }
                     HeaderRegion::PrevButton => {
-                        return self.prev_track().await;
+                        return self.core.prev_track().await;
                     }
                     HeaderRegion::PlayButton => {
-                        return self.toggle_pause().await;
+                        return self.core.toggle_pause().await;
                     }
                     HeaderRegion::PauseButton => {
-                        return self.toggle_pause().await;
+                        return self.core.toggle_pause().await;
                     }
                     HeaderRegion::StopButton => {
-                        return self.stop_playback().await;
+                        return self.core.stop_playback().await;
                     }
                     HeaderRegion::NextButton => {
-                        return self.next_track().await;
+                        return self.core.next_track().await;
                     }
                 }
             }
@@ -72,9 +72,7 @@ impl App {
                     if bar_width > 0 && rel_x >= bar_start && rel_x < bar_start + bar_width {
                         let fraction = (rel_x - bar_start) as f64 / bar_width as f64;
                         let seek_pos = fraction * duration;
-                        let _ = self.mpv.seek(seek_pos);
-                        let mut state = self.state.write().await;
-                        state.daemon.now_playing.position = seek_pos;
+                        let _ = self.core.seek(seek_pos).await;
                     }
                 }
             }
@@ -131,7 +129,7 @@ impl App {
             if is_second_click {
                 drop(state);
                 self.last_click = Some((0, y, std::time::Instant::now()));
-                return self.play_queue_position(item_index).await;
+                return self.core.play_queue_position(item_index).await;
             }
         }
 

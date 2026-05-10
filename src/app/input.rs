@@ -94,17 +94,17 @@ impl App {
             (KeyCode::Char('p'), KeyModifiers::NONE) | (KeyCode::Char(' '), KeyModifiers::NONE) => {
                 // Toggle pause
                 drop(state);
-                return self.toggle_pause().await;
+                return self.core.toggle_pause().await;
             }
             (KeyCode::Char('l'), KeyModifiers::NONE) => {
                 // Next track
                 drop(state);
-                return self.next_track().await;
+                return self.core.next_track().await;
             }
             (KeyCode::Char('h'), KeyModifiers::NONE) => {
                 // Previous track
                 drop(state);
-                return self.prev_track().await;
+                return self.core.prev_track().await;
             }
             // Cycle theme (global)
             (KeyCode::Char('t'), KeyModifiers::NONE) => {

@@ -16,7 +16,7 @@ impl App {
                         Some(SongOption::Random) => {
                             state.client.songs.selected_option = Some(SongOption::Starred);
                             drop(state);
-                            self.get_starred_songs().await;
+                            self.core.refresh_starred().await;
                         }
                         None => {}
                     };
@@ -38,7 +38,7 @@ impl App {
                         Some(SongOption::Starred) => {
                             state.client.songs.selected_option = Some(SongOption::Random);
                             drop(state);
-                            self.get_random_songs().await;
+                            self.core.refresh_random().await;
                         }
                         Some(SongOption::Random) => {}
                         None => {}
@@ -72,7 +72,7 @@ impl App {
 
                 drop(state);
 
-                return self.play_queue_position(selected_song).await;
+                return self.core.play_queue_position(selected_song).await;
             }
             KeyCode::Tab => state.client.songs.focus = if state.client.songs.focus == 1 { 0 } else { 1 },
             _ => {}

@@ -1,5 +1,3 @@
-use tracing::error;
-
 use crate::error::Error;
 
 use super::*;
@@ -47,7 +45,7 @@ impl App {
                                 state.client.artists.expanded.remove(&artist_id);
                             } else if !state.daemon.library.albums_cache.contains_key(&artist_id) {
                                 drop(state);
-                                if let Some(ref client) = self.subsonic {
+                                if let Some(client) = self.subsonic_client().await {
                                     match client.get_artist(&artist_id).await {
                                         Ok((_artist, albums)) => {
                                             let mut state = self.state.write().await;
@@ -73,7 +71,7 @@ impl App {
                             let album_name = album.name.clone();
                             drop(state);
 
-                            if let Some(ref client) = self.subsonic {
+                            if let Some(client) = self.subsonic_client().await {
                                 match client.get_album(&album_id).await {
                                     Ok((_album, songs)) => {
                                         if songs.is_empty() {
@@ -106,12 +104,7 @@ impl App {
                                         drop(state);
 
                                         if let Ok(url) = stream_url {
-                                            if self.mpv.is_paused().unwrap_or(false) {
-                                                let _ = self.mpv.resume();
-                                            }
-                                            if let Err(e) = self.mpv.loadfile(&url) {
-                                                error!("Failed to play: {}", e);
-                                            }
+                                            self.core.play_url_now(&url).await;
                                         }
                                     }
                                     Err(e) => {
@@ -129,7 +122,7 @@ impl App {
                     if let TreeItem::Album { album } = &tree_items[item_index] {
                         let album_id = album.id.clone();
                         drop(state);
-                        if let Some(ref client) = self.subsonic {
+                        if let Some(client) = self.subsonic_client().await {
                             if let Ok((_album, songs)) = client.get_album(&album_id).await {
                                 let mut state = self.state.write().await;
                                 state.client.artists.songs = songs;
@@ -174,14 +167,9 @@ impl App {
                     state.client.notify(format!("Playing: {}", song.title));
                     drop(state);
 
-                    if let Some(ref client) = self.subsonic {
+                    if let Some(client) = self.subsonic_client().await {
                         if let Ok(url) = client.get_stream_url(&song.id) {
-                            if self.mpv.is_paused().unwrap_or(false) {
-                                let _ = self.mpv.resume();
-                            }
-                            if let Err(e) = self.mpv.loadfile(&url) {
-                                error!("Failed to play: {}", e);
-                            }
+                            self.core.play_url_now(&url).await;
                         }
                     }
                     self.last_click = Some((x, y, std::time::Instant::now()));

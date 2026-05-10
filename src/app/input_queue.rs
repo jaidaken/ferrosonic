@@ -34,7 +34,7 @@ impl App {
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx < state.daemon.queue.len() {
                         drop(state);
-                        return self.play_queue_position(idx).await;
+                        return self.core.play_queue_position(idx).await;
                     }
                 }
             }

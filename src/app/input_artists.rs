@@ -82,7 +82,7 @@ impl App {
                         });
                     if let Some(album_id) = album_id {
                         drop(state);
-                        if let Some(ref client) = self.subsonic {
+                        if let Some(client) = self.subsonic_client().await {
                             if let Ok((_album, songs)) = client.get_album(&album_id).await {
                                 let mut state = self.state.write().await;
                                 state.client.artists.songs = songs;
@@ -125,7 +125,7 @@ impl App {
                         });
                     if let Some(album_id) = album_id {
                         drop(state);
-                        if let Some(ref client) = self.subsonic {
+                        if let Some(client) = self.subsonic_client().await {
                             if let Ok((_album, songs)) = client.get_album(&album_id).await {
                                 let mut state = self.state.write().await;
                                 state.client.artists.songs = songs;
@@ -161,7 +161,7 @@ impl App {
 
                                     drop(state);
 
-                                    if let Some(ref client) = self.subsonic {
+                                    if let Some(client) = self.subsonic_client().await {
                                         match client.get_artist(&artist_id).await {
                                             Ok((_artist, albums)) => {
                                                 let mut artists_songs: Vec<_> = Vec::new();
@@ -204,7 +204,7 @@ impl App {
 
                                                 drop(state);
 
-                                                return self.play_queue_position(0).await;
+                                                return self.core.play_queue_position(0).await;
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
@@ -220,7 +220,7 @@ impl App {
 
                                     drop(state);
 
-                                    if let Some(ref client) = self.subsonic {
+                                    if let Some(client) = self.subsonic_client().await {
                                         match client.get_album(&album_id).await {
                                             Ok((_album, songs)) => {
                                                 if songs.is_empty() {
@@ -242,7 +242,7 @@ impl App {
 
                                                 drop(state);
 
-                                                return self.play_queue_position(0).await;
+                                                return self.core.play_queue_position(0).await;
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
@@ -273,7 +273,7 @@ impl App {
                                         state.client.artists.expanded.remove(&artist_id);
                                     } else if !state.daemon.library.albums_cache.contains_key(&artist_id) {
                                         drop(state);
-                                        if let Some(ref client) = self.subsonic {
+                                        if let Some(client) = self.subsonic_client().await {
                                             match client.get_artist(&artist_id).await {
                                                 Ok((_artist, albums)) => {
                                                     let mut state = self.state.write().await;
@@ -308,7 +308,7 @@ impl App {
                                     let album_name = album.name.clone();
                                     drop(state);
 
-                                    if let Some(ref client) = self.subsonic {
+                                    if let Some(client) = self.subsonic_client().await {
                                         match client.get_album(&album_id).await {
                                             Ok((_album, songs)) => {
                                                 if songs.is_empty() {
@@ -346,12 +346,7 @@ impl App {
 
                                                 match stream_url {
                                                     Ok(url) => {
-                                                        if self.mpv.is_paused().unwrap_or(false) {
-                                                            let _ = self.mpv.resume();
-                                                        }
-                                                        if let Err(e) = self.mpv.loadfile(&url) {
-                                                            error!("Failed to play: {}", e);
-                                                        }
+                                                        self.core.play_url_now(&url).await;
                                                     }
                                                     Err(e) => {
                                                         error!("Failed to get stream URL: {}", e);
@@ -392,15 +387,10 @@ impl App {
                             state.client.notify(format!("Playing: {}", song.title));
                             drop(state);
 
-                            if let Some(ref client) = self.subsonic {
+                            if let Some(client) = self.subsonic_client().await {
                                 match client.get_stream_url(&song.id) {
                                     Ok(url) => {
-                                        if self.mpv.is_paused().unwrap_or(false) {
-                                            let _ = self.mpv.resume();
-                                        }
-                                        if let Err(e) = self.mpv.loadfile(&url) {
-                                            error!("Failed to play: {}", e);
-                                        }
+                                        self.core.play_url_now(&url).await;
                                     }
                                     Err(e) => {
                                         error!("Failed to get stream URL: {}", e);

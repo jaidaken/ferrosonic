@@ -1,6 +1,5 @@
 //! Main application module
 
-pub mod actions;
 mod cava;
 pub mod client_state;
 mod input;
@@ -14,11 +13,10 @@ pub mod models;
 mod mouse;
 mod mouse_artists;
 mod mouse_playlists;
-mod playback;
-mod repo;
 pub mod state;
 
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::{
@@ -27,98 +25,79 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::app::models::SongOption;
-use crate::audio::mpv::MpvController;
-use crate::audio::pipewire::PipeWireController;
 use crate::config::Config;
+use crate::daemon::DaemonCore;
 use crate::error::{Error, UiError};
-use crate::mpris::server::{start_mpris_server, update_mpris_properties, MprisPlayer};
-use crate::subsonic::SubsonicClient;
+use crate::mpris::server::{start_mpris_server, MprisPlayer};
 use crate::ui;
 
-pub use actions::*;
 pub use state::*;
 
-/// Channel buffer size
-const CHANNEL_SIZE: usize = 256;
-
-/// Main application
+/// Main application — TUI client side. After phase 2.2 the audio session
+/// (queue, playback, library, MPV/PipeWire/Subsonic) is owned by
+/// `DaemonCore`. `App` holds an `Arc<DaemonCore>` and runs the cava
+/// subprocess + the TUI event loop. Phase 5 splits `App` into the
+/// `ferrosonic` binary and `DaemonCore` into `ferrosonicd`.
 pub struct App {
-    /// Shared application state
-    state: SharedState,
-    /// Subsonic client
-    subsonic: Option<SubsonicClient>,
-    /// MPV audio controller
-    mpv: MpvController,
-    /// PipeWire sample rate controller
-    pipewire: PipeWireController,
-    /// Channel to send audio actions
-    audio_tx: mpsc::Sender<AudioAction>,
+    /// Daemon-side core: state, mpv, pipewire, subsonic, event broadcast.
+    pub(crate) core: Arc<DaemonCore>,
+    /// Same `Arc<RwLock<AppState>>` that `core.state` wraps. Held here so
+    /// render/input code reads/writes `state.client.X` without going
+    /// through the core. Phase 6 replaces this with a client-side
+    /// snapshot updated from `core.event_tx`.
+    pub(crate) state: SharedState,
     /// Cava child process
-    cava_process: Option<std::process::Child>,
+    pub(crate) cava_process: Option<std::process::Child>,
     /// Cava pty master fd for reading output
-    cava_pty_master: Option<std::fs::File>,
+    pub(crate) cava_pty_master: Option<std::fs::File>,
     /// Cava terminal parser
-    cava_parser: Option<vt100::Parser>,
+    pub(crate) cava_parser: Option<vt100::Parser>,
     /// Last mouse click position and time (for second-click detection)
-    last_click: Option<(u16, u16, std::time::Instant)>,
-    /// Channel to receive audio actions (from MPRIS)
-    audio_rx: mpsc::Receiver<AudioAction>,
+    pub(crate) last_click: Option<(u16, u16, std::time::Instant)>,
     /// MPRIS D-Bus server
-    mpris_server: Option<mpris_server::Server<MprisPlayer>>,
+    pub(crate) mpris_server: Option<mpris_server::Server<MprisPlayer>>,
 }
 
 impl App {
-    /// Create a new application instance
+    /// Create a new application instance. Builds the shared `AppState`,
+    /// then constructs the `DaemonCore` against it. After this call the
+    /// caller owns both `self.core` and `self.state` — they reference the
+    /// same `Arc<RwLock<AppState>>` internally.
     pub fn new(config: Config) -> Self {
-        let (audio_tx, audio_rx) = mpsc::channel(CHANNEL_SIZE);
-
         let state = new_shared_state(config.clone());
-
-        let subsonic = if config.is_configured() {
-            match SubsonicClient::new(&config.base_url, &config.username, &config.password) {
-                Ok(client) => Some(client),
-                Err(e) => {
-                    warn!("Failed to create Subsonic client: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let core = DaemonCore::new(state.clone(), &config);
 
         Self {
+            core,
             state,
-            subsonic,
-            mpv: MpvController::new(),
-            pipewire: PipeWireController::new(),
-            audio_tx,
             cava_process: None,
             cava_pty_master: None,
             cava_parser: None,
             last_click: None,
-            audio_rx,
             mpris_server: None,
         }
     }
 
     /// Run the application
     pub async fn run(&mut self) -> Result<(), Error> {
-        // Start MPV
-        if let Err(e) = self.mpv.start() {
+        // Start MPV via the daemon core
+        if let Err(e) = self.core.start_mpv().await {
             warn!("Failed to start MPV: {} - audio playback won't work", e);
             let mut state = self.state.write().await;
-            state.client.notify_error(format!("Failed to start MPV: {}. Is mpv installed?", e));
+            state
+                .client
+                .notify_error(format!("Failed to start MPV: {}. Is mpv installed?", e));
             drop(state);
         } else {
             info!("MPV started successfully, ready for playback");
         }
 
-        // Start MPRIS server for media key support
-        match start_mpris_server(self.state.clone(), self.audio_tx.clone()).await {
+        // Start MPRIS server for media key support — passes Arc<DaemonCore>
+        // so the MPRIS interface can call playback methods directly.
+        match start_mpris_server(self.state.clone(), self.core.clone()).await {
             Ok(server) => {
                 info!("MPRIS server started");
                 self.mpris_server = Some(server);
@@ -185,8 +164,11 @@ impl App {
         info!("Terminal initialized");
 
         // Load initial data if configured
-        if self.subsonic.is_some() {
-            self.load_initial_data().await;
+        {
+            let has_client = self.core.subsonic.read().await.is_some();
+            if has_client {
+                self.load_initial_data().await;
+            }
         }
 
         // Main event loop
@@ -196,7 +178,7 @@ impl App {
         self.stop_cava();
 
         // Cleanup MPV
-        let _ = self.mpv.quit();
+        self.core.quit_mpv().await;
 
         // Cleanup terminal
         disable_raw_mode().map_err(UiError::TerminalInit)?;
@@ -212,15 +194,31 @@ impl App {
         result
     }
 
-    /// Load initial data from server
-    async fn load_initial_data(&mut self) {
-        let mut state = self.state.write().await;
-        state.client.songs.selected_option = Some(SongOption::Starred);
-        drop(state);
+    /// Cheap snapshot of the daemon's Subsonic client (`reqwest::Client`
+    /// is Arc-wrapped internally). Returns `None` when not configured.
+    /// Lets input/mouse handlers run direct API calls without holding a
+    /// `RwLockReadGuard` across `.await` points.
+    pub(crate) async fn subsonic_client(&self) -> Option<crate::subsonic::SubsonicClient> {
+        self.core.subsonic.read().await.clone()
+    }
 
-        self.get_starred_songs().await;
-        self.get_artists().await;
-        self.get_playlists().await;
+    /// Replace the daemon's Subsonic client (e.g., after Server-page
+    /// edit). Phase 2.4 routes this through a `DaemonRequest`; phase 2.2
+    /// uses the in-process write directly.
+    pub(crate) async fn set_subsonic_client(&self, client: Option<crate::subsonic::SubsonicClient>) {
+        *self.core.subsonic.write().await = client;
+    }
+
+    /// Load initial data from server. Delegates the library fetches to
+    /// `DaemonCore`; only the page-default selection is client state.
+    pub(crate) async fn load_initial_data(&mut self) {
+        {
+            let mut state = self.state.write().await;
+            state.client.songs.selected_option = Some(SongOption::Starred);
+        }
+        self.core.refresh_starred().await;
+        self.core.refresh_artists().await;
+        self.core.refresh_playlists().await;
     }
 
     /// Main event loop
@@ -261,52 +259,16 @@ impl App {
                 self.handle_event(event).await?;
             }
 
-            // Process any pending audio actions (from MPRIS)
-            while let Ok(action) = self.audio_rx.try_recv() {
-                match action {
-                    AudioAction::TogglePause => {
-                        let _ = self.toggle_pause().await;
-                    }
-                    AudioAction::Pause => {
-                        let _ = self.pause_playback().await;
-                    }
-                    AudioAction::Resume => {
-                        let _ = self.resume_playback().await;
-                    }
-                    AudioAction::Next => {
-                        let _ = self.next_track().await;
-                    }
-                    AudioAction::Previous => {
-                        let _ = self.prev_track().await;
-                    }
-                    AudioAction::Stop => {
-                        let _ = self.stop_playback().await;
-                    }
-                    AudioAction::Seek(pos) => {
-                        if let Err(e) = self.mpv.seek(pos) {
-                            warn!("MPRIS seek failed: {}", e);
-                        } else {
-                            let mut state = self.state.write().await;
-                            state.daemon.now_playing.position = pos;
-                        }
-                    }
-                    AudioAction::SeekRelative(offset) => {
-                        let _ = self.mpv.seek_relative(offset);
-                    }
-                    AudioAction::SetVolume(vol) => {
-                        let _ = self.mpv.set_volume(vol);
-                    }
-                }
-            }
-
             // Read cava output (non-blocking)
             self.read_cava_output().await;
 
-            // Update playback position every ~500ms
+            // Update playback position every ~500ms. Phase 2.5 lifts this
+            // into a `tokio::spawn`'d task on `core` itself; for now it's
+            // driven from the event loop tick.
             let now = std::time::Instant::now();
             if now.duration_since(last_playback_update) >= Duration::from_millis(500) {
                 last_playback_update = now;
-                self.update_playback_info().await;
+                self.core.update_playback_info().await;
             }
 
             // Check for notification auto-clear (after 2 seconds)

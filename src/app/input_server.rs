@@ -111,7 +111,7 @@ impl App {
                         // Create new client and load data
                         match SubsonicClient::new(&url, &user, &pass) {
                             Ok(client) => {
-                                self.subsonic = Some(client);
+                                self.set_subsonic_client(Some(client)).await;
                                 self.load_initial_data().await;
                                 let mut state = self.state.write().await;
                                 state.client.server_state.status =
