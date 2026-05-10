@@ -224,6 +224,10 @@ impl DaemonClient for InProcessClient {
                 self.core.set_cava_size(sz).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::SetDaemonEnabled(on) => {
+                self.core.set_daemon_enabled(on).await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
 
             // ── Lifecycle ───────────────────────────────────────────
             DaemonRequest::Subscribe => {

@@ -16,9 +16,12 @@
 //! Path lengths matter: AF_UNIX paths max out at 108 bytes on Linux.
 //! `$XDG_RUNTIME_DIR` is typically `/run/user/<uid>`, well under that.
 
-#![allow(dead_code)] // wired to ferrosonicd binary in phase 5
+#![allow(dead_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use tokio::net::UnixStream;
 
 /// Filename inside the IPC directory.
 const SOCKET_FILENAME: &str = "ferrosonicd.sock";
@@ -70,4 +73,26 @@ pub fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
     perm.set_mode(0o700);
     let _ = std::fs::set_permissions(parent, perm);
     Ok(())
+}
+
+/// Poll the socket path until a connection succeeds or `timeout`
+/// elapses. Used by the TUI right after auto-spawning `ferrosonicd` to
+/// wait for it to be ready. Returns `Ok(())` on first successful
+/// connect; `Err` if the deadline passes.
+pub async fn wait_for_socket(path: &Path, timeout: Duration) -> std::io::Result<()> {
+    let deadline = Instant::now() + timeout;
+    let mut delay = Duration::from_millis(25);
+    loop {
+        if UnixStream::connect(path).await.is_ok() {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("daemon socket {} did not become ready", path.display()),
+            ));
+        }
+        tokio::time::sleep(delay).await;
+        delay = (delay * 2).min(Duration::from_millis(200));
+    }
 }

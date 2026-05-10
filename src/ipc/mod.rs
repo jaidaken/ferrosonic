@@ -18,6 +18,7 @@ pub mod path;
 pub mod protocol;
 pub mod server;
 pub mod socket_client;
+pub mod spawn;
 
 #[allow(unused_imports)] // re-exported for future binary split / consumers
 pub use client::{DaemonClient, InProcessClient};

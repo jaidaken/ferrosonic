@@ -11,7 +11,12 @@ enum SettingChange {
     Theme,
     Cava,
     CavaSize,
+    Daemon,
 }
+
+/// Number of settings fields. Used as the upper bound for the down-key
+/// navigation (`selected_field < SETTINGS_FIELD_COUNT - 1`).
+const SETTINGS_FIELD_COUNT: usize = 4;
 
 impl App {
     /// Handle settings page keys
@@ -30,7 +35,7 @@ impl App {
                     }
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if field < 2 {
+                    if field < SETTINGS_FIELD_COUNT - 1 {
                         state.client.settings_state.selected_field = field + 1;
                     }
                 }
@@ -60,6 +65,20 @@ impl App {
                             state.client.notify(format!("Cava Size: {}%", new_size));
                             change = Some(SettingChange::CavaSize);
                         }
+                    }
+                    3 => {
+                        state.client.settings_state.daemon_enabled =
+                            !state.client.settings_state.daemon_enabled;
+                        let status = if state.client.settings_state.daemon_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        };
+                        state.client.notify(format!(
+                            "Daemon: {} (restart to apply)",
+                            status
+                        ));
+                        change = Some(SettingChange::Daemon);
                     }
                     _ => {}
                 },
@@ -91,6 +110,20 @@ impl App {
                                 change = Some(SettingChange::CavaSize);
                             }
                         }
+                        3 => {
+                            state.client.settings_state.daemon_enabled =
+                                !state.client.settings_state.daemon_enabled;
+                            let status = if state.client.settings_state.daemon_enabled {
+                                "On"
+                            } else {
+                                "Off"
+                            };
+                            state.client.notify(format!(
+                                "Daemon: {} (restart to apply)",
+                                status
+                            ));
+                            change = Some(SettingChange::Daemon);
+                        }
                         _ => {}
                     }
                 }
@@ -104,13 +137,14 @@ impl App {
 
         // Snapshot the new client-side values, then dispatch the
         // matching daemon request (it persists + emits ConfigChanged).
-        let (theme_name, cava_enabled, cava_size, gradient, h_gradient) = {
+        let (theme_name, cava_enabled, cava_size, daemon_enabled, gradient, h_gradient) = {
             let state = self.state.read().await;
             let s = &state.client.settings_state;
             (
                 s.theme_name().to_string(),
                 s.cava_enabled,
                 s.cava_size,
+                s.daemon_enabled,
                 s.current_theme().cava_gradient.clone(),
                 s.current_theme().cava_horizontal_gradient.clone(),
             )
@@ -119,6 +153,7 @@ impl App {
             SettingChange::Theme => DaemonRequest::SetTheme(theme_name),
             SettingChange::Cava => DaemonRequest::SetCavaEnabled(cava_enabled),
             SettingChange::CavaSize => DaemonRequest::SetCavaSize(cava_size),
+            SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
         };
         if let Err(e) = self.client.request(req).await {
             let mut state = self.state.write().await;
@@ -127,7 +162,7 @@ impl App {
         }
 
         // Cava lifecycle stays client-side — start/stop/restart based
-        // on what changed.
+        // on what changed. Daemon toggle does not affect cava.
         let cava_running = self.cava_parser.is_some();
         let cs = cava_size as u32;
         match change {
@@ -146,6 +181,7 @@ impl App {
                     self.start_cava(&gradient, &h_gradient, cs);
                 }
             }
+            SettingChange::Daemon => {}
         }
 
         Ok(())

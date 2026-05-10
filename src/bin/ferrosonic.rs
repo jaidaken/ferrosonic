@@ -1,21 +1,6 @@
-//! Ferrosonic TUI client binary.
-//!
-//! Connect order at startup:
-//! 1. Try `SocketClient::connect($XDG_RUNTIME_DIR/ferrosonic/ferrosonicd.sock)`.
-//!    If a daemon is running, use it. The TUI is a thin view: queue,
-//!    library, and playback live in `ferrosonicd`; events arrive via
-//!    `DaemonEvent` broadcasts and update the local mirror.
-//! 2. If the connect fails (daemon not running), fall back to the
-//!    in-process build: `App::new(config)` constructs a private
-//!    `DaemonCore`. Music stops when the TUI exits, but the user can
-//!    still play. Phase 7 adds auto-spawn here so the daemon is
-//!    started transparently when the connect fails.
-//!
-//! Override the connect with `--standalone` to force the in-process
-//! path (handy for testing).
-
 use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::Parser;
 use tracing::{info, warn};
@@ -25,7 +10,10 @@ use ferrosonic::app::App;
 use ferrosonic::config::paths::config_dir;
 use ferrosonic::config::Config;
 use ferrosonic::ipc::path::socket_path;
+use ferrosonic::ipc::spawn::spawn_and_wait;
 use ferrosonic::ipc::SocketClient;
+
+const DAEMON_SPAWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Ferrosonic - Terminal Subsonic Music Client
 #[derive(Parser, Debug)]
@@ -121,19 +109,18 @@ async fn main() -> anyhow::Result<()> {
     let mut app = if args.standalone {
         info!("--standalone: forcing in-process mode");
         App::new(config)
+    } else if !config.daemon {
+        info!("Daemon mode disabled in config; running in-process");
+        App::new(config)
     } else {
         let path = socket_path();
-        match SocketClient::connect(&path).await {
-            Ok(client) => {
+        match connect_or_spawn(&path).await {
+            Some(client) => {
                 info!("Connected to ferrosonicd at {}", path.display());
                 App::with_remote_client(client, config)
             }
-            Err(e) => {
-                warn!(
-                    "ferrosonicd not reachable at {} ({}); falling back to in-process mode",
-                    path.display(),
-                    e
-                );
+            None => {
+                warn!("ferrosonicd unreachable; running in-process this session");
                 App::new(config)
             }
         }
@@ -146,4 +133,14 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Ferrosonic exiting...");
     Ok(())
+}
+
+async fn connect_or_spawn(path: &std::path::Path) -> Option<std::sync::Arc<SocketClient>> {
+    if let Ok(client) = SocketClient::connect(path).await {
+        return Some(client);
+    }
+    match spawn_and_wait(path, DAEMON_SPAWN_TIMEOUT).await {
+        Ok(()) => SocketClient::connect(path).await.ok(),
+        Err(_) => None,
+    }
 }

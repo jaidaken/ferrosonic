@@ -9,7 +9,7 @@ use tracing::{debug, info, warn};
 use crate::error::ConfigError;
 
 /// Main application configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Subsonic server base URL
     #[serde(rename = "BaseURL", default)]
@@ -43,11 +43,38 @@ pub struct Config {
     /// Cava visualizer height percentage (10-80, step 5)
     #[serde(rename = "CavaSize", default = "Config::default_cava_size")]
     pub cava_size: u8,
+
+    /// Enable the ferrosonicd daemon. When `true` (default) the TUI
+    /// connects to a running daemon and auto-spawns one if missing.
+    /// When `false` the TUI always runs in standalone (in-process)
+    /// mode and music stops when the terminal closes. The `--standalone`
+    /// CLI flag overrides this to `false` for a one-off launch.
+    #[serde(rename = "Daemon", default = "Config::default_daemon")]
+    pub daemon: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            base_url: String::new(),
+            username: String::new(),
+            password: String::new(),
+            password_file: None,
+            theme: String::new(),
+            cava: false,
+            cava_size: Self::default_cava_size(),
+            daemon: Self::default_daemon(),
+        }
+    }
 }
 
 impl Config {
     fn default_cava_size() -> u8 {
         40
+    }
+
+    fn default_daemon() -> bool {
+        true
     }
 
     /// Create a new empty config

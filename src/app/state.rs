@@ -206,7 +206,7 @@ pub struct ServerState {
 /// Settings page state
 #[derive(Debug, Clone)]
 pub struct SettingsState {
-    /// Currently focused field (0=Theme, 1=Cava)
+    /// Currently focused field (0=Theme, 1=Cava, 2=CavaSize, 3=Daemon).
     pub selected_field: usize,
     /// Available themes (Default + loaded from files)
     pub themes: Vec<ThemeData>,
@@ -216,6 +216,10 @@ pub struct SettingsState {
     pub cava_enabled: bool,
     /// Cava visualizer height percentage (10-80, step 5)
     pub cava_size: u8,
+    /// Daemon mode enabled. When `true`, `ferrosonic` auto-spawns and
+    /// connects to `ferrosonicd` (music persists across TUI close).
+    /// When `false`, runs standalone. Takes effect on next launch.
+    pub daemon_enabled: bool,
 }
 
 impl Default for SettingsState {
@@ -226,6 +230,7 @@ impl Default for SettingsState {
             theme_index: 0,
             cava_enabled: false,
             cava_size: 40,
+            daemon_enabled: true,
         }
     }
 }
@@ -345,6 +350,8 @@ impl AppState {
         // Initialize cava from config
         state.client.settings_state.cava_enabled = config.cava;
         state.client.settings_state.cava_size = config.cava_size.clamp(10, 80);
+        // Initialize daemon-mode preference from config
+        state.client.settings_state.daemon_enabled = config.daemon;
         state
     }
 

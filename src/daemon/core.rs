@@ -1058,6 +1058,27 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Persist the daemon-mode preference. The setting controls whether
+    /// the *next* TUI launch will attempt to spawn/connect a daemon;
+    /// it does not affect the currently-running daemon.
+    pub async fn set_daemon_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.daemon.config.daemon = on;
+            state
+                .daemon
+                .config
+                .save_default()
+                .map_err(Error::Config)?;
+        }
+        let cfg = {
+            let state = self.state.read().await;
+            state.daemon.config.clone()
+        };
+        self.emit(DaemonEvent::ConfigChanged(cfg));
+        Ok(())
+    }
+
     /// Set cava size (10..=80) and persist.
     pub async fn set_cava_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
         let clamped = size.clamp(10, 80);
