@@ -10,7 +10,10 @@ echo "===================="
 # Detect architecture
 ARCH=$(uname -m)
 case "$ARCH" in
-    x86_64) ASSET_REGEX='ferrosonic-[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*-linux-x86_64' ;;
+    x86_64)
+        TUI_REGEX='ferrosonic-[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*-linux-x86_64'
+        DAEMON_REGEX='ferrosonicd-[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*-linux-x86_64'
+        ;;
     *)
         echo "No precompiled binary for $ARCH. Please build from source."
         echo "See: $REPO#manual-build"
@@ -53,51 +56,65 @@ if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
     else
         echo "Could not install cava automatically. Install it manually from: https://github.com/karlstav/cava"
     fi
-    echo "cava installed. Enable it in ferrosonic under Settings (F5)."
+    echo "cava installed. Enable it in ferrosonic under Settings (F6)."
 else
-    echo "Skipping cava. You can install it later and enable it in Settings (F5)."
+    echo "Skipping cava. You can install it later and enable it in Settings (F6)."
 fi
 
-# Download latest release binary
-echo "Downloading ferrosonic..."
+# Fetch release metadata
+echo "Querying latest release..."
 API_LATEST="https://api.github.com/repos/jaidaken/ferrosonic/releases/latest"
 if ! RELEASE_JSON=$(curl -fsSL "$API_LATEST"); then
     echo "Failed to query latest release metadata from GitHub."
     exit 1
 fi
 
-DOWNLOAD_URL=$(printf '%s\n' "$RELEASE_JSON" \
-    | grep '"browser_download_url"' \
-    | sed -n "s#.*\"\(https://[^\"]*/$ASSET_REGEX\)\".*#\1#p" \
-    | head -n1 \
-)
+extract_url() {
+    printf '%s\n' "$RELEASE_JSON" \
+        | grep '"browser_download_url"' \
+        | sed -n "s#.*\"\(https://[^\"]*/$1\)\".*#\1#p" \
+        | head -n1
+}
 
-if [ -z "$DOWNLOAD_URL" ]; then
-    echo "No release asset matching pattern '$ASSET_REGEX' was found."
+TUI_URL=$(extract_url "$TUI_REGEX")
+DAEMON_URL=$(extract_url "$DAEMON_REGEX")
+
+if [ -z "$TUI_URL" ]; then
+    echo "No release asset matching pattern '$TUI_REGEX' was found."
     exit 1
 fi
 
-LATEST=$(printf '%s\n' "$DOWNLOAD_URL" \
+LATEST=$(printf '%s\n' "$TUI_URL" \
     | sed -n 's#.*/ferrosonic-\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)-linux-x86_64$#\1#p')
 
-TMPFILE=$(mktemp)
-if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMPFILE"; then
-    echo "Failed to download binary from: $DOWNLOAD_URL"
-    rm -f "$TMPFILE"
-    exit 1
+download_and_install() {
+    URL=$1
+    NAME=$2
+    echo "Downloading $NAME..."
+    TMP=$(mktemp)
+    if ! curl -fsSL "$URL" -o "$TMP"; then
+        echo "Failed to download $NAME from: $URL"
+        rm -f "$TMP"
+        exit 1
+    fi
+    if [ ! -s "$TMP" ]; then
+        echo "Download failed: $NAME is empty."
+        rm -f "$TMP"
+        exit 1
+    fi
+    chmod +x "$TMP"
+    sudo mv "$TMP" "$INSTALL_DIR/$NAME"
+}
+
+download_and_install "$TUI_URL" "ferrosonic"
+
+if [ -n "$DAEMON_URL" ]; then
+    download_and_install "$DAEMON_URL" "ferrosonicd"
+else
+    echo "Warning: ferrosonicd binary not found in this release. The TUI will"
+    echo "run in single-process mode (music will stop when the terminal closes)."
 fi
-
-if [ ! -s "$TMPFILE" ]; then
-    echo "Download failed: no binary file was downloaded."
-    rm -f "$TMPFILE"
-    exit 1
-fi
-
-chmod +x "$TMPFILE"
-
-# Install
-sudo mv "$TMPFILE" "$INSTALL_DIR/ferrosonic"
 
 echo ""
-echo "Ferrosonic $LATEST installed to $INSTALL_DIR/ferrosonic"
+echo "Ferrosonic $LATEST installed to $INSTALL_DIR/"
 echo "Run 'ferrosonic' to start."
