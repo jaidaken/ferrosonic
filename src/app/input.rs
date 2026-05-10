@@ -94,17 +94,17 @@ impl App {
             (KeyCode::Char('p'), KeyModifiers::NONE) | (KeyCode::Char(' '), KeyModifiers::NONE) => {
                 // Toggle pause
                 drop(state);
-                return self.core.toggle_pause().await;
+                return self.client.request(DaemonRequest::TogglePause).await.map(|_| ()).map_err(Error::from);
             }
             (KeyCode::Char('l'), KeyModifiers::NONE) => {
                 // Next track
                 drop(state);
-                return self.core.next_track().await;
+                return self.client.request(DaemonRequest::Next).await.map(|_| ()).map_err(Error::from);
             }
             (KeyCode::Char('h'), KeyModifiers::NONE) => {
                 // Previous track
                 drop(state);
-                return self.core.prev_track().await;
+                return self.client.request(DaemonRequest::Previous).await.map(|_| ()).map_err(Error::from);
             }
             // Cycle theme (global)
             (KeyCode::Char('t'), KeyModifiers::NONE) => {

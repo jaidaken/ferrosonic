@@ -109,7 +109,7 @@ impl App {
                             state.daemon.queue.clear();
                             state.daemon.queue.extend(songs);
                             drop(state);
-                            return self.core.play_queue_position(idx).await;
+                            return self.client.request(DaemonRequest::PlayQueueIndex(idx)).await.map(|_| ()).map_err(Error::from);
                         }
                     }
                 }
@@ -156,7 +156,7 @@ impl App {
                     state.daemon.queue.clear();
                     state.daemon.queue.extend(songs);
                     drop(state);
-                    return self.core.play_queue_position(0).await;
+                    return self.client.request(DaemonRequest::PlayQueueIndex(0)).await.map(|_| ()).map_err(Error::from);
                 }
             }
             _ => {}

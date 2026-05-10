@@ -12,7 +12,10 @@
 //! - `DaemonEvent` — push events the daemon broadcasts to all subscribed clients
 //! - `IpcError` — error type for IPC failures (transport, serialization, daemon-side)
 
+pub mod client;
 pub mod protocol;
 
+#[allow(unused_imports)] // re-exported for future client.rs / socket.rs consumers
+pub use client::{DaemonClient, InProcessClient};
 #[allow(unused_imports)] // re-exported for future client.rs / socket.rs consumers
 pub use protocol::{DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError};

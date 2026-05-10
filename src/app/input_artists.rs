@@ -204,7 +204,7 @@ impl App {
 
                                                 drop(state);
 
-                                                return self.core.play_queue_position(0).await;
+                                                return self.client.request(DaemonRequest::PlayQueueIndex(0)).await.map(|_| ()).map_err(Error::from);
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
@@ -242,7 +242,7 @@ impl App {
 
                                                 drop(state);
 
-                                                return self.core.play_queue_position(0).await;
+                                                return self.client.request(DaemonRequest::PlayQueueIndex(0)).await.map(|_| ()).map_err(Error::from);
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;

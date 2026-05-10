@@ -37,19 +37,19 @@ impl App {
                         state.client.page = tab_page;
                     }
                     HeaderRegion::PrevButton => {
-                        return self.core.prev_track().await;
+                        return self.client.request(DaemonRequest::Previous).await.map(|_| ()).map_err(Error::from);
                     }
                     HeaderRegion::PlayButton => {
-                        return self.core.toggle_pause().await;
+                        return self.client.request(DaemonRequest::TogglePause).await.map(|_| ()).map_err(Error::from);
                     }
                     HeaderRegion::PauseButton => {
-                        return self.core.toggle_pause().await;
+                        return self.client.request(DaemonRequest::TogglePause).await.map(|_| ()).map_err(Error::from);
                     }
                     HeaderRegion::StopButton => {
-                        return self.core.stop_playback().await;
+                        return self.client.request(DaemonRequest::Stop).await.map(|_| ()).map_err(Error::from);
                     }
                     HeaderRegion::NextButton => {
-                        return self.core.next_track().await;
+                        return self.client.request(DaemonRequest::Next).await.map(|_| ()).map_err(Error::from);
                     }
                 }
             }
@@ -72,7 +72,7 @@ impl App {
                     if bar_width > 0 && rel_x >= bar_start && rel_x < bar_start + bar_width {
                         let fraction = (rel_x - bar_start) as f64 / bar_width as f64;
                         let seek_pos = fraction * duration;
-                        let _ = self.core.seek(seek_pos).await;
+                        let _ = self.client.request(DaemonRequest::Seek(seek_pos)).await.map(|_| ()).map_err(Error::from);
                     }
                 }
             }
@@ -129,7 +129,7 @@ impl App {
             if is_second_click {
                 drop(state);
                 self.last_click = Some((0, y, std::time::Instant::now()));
-                return self.core.play_queue_position(item_index).await;
+                return self.client.request(DaemonRequest::PlayQueueIndex(item_index)).await.map(|_| ()).map_err(Error::from);
             }
         }
 

@@ -635,6 +635,7 @@ name = "ferrosonic"
 version = "0.2.2"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "crossterm",
  "dirs",

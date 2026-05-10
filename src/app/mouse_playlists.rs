@@ -78,7 +78,7 @@ impl App {
                     state.daemon.queue.extend(songs);
                     drop(state);
                     self.last_click = Some((x, y, std::time::Instant::now()));
-                    return self.core.play_queue_position(item_index).await;
+                    return self.client.request(DaemonRequest::PlayQueueIndex(item_index)).await.map(|_| ()).map_err(Error::from);
                 }
             }
         }

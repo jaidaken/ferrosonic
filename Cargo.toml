@@ -55,6 +55,9 @@ clap = { version = "4", features = ["derive"] }
 # Async channels
 futures = "0.3"
 
+# Async trait methods with `dyn` support (DaemonClient trait)
+async-trait = "0.1"
+
 # Terminal emulator for cava integration
 vt100 = "0.15"
 

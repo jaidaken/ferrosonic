@@ -12,7 +12,7 @@ use url::Url;
 
 use crate::app::state::{NowPlaying, PlaybackState, SharedState};
 use crate::config::Config;
-use crate::daemon::DaemonCore;
+use crate::ipc::{DaemonClient, DaemonRequest};
 use crate::subsonic::auth::generate_auth_params;
 use crate::subsonic::models::Child;
 
@@ -47,12 +47,12 @@ const PLAYER_NAME: &str = "ferrosonic";
 /// MPRIS2 player implementation
 pub struct MprisPlayer {
     state: SharedState,
-    core: Arc<DaemonCore>,
+    client: Arc<dyn DaemonClient>,
 }
 
 impl MprisPlayer {
-    pub fn new(state: SharedState, core: Arc<DaemonCore>) -> Self {
-        Self { state, core }
+    pub fn new(state: SharedState, client: Arc<dyn DaemonClient>) -> Self {
+        Self { state, client }
     }
 
     async fn get_state(&self) -> (NowPlaying, Option<Child>, Config) {
@@ -123,46 +123,58 @@ impl RootInterface for MprisPlayer {
     }
 }
 
+/// Fire-and-forget a request from a synchronous (non-await) context.
+/// MPRIS handler futures must be `Send + Sync`, but our async-trait
+/// `DaemonClient::request` returns only `Send + !Sync`. Spawning the
+/// request onto the runtime sidesteps the bound mismatch and matches
+/// the prior fire-and-forget mpsc-send semantics MPRIS used.
+fn fire(client: &Arc<dyn DaemonClient>, req: DaemonRequest) {
+    let client = client.clone();
+    tokio::spawn(async move {
+        let _ = client.request(req).await;
+    });
+}
+
 impl PlayerInterface for MprisPlayer {
     async fn next(&self) -> fdo::Result<()> {
-        let _ = self.core.next_track().await;
+        fire(&self.client, DaemonRequest::Next);
         Ok(())
     }
 
     async fn previous(&self) -> fdo::Result<()> {
-        let _ = self.core.prev_track().await;
+        fire(&self.client, DaemonRequest::Previous);
         Ok(())
     }
 
     async fn pause(&self) -> fdo::Result<()> {
-        let _ = self.core.pause_playback().await;
+        fire(&self.client, DaemonRequest::Pause);
         Ok(())
     }
 
     async fn play_pause(&self) -> fdo::Result<()> {
-        let _ = self.core.toggle_pause().await;
+        fire(&self.client, DaemonRequest::TogglePause);
         Ok(())
     }
 
     async fn stop(&self) -> fdo::Result<()> {
-        let _ = self.core.stop_playback().await;
+        fire(&self.client, DaemonRequest::Stop);
         Ok(())
     }
 
     async fn play(&self) -> fdo::Result<()> {
-        let _ = self.core.resume_playback().await;
+        fire(&self.client, DaemonRequest::Resume);
         Ok(())
     }
 
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
         let offset_secs = offset.as_micros() as f64 / 1_000_000.0;
-        let _ = self.core.seek_relative(offset_secs).await;
+        fire(&self.client, DaemonRequest::SeekRelative(offset_secs));
         Ok(())
     }
 
     async fn set_position(&self, _track_id: TrackId, position: Time) -> fdo::Result<()> {
         let position_secs = position.as_micros() as f64 / 1_000_000.0;
-        let _ = self.core.seek(position_secs).await;
+        fire(&self.client, DaemonRequest::Seek(position_secs));
         Ok(())
     }
 
@@ -247,7 +259,7 @@ impl PlayerInterface for MprisPlayer {
 
     async fn set_volume(&self, volume: Volume) -> Result<()> {
         let volume_int = (volume * 100.0) as i32;
-        let _ = self.core.set_volume(volume_int).await;
+        fire(&self.client, DaemonRequest::SetVolume(volume_int));
         Ok(())
     }
 
@@ -300,11 +312,11 @@ impl PlayerInterface for MprisPlayer {
 /// Start the MPRIS server
 pub async fn start_mpris_server(
     state: SharedState,
-    core: Arc<DaemonCore>,
+    client: Arc<dyn DaemonClient>,
 ) -> Result<Server<MprisPlayer>> {
     info!("Starting MPRIS2 server");
 
-    let player = MprisPlayer::new(state, core);
+    let player = MprisPlayer::new(state, client);
     let server = Server::new(PLAYER_NAME, player).await?;
 
     info!(

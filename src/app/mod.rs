@@ -31,6 +31,7 @@ use crate::app::models::SongOption;
 use crate::config::Config;
 use crate::daemon::DaemonCore;
 use crate::error::{Error, UiError};
+use crate::ipc::{DaemonClient, DaemonRequest, InProcessClient};
 use crate::mpris::server::{start_mpris_server, MprisPlayer};
 use crate::ui;
 
@@ -42,8 +43,15 @@ pub use state::*;
 /// subprocess + the TUI event loop. Phase 5 splits `App` into the
 /// `ferrosonic` binary and `DaemonCore` into `ferrosonicd`.
 pub struct App {
-    /// Daemon-side core: state, mpv, pipewire, subsonic, event broadcast.
+    /// Daemon-side core. Phase 2 keeps a direct handle for the lifecycle
+    /// methods (`start_mpv`/`quit_mpv`) and the polling tick; every
+    /// other touch should go through `client`. Phase 5 removes this
+    /// when the daemon moves into its own process.
     pub(crate) core: Arc<DaemonCore>,
+    /// Daemon command channel. In phase 2 this is an `InProcessClient`
+    /// that dispatches directly to `core`; in phase 4 the same trait
+    /// object becomes a `SocketClient` without any handler change.
+    pub(crate) client: Arc<dyn DaemonClient>,
     /// Same `Arc<RwLock<AppState>>` that `core.state` wraps. Held here so
     /// render/input code reads/writes `state.client.X` without going
     /// through the core. Phase 6 replaces this with a client-side
@@ -69,9 +77,11 @@ impl App {
     pub fn new(config: Config) -> Self {
         let state = new_shared_state(config.clone());
         let core = DaemonCore::new(state.clone(), &config);
+        let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(core.clone()));
 
         Self {
             core,
+            client,
             state,
             cava_process: None,
             cava_pty_master: None,
@@ -95,9 +105,9 @@ impl App {
             info!("MPV started successfully, ready for playback");
         }
 
-        // Start MPRIS server for media key support — passes Arc<DaemonCore>
-        // so the MPRIS interface can call playback methods directly.
-        match start_mpris_server(self.state.clone(), self.core.clone()).await {
+        // Start MPRIS server for media key support — passes the client
+        // trait object so phase 4's SocketClient drops in unchanged.
+        match start_mpris_server(self.state.clone(), self.client.clone()).await {
             Ok(server) => {
                 info!("MPRIS server started");
                 self.mpris_server = Some(server);
@@ -216,9 +226,9 @@ impl App {
             let mut state = self.state.write().await;
             state.client.songs.selected_option = Some(SongOption::Starred);
         }
-        self.core.refresh_starred().await;
-        self.core.refresh_artists().await;
-        self.core.refresh_playlists().await;
+        let _ = self.client.request(DaemonRequest::RefreshStarred).await;
+        let _ = self.client.request(DaemonRequest::RefreshArtists).await;
+        let _ = self.client.request(DaemonRequest::RefreshPlaylists).await;
     }
 
     /// Main event loop

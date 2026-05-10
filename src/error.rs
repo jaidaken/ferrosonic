@@ -19,6 +19,12 @@ pub enum Error {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// Daemon IPC failure surfaced to the TUI. Phase 2.4+ —
+    /// `DaemonClient::request` returns `IpcError`; this lets handler
+    /// code that returns `Result<_, Error>` use `?` directly.
+    #[error("Daemon IPC error: {0}")]
+    Ipc(#[from] crate::ipc::IpcError),
 }
 
 /// Configuration-related errors

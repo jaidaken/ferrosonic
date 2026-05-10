@@ -771,3 +771,221 @@ impl DaemonCore {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Queue ops (for IPC EnqueueSongs / RemoveFromQueue / ClearQueue / ShuffleQueue).
+// The phase 2.4 input handlers route here through `DaemonClient::request`.
+// ─────────────────────────────────────────────────────────────────────────
+
+impl DaemonCore {
+    /// Public emit hook for external mutators (e.g., `InProcessClient`
+    /// after a queue rewrite that touches `state.daemon.queue` directly).
+    pub fn broadcast_queue_changed(self: &Arc<Self>) {
+        self.emit(DaemonEvent::QueueChanged);
+    }
+
+    /// Shuffle the queue, preserving the currently-playing track at its
+    /// position. No-op on an empty queue.
+    pub async fn shuffle_queue(self: &Arc<Self>) {
+        use rand::seq::SliceRandom;
+        let mut state = self.state.write().await;
+        if state.daemon.queue.is_empty() {
+            return;
+        }
+        let mut rng = rand::thread_rng();
+        match state.daemon.queue_position {
+            Some(cur) if cur < state.daemon.queue.len() => {
+                // Pull current song aside, shuffle the rest, reinsert.
+                let current = state.daemon.queue.remove(cur);
+                state.daemon.queue.shuffle(&mut rng);
+                state.daemon.queue.insert(cur, current);
+            }
+            _ => state.daemon.queue.shuffle(&mut rng),
+        }
+        drop(state);
+        self.emit(DaemonEvent::QueueChanged);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Library lazy-load methods that return their data inline (for IPC
+// LoadAlbum / LoadPlaylist), as opposed to caching it like load_artist.
+// ─────────────────────────────────────────────────────────────────────────
+
+impl DaemonCore {
+    /// Fetch the songs for an album. Empty `Vec` if not configured or
+    /// fetch fails (the error is logged and pushed as a notification).
+    pub async fn load_album_songs(self: &Arc<Self>, album_id: &str) -> Vec<crate::subsonic::models::Child> {
+        let client = self.subsonic.read().await;
+        let Some(ref client) = *client else {
+            return Vec::new();
+        };
+        match client.get_album(album_id).await {
+            Ok((_album, songs)) => {
+                let mut state = self.state.write().await;
+                state
+                    .daemon
+                    .library
+                    .album_songs_cache
+                    .insert(album_id.to_string(), songs.clone());
+                drop(state);
+                self.emit(DaemonEvent::LibraryChanged(LibrarySection::AlbumSongs));
+                songs
+            }
+            Err(e) => {
+                error!("Failed to load album songs: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load album: {}", e),
+                    is_error: true,
+                });
+                Vec::new()
+            }
+        }
+    }
+
+    /// Fetch the songs for a playlist. Empty `Vec` if not configured or
+    /// fetch fails (the error is logged and pushed as a notification).
+    pub async fn load_playlist_songs(self: &Arc<Self>, playlist_id: &str) -> Vec<crate::subsonic::models::Child> {
+        let client = self.subsonic.read().await;
+        let Some(ref client) = *client else {
+            return Vec::new();
+        };
+        match client.get_playlist(playlist_id).await {
+            Ok((_pl, songs)) => {
+                let mut state = self.state.write().await;
+                state
+                    .daemon
+                    .library
+                    .playlist_songs_cache
+                    .insert(playlist_id.to_string(), songs.clone());
+                drop(state);
+                self.emit(DaemonEvent::LibraryChanged(LibrarySection::PlaylistSongs));
+                songs
+            }
+            Err(e) => {
+                error!("Failed to load playlist songs: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load playlist: {}", e),
+                    is_error: true,
+                });
+                Vec::new()
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Config / settings: server, theme, cava. Each persists the config file
+// and emits a `ConfigChanged` event so subscribers refresh their views.
+// ─────────────────────────────────────────────────────────────────────────
+
+impl DaemonCore {
+    /// Replace the Subsonic server config and persist. Reinitialises the
+    /// `SubsonicClient` and triggers the standard initial-data refresh.
+    pub async fn update_server_config(
+        self: &Arc<Self>,
+        base_url: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.daemon.config.base_url = base_url.to_string();
+            state.daemon.config.username = username.to_string();
+            state.daemon.config.password = password.to_string();
+            state.daemon.config.save_default().map_err(Error::Config)?;
+        }
+
+        // Build a fresh client and stash it.
+        let new_client = SubsonicClient::new(base_url, username, password)
+            .map_err(Error::Subsonic)?;
+        *self.subsonic.write().await = Some(new_client);
+
+        // Refetch initial data on the new server.
+        self.refresh_starred().await;
+        self.refresh_artists().await;
+        self.refresh_playlists().await;
+
+        let cfg = {
+            let state = self.state.read().await;
+            state.daemon.config.clone()
+        };
+        self.emit(DaemonEvent::ConfigChanged(cfg));
+        Ok(())
+    }
+
+    /// Test a candidate Subsonic server config without persisting.
+    /// Returns `(ok, message)` for display in the Server page status.
+    pub async fn test_server_connection(
+        self: &Arc<Self>,
+        base_url: &str,
+        username: &str,
+        password: &str,
+    ) -> (bool, String) {
+        match SubsonicClient::new(base_url, username, password) {
+            Ok(client) => match client.ping().await {
+                Ok(()) => (true, "Connection OK".to_string()),
+                Err(e) => (false, format!("Connection failed: {}", e)),
+            },
+            Err(e) => (false, format!("Invalid URL: {}", e)),
+        }
+    }
+
+    /// Set the active theme by name and persist.
+    pub async fn set_theme(self: &Arc<Self>, name: &str) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.daemon.config.theme = name.to_string();
+            state
+                .daemon
+                .config
+                .save_default()
+                .map_err(Error::Config)?;
+        }
+        let cfg = {
+            let state = self.state.read().await;
+            state.daemon.config.clone()
+        };
+        self.emit(DaemonEvent::ConfigChanged(cfg));
+        Ok(())
+    }
+
+    /// Enable/disable cava and persist.
+    pub async fn set_cava_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.daemon.config.cava = on;
+            state
+                .daemon
+                .config
+                .save_default()
+                .map_err(Error::Config)?;
+        }
+        let cfg = {
+            let state = self.state.read().await;
+            state.daemon.config.clone()
+        };
+        self.emit(DaemonEvent::ConfigChanged(cfg));
+        Ok(())
+    }
+
+    /// Set cava size (10..=80) and persist.
+    pub async fn set_cava_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
+        let clamped = size.clamp(10, 80);
+        {
+            let mut state = self.state.write().await;
+            state.daemon.config.cava_size = clamped;
+            state
+                .daemon
+                .config
+                .save_default()
+                .map_err(Error::Config)?;
+        }
+        let cfg = {
+            let state = self.state.read().await;
+            state.daemon.config.clone()
+        };
+        self.emit(DaemonEvent::ConfigChanged(cfg));
+        Ok(())
+    }
+}
