@@ -298,20 +298,16 @@ pub struct LayoutAreas {
     pub content_right: Option<Rect>,
 }
 
-/// Complete application state — now a thin facade composing the
-/// `DaemonState` (audio, queue, library, config) and `ClientState`
-/// (page, selection, scroll, notifications, cava buffer, layout).
+/// Borrow-bundle for the render pass. Holds a shared reference to
+/// `DaemonState` (read-only at render time) and an exclusive reference
+/// to `ClientState` (renderers write scroll offsets + layout rects).
 ///
-/// Phase 1 of the daemon split: both halves live in the same process,
-/// embedded here. Phase 5 separates them into a daemon process plus a
-/// thin TUI client that mirrors a snapshot of the daemon's state.
-#[derive(Debug, Default)]
-pub struct AppState {
-    /// Daemon-owned state: queue, now_playing, config, library cache.
-    pub daemon: crate::daemon::DaemonState,
-    /// Client-owned state: page, selection, scroll, notifications, cava,
-    /// layout cache.
-    pub client: crate::app::client_state::ClientState,
+/// Each lock is held independently — see `SharedDaemonState` and
+/// `SharedClientState`. The bundle exists so page renderers keep
+/// using `state.daemon.X` / `state.client.X` field paths unchanged.
+pub struct AppState<'a> {
+    pub daemon: &'a crate::daemon::DaemonState,
+    pub client: &'a mut crate::app::client_state::ClientState,
 }
 
 /// A row of styled segments from cava's terminal output
@@ -337,38 +333,11 @@ pub enum CavaColor {
     Rgb(u8, u8, u8),
 }
 
-impl AppState {
-    pub fn new(config: Config) -> Self {
-        let mut state = Self {
-            daemon: crate::daemon::DaemonState::new(config.clone()),
-            client: crate::app::client_state::ClientState::default(),
-        };
-        // Initialize server page with current values
-        state.client.server_state.base_url = config.base_url.clone();
-        state.client.server_state.username = config.username.clone();
-        state.client.server_state.password = config.password.clone();
-        // Initialize cava from config
-        state.client.settings_state.cava_enabled = config.cava;
-        state.client.settings_state.cava_size = config.cava_size.clamp(10, 80);
-        // Initialize daemon-mode preference from config
-        state.client.settings_state.daemon_enabled = config.daemon;
-        // Songs-page default: Starred. The page's input handler treats
-        // a None option as "do nothing" on arrow keys, which would
-        // otherwise dead-lock the page in split mode where
-        // load_initial_data is skipped.
-        state.client.songs.selected_option = Some(SongOption::Starred);
-        state
-    }
-
-    /// Get the currently playing song from the queue. Convenience pass-through
-    /// to `daemon.current_song()`.
+impl<'a> AppState<'a> {
     pub fn current_song(&self) -> Option<&Child> {
         self.daemon.current_song()
     }
 
-    /// Songs page: resolve the currently-displayed song list. Picks
-    /// starred or random from the library cache based on the user's
-    /// option selection (defaulting to Starred).
     pub fn songs_list(&self) -> &[Child] {
         match self.client.songs.selected_option {
             Some(SongOption::Random) => &self.daemon.library.random_songs,
@@ -377,10 +346,31 @@ impl AppState {
     }
 }
 
-/// Thread-safe shared state
-pub type SharedState = Arc<RwLock<AppState>>;
+/// Daemon-side state shared across the TUI's render path, the event
+/// pump (which writes from server events), and `DaemonCore` (which
+/// writes from audio + library operations). RwLock so MPRIS reads
+/// don't block render reads.
+pub type SharedDaemonState = Arc<RwLock<crate::daemon::DaemonState>>;
 
-/// Create new shared state
-pub fn new_shared_state(config: Config) -> SharedState {
-    Arc::new(RwLock::new(AppState::new(config)))
+/// Client-side state shared between input handlers (writers) and the
+/// render path (reads + scroll-offset writes). RwLock to allow MPRIS
+/// reads + event-pump reads in parallel with render.
+pub type SharedClientState = Arc<RwLock<crate::app::client_state::ClientState>>;
+
+pub fn new_shared_daemon_state(config: Config) -> SharedDaemonState {
+    Arc::new(RwLock::new(crate::daemon::DaemonState::new(config)))
+}
+
+pub fn new_shared_client_state(config: &Config) -> SharedClientState {
+    let mut client = crate::app::client_state::ClientState::default();
+    client.server_state.base_url = config.base_url.clone();
+    client.server_state.username = config.username.clone();
+    client.server_state.password = config.password.clone();
+    client.settings_state.cava_enabled = config.cava;
+    client.settings_state.cava_size = config.cava_size.clamp(10, 80);
+    client.settings_state.daemon_enabled = config.daemon;
+    // Songs-page default: Starred. The page's input handler treats
+    // a None option as "do nothing" on arrow keys.
+    client.songs.selected_option = Some(SongOption::Starred);
+    Arc::new(RwLock::new(client))
 }

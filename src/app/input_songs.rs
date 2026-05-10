@@ -7,7 +7,9 @@ use super::*;
 
 impl App {
     pub(super) async fn handle_songs_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => match state.client.songs.focus {
                 0 => {
@@ -15,7 +17,7 @@ impl App {
                         Some(SongOption::Starred) => {}
                         Some(SongOption::Random) => {
                             state.client.songs.selected_option = Some(SongOption::Starred);
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
                             let _ = self.client.request(DaemonRequest::RefreshStarred).await;
                         }
                         None => {}
@@ -37,7 +39,7 @@ impl App {
                     match state.client.songs.selected_option {
                         Some(SongOption::Starred) => {
                             state.client.songs.selected_option = Some(SongOption::Random);
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
                             let _ = self.client.request(DaemonRequest::RefreshRandom).await;
                         }
                         Some(SongOption::Random) => {}
@@ -67,7 +69,7 @@ impl App {
                 };
 
                 let songs = state.songs_list().to_vec();
-                drop(state);
+                drop(state); drop(cs); drop(ds);
 
                 return self
                     .client
@@ -99,7 +101,7 @@ impl App {
                     .songs
                     .selected_index
                     .and_then(|idx| state.songs_list().get(idx).map(|s| s.id.clone()));
-                drop(state);
+                drop(state); drop(cs); drop(ds);
                 if let Some(id) = song_id {
                     let _ = self
                         .client

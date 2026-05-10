@@ -20,7 +20,7 @@ pub enum TreeItem {
 }
 
 /// Build flattened tree items from state
-pub fn build_tree_items(state: &AppState) -> Vec<TreeItem> {
+pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
     let ui = &state.client.artists;
     let library_artists = &state.daemon.library.artists;
     let albums_cache = &state.daemon.library.albums_cache;
@@ -68,7 +68,7 @@ pub fn build_tree_items(state: &AppState) -> Vec<TreeItem> {
 }
 
 /// Render the artists page
-pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
+pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     // Split into two panes: [Tree Browser] [Song List]
@@ -80,7 +80,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
 }
 
 /// Render the artist/album tree
-fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
+fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let artists = &state.client.artists;
 
     let focused = artists.focus == 0;
@@ -166,7 +166,7 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &The
 }
 
 /// Render the song list for selected album
-fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
+fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let artists = &state.client.artists;
 
     let focused = artists.focus == 1;

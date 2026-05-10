@@ -190,8 +190,8 @@ impl App {
                 cava_screen.push(CavaRow { spans });
             }
 
-            let mut state = self.state.write().await;
-            state.client.cava_screen = cava_screen;
+            let mut cs = self.client_state.write().await;
+            cs.cava_screen = cava_screen;
     }
 }
 

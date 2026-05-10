@@ -11,7 +11,7 @@ use ratatui::{
 use crate::app::state::AppState;
 
 /// Render the queue page
-pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
+pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     let block = Block::default()

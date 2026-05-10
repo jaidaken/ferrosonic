@@ -8,7 +8,9 @@ use super::*;
 impl App {
     /// Handle server page keys
     pub(super) async fn handle_server_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
 
         let field = state.client.server_state.selected_field;
         let is_text_field = field <= 2;
@@ -57,7 +59,7 @@ impl App {
                         let username = state.client.server_state.username.clone();
                         let password = state.client.server_state.password.clone();
                         state.client.server_state.status = Some("Testing connection...".to_string());
-                        drop(state);
+                        drop(state); drop(cs); drop(ds);
 
                         match self
                             .client
@@ -69,7 +71,9 @@ impl App {
                             .await
                         {
                             Ok(crate::ipc::DaemonResponse::ConnectionTestResult { ok, message }) => {
-                                let mut state = self.state.write().await;
+                                let ds = self.daemon_state.read().await;
+                                let mut cs = self.client_state.write().await;
+                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                 state.client.server_state.status = Some(if ok {
                                     "Connection successful!".to_string()
                                 } else {
@@ -77,12 +81,16 @@ impl App {
                                 });
                             }
                             Ok(_) => {
-                                let mut state = self.state.write().await;
+                                let ds = self.daemon_state.read().await;
+                                let mut cs = self.client_state.write().await;
+                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                 state.client.server_state.status =
                                     Some("Unexpected daemon response".to_string());
                             }
                             Err(e) => {
-                                let mut state = self.state.write().await;
+                                let ds = self.daemon_state.read().await;
+                                let mut cs = self.client_state.write().await;
+                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                 state.client.server_state.status =
                                     Some(format!("IPC error: {}", e));
                             }
@@ -100,7 +108,7 @@ impl App {
                         let username = state.client.server_state.username.clone();
                         let password = state.client.server_state.password.clone();
                         state.client.server_state.status = Some("Saving...".to_string());
-                        drop(state);
+                        drop(state); drop(cs); drop(ds);
 
                         match self
                             .client
@@ -113,13 +121,17 @@ impl App {
                         {
                             Ok(_) => {
                                 info!("Config saved and refetched");
-                                let mut state = self.state.write().await;
+                                let ds = self.daemon_state.read().await;
+                                let mut cs = self.client_state.write().await;
+                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                 state.client.server_state.status =
                                     Some("Connected and loaded data!".to_string());
                             }
                             Err(e) => {
                                 info!("Config save failed: {}", e);
-                                let mut state = self.state.write().await;
+                                let ds = self.daemon_state.read().await;
+                                let mut cs = self.client_state.write().await;
+                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                 state.client.server_state.status =
                                     Some(format!("Save failed: {}", e));
                             }

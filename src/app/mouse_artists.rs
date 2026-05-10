@@ -12,7 +12,11 @@ impl App {
     ) -> Result<(), Error> {
         use crate::ui::pages::artists::{build_tree_items, TreeItem};
 
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+
+        let mut cs = self.client_state.write().await;
+
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
         let left = layout.content_left.unwrap_or(layout.content);
         let right = layout.content_right.unwrap_or(layout.content);
 
@@ -44,7 +48,7 @@ impl App {
                             if was_expanded {
                                 state.client.artists.expanded.remove(&artist_id);
                             } else if !state.daemon.library.albums_cache.contains_key(&artist_id) {
-                                drop(state);
+                                drop(state); drop(cs); drop(ds);
                                 let albums_resp = self
                                     .client
                                     .request(DaemonRequest::LoadArtist(artist_id.clone()))
@@ -56,12 +60,16 @@ impl App {
                                         // the event-pump task will mirror that
                                         // into state.daemon.library.albums_cache.
                                         // We just expand here.
-                                        let mut state = self.state.write().await;
+                                        let ds = self.daemon_state.read().await;
+                                        let mut cs = self.client_state.write().await;
+                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.artists.expanded.insert(artist_id);
                                         tracing::info!("Loaded albums for {}", artist_name);
                                     }
                                     _ => {
-                                        let mut state = self.state.write().await;
+                                        let ds = self.daemon_state.read().await;
+                                        let mut cs = self.client_state.write().await;
+                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.notify_error("Failed to load artist");
                                     }
                                 }
@@ -74,18 +82,22 @@ impl App {
                         TreeItem::Album { album } => {
                             let album_id = album.id.clone();
                             let album_name = album.name.clone();
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
 
                             let songs = self.load_album(&album_id).await;
                             if songs.is_empty() {
-                                let mut state = self.state.write().await;
+                                let ds = self.daemon_state.read().await;
+                                let mut cs = self.client_state.write().await;
+                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                 state.client.notify_error("Album has no songs");
                                 self.last_click = Some((x, y, std::time::Instant::now()));
                                 return Ok(());
                             }
 
                             {
-                                let mut state = self.state.write().await;
+                                let ds = self.daemon_state.read().await;
+                                let mut cs = self.client_state.write().await;
+                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                 let count = songs.len();
                                 state.client.artists.songs = songs.clone();
                                 state.client.artists.selected_song = Some(0);
@@ -109,10 +121,12 @@ impl App {
                     // First click on album: preview songs in right pane
                     if let TreeItem::Album { album } = &tree_items[item_index] {
                         let album_id = album.id.clone();
-                        drop(state);
+                        drop(state); drop(cs); drop(ds);
                         let songs = self.load_album(&album_id).await;
                         if !songs.is_empty() {
-                            let mut state = self.state.write().await;
+                            let ds = self.daemon_state.read().await;
+                            let mut cs = self.client_state.write().await;
+                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
                             state.client.artists.songs = songs;
                             state.client.artists.selected_song = Some(0);
                         }
@@ -142,7 +156,7 @@ impl App {
                     if let Some(song) = songs.get(item_index) {
                         state.client.notify(format!("Playing: {}", song.title));
                     }
-                    drop(state);
+                    drop(state); drop(cs); drop(ds);
                     let _ = self
                         .client
                         .request(DaemonRequest::EnqueueSongs {

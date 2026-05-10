@@ -22,18 +22,24 @@ impl App {
     async fn handle_mouse_click(&mut self, x: u16, y: u16) -> Result<(), Error> {
         use crate::ui::header::{Header, HeaderRegion};
 
-        let state = self.state.read().await;
+        let ds = self.daemon_state.read().await;
+
+        let mut cs = self.client_state.write().await;
+
+        let state = AppState { daemon: &*ds, client: &mut *cs };
         let layout = state.client.layout.clone();
         let page = state.client.page;
         let duration = state.daemon.now_playing.duration;
-        drop(state);
+        drop(state); drop(cs); drop(ds);
 
         // Check header area
         if y >= layout.header.y && y < layout.header.y + layout.header.height {
             if let Some(region) = Header::region_at(layout.header, x, y) {
                 match region {
                     HeaderRegion::Tab(tab_page) => {
-                        let mut state = self.state.write().await;
+                        let ds = self.daemon_state.read().await;
+                        let mut cs = self.client_state.write().await;
+                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
                         state.client.page = tab_page;
                     }
                     HeaderRegion::PrevButton => {
@@ -130,7 +136,9 @@ impl App {
             if let Some(option) = option {
                 let already;
                 {
-                    let mut state = self.state.write().await;
+                    let ds = self.daemon_state.read().await;
+                    let mut cs = self.client_state.write().await;
+                    let mut state = AppState { daemon: &*ds, client: &mut *cs };
                     already = state.client.songs.selected_option.as_ref() == Some(&option);
                     state.client.songs.selected_option = Some(option.clone());
                     state.client.songs.focus = 0;
@@ -151,7 +159,9 @@ impl App {
         }
 
         let row_in_pane = y.saturating_sub(right.y + 1) as usize;
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
         let item_index = state.client.songs.scroll_offset + row_in_pane;
         if item_index >= state.songs_list().len() {
             return Ok(());
@@ -167,7 +177,7 @@ impl App {
 
         if is_second_click {
             let songs = state.songs_list().to_vec();
-            drop(state);
+            drop(state); drop(cs); drop(ds);
             self.last_click = Some((x, y, std::time::Instant::now()));
             return self
                 .client
@@ -186,7 +196,9 @@ impl App {
 
     /// Handle click on queue page
     async fn handle_queue_click(&mut self, y: u16, layout: &LayoutAreas) -> Result<(), Error> {
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
         let content = layout.content;
 
         // Account for border (1 row top)
@@ -203,7 +215,7 @@ impl App {
                     .is_some_and(|(_, ly, t)| ly == y && t.elapsed().as_millis() < 500);
 
             if is_second_click {
-                drop(state);
+                drop(state); drop(cs); drop(ds);
                 self.last_click = Some((0, y, std::time::Instant::now()));
                 return self.client.request(DaemonRequest::PlayQueueIndex(item_index)).await.map(|_| ()).map_err(Error::from);
             }
@@ -215,7 +227,9 @@ impl App {
 
     /// Handle mouse scroll up (move selection up in current list)
     async fn handle_mouse_scroll_up(&mut self) -> Result<(), Error> {
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
         match state.client.page {
             Page::Library => {
                 if state.client.artists.focus == 0 {
@@ -270,7 +284,9 @@ impl App {
 
     /// Handle mouse scroll down (move selection down in current list)
     async fn handle_mouse_scroll_down(&mut self) -> Result<(), Error> {
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
         match state.client.page {
             Page::Library => {
                 if state.client.artists.focus == 0 {

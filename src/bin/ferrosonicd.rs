@@ -15,7 +15,7 @@ use tokio::signal::unix::{signal, SignalKind};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use ferrosonic::app::state::new_shared_state;
+use ferrosonic::app::state::new_shared_daemon_state;
 use ferrosonic::config::paths::config_dir;
 use ferrosonic::config::Config;
 use ferrosonic::daemon::DaemonCore;
@@ -114,11 +114,8 @@ async fn main() -> anyhow::Result<()> {
         }
     );
 
-    // Phase 5a: DaemonCore wraps the full SharedState. Phase 5b
-    // changes this to wrap just `Arc<RwLock<DaemonState>>` once
-    // App stops sharing the same lock.
-    let state = new_shared_state(config.clone());
-    let core = DaemonCore::new(state, &config);
+    let daemon_state = new_shared_daemon_state(config.clone());
+    let core = DaemonCore::new(daemon_state, &config);
 
     // Start mpv (audio backend) up-front; clients connecting later
     // expect a ready playback session.

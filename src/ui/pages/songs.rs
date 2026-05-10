@@ -12,7 +12,7 @@ use crate::ui::styled_lines::get_song_with_artist_line;
 use crate::ui::theme::ThemeColors;
 use strum::IntoEnumIterator;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
+pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     let chunks =
@@ -22,7 +22,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
-fn render_options(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
+fn render_options(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let focus = state.client.songs.focus;
     let selected_option = state.client
         .songs
@@ -72,7 +72,7 @@ fn render_options(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
+fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let songs_ui = &state.client.songs;
     // Resolve which library list this page is showing (Starred or Random).
     let library_songs: Vec<crate::subsonic::models::Child> = state.songs_list().to_vec();

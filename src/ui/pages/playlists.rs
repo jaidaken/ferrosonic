@@ -13,7 +13,7 @@ use crate::ui::theme::ThemeColors;
 
 
 /// Render the playlists page
-pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
+pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     // Split into two panes: [Playlists] [Songs]
@@ -25,7 +25,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
 }
 
 /// Render the playlists list
-fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
+fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     // `playlists` is the per-page UI state (selection, focus, scroll).
     // `library_playlists` is the actual list, owned by the daemon.
     let playlists = &state.client.playlists;
@@ -112,7 +112,7 @@ fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState, colors:
 }
 
 /// Render the songs in selected playlist
-fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
+fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let playlists = &state.client.playlists;
 
     let focused = playlists.focus == 1;

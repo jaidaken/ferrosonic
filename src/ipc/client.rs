@@ -123,17 +123,17 @@ impl DaemonClient for InProcessClient {
                 let new_len;
                 {
                     let mut state = self.core.state.write().await;
-                    if pos >= state.daemon.queue.len() {
+                    if pos >= state.queue.len() {
                         return Ok(DaemonResponse::Ok);
                     }
-                    was_playing = state.daemon.queue_position == Some(pos);
-                    state.daemon.queue.remove(pos);
-                    new_len = state.daemon.queue.len();
-                    if let Some(cur) = state.daemon.queue_position {
+                    was_playing = state.queue_position == Some(pos);
+                    state.queue.remove(pos);
+                    new_len = state.queue.len();
+                    if let Some(cur) = state.queue_position {
                         if pos < cur {
-                            state.daemon.queue_position = Some(cur - 1);
+                            state.queue_position = Some(cur - 1);
                         } else if pos == cur {
-                            state.daemon.queue_position = None;
+                            state.queue_position = None;
                         }
                     }
                 }
@@ -286,8 +286,8 @@ impl InProcessClient {
             EnqueueMode::Replace { play_from } => {
                 {
                     let mut state = self.core.state.write().await;
-                    state.daemon.queue = songs;
-                    state.daemon.queue_position = None;
+                    state.queue = songs;
+                    state.queue_position = None;
                 }
                 self.core.broadcast_queue_changed().await;
                 if let Some(idx) = play_from {
@@ -297,16 +297,16 @@ impl InProcessClient {
             EnqueueMode::Append => {
                 {
                     let mut state = self.core.state.write().await;
-                    state.daemon.queue.extend(songs);
+                    state.queue.extend(songs);
                 }
                 self.core.broadcast_queue_changed().await;
             }
             EnqueueMode::InsertAfter(pos) => {
                 {
                     let mut state = self.core.state.write().await;
-                    let insert_at = (pos + 1).min(state.daemon.queue.len());
+                    let insert_at = (pos + 1).min(state.queue.len());
                     for (i, song) in songs.into_iter().enumerate() {
-                        state.daemon.queue.insert(insert_at + i, song);
+                        state.queue.insert(insert_at + i, song);
                     }
                 }
                 self.core.broadcast_queue_changed().await;

@@ -43,21 +43,19 @@ pub use state::*;
 /// subprocess + the TUI event loop. Phase 5 splits `App` into the
 /// `ferrosonic` binary and `DaemonCore` into `ferrosonicd`.
 pub struct App {
-    /// Daemon-side core. `Some` for the in-process build (`App::new`)
-    /// where `App` and `DaemonCore` co-own the same state lock; `None`
-    /// for the split build (`App::with_remote_client`) where mpv lives
-    /// in `ferrosonicd`. Lifecycle calls (`start_mpv`/`quit_mpv`/
-    /// `spawn_polling_task`) only fire when `Some`.
+    /// Daemon-side core. `Some` for the in-process build, `None` for
+    /// the split build (mpv lives in `ferrosonicd`). Lifecycle calls
+    /// (`start_mpv`/`quit_mpv`/`spawn_polling_task`) only fire when
+    /// `Some`.
     pub(crate) core: Option<Arc<DaemonCore>>,
-    /// Daemon command channel. Either `InProcessClient` (in-process
-    /// build) or `SocketClient` (split build) — the input/mouse
-    /// handlers go through this trait either way.
+    /// Daemon command channel. `InProcessClient` or `SocketClient`.
     pub(crate) client: Arc<dyn DaemonClient>,
-    /// `Arc<RwLock<AppState>>`. In the in-process build, the same Arc
-    /// `core.state` wraps. In the split build, the App owns it solely
-    /// — the `state.daemon` half is a mirror written by the event-pump
-    /// task from `client.subscribe()`. Both render and input read it.
-    pub(crate) state: SharedState,
+    /// Daemon-side state mirror. In-process: same Arc that `core.state`
+    /// wraps. Split: TUI-local mirror, written by the event pump.
+    pub(crate) daemon_state: SharedDaemonState,
+    /// Client-side state: page, selection, scroll offsets, notifications,
+    /// cava buffer, layout cache. Always owned solely by `App`.
+    pub(crate) client_state: SharedClientState,
     /// Cava child process
     pub(crate) cava_process: Option<std::process::Child>,
     /// Cava pty master fd for reading output
@@ -78,14 +76,16 @@ impl App {
     /// caller owns both `self.core` and `self.state` — they reference the
     /// same `Arc<RwLock<AppState>>` internally.
     pub fn new(config: Config) -> Self {
-        let state = new_shared_state(config.clone());
-        let core = DaemonCore::new(state.clone(), &config);
+        let daemon_state = new_shared_daemon_state(config.clone());
+        let client_state = new_shared_client_state(&config);
+        let core = DaemonCore::new(daemon_state.clone(), &config);
         let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(core.clone()));
 
         Self {
             core: Some(core),
             client,
-            state,
+            daemon_state,
+            client_state,
             cava_process: None,
             cava_pty_master: None,
             cava_parser: None,
@@ -103,11 +103,13 @@ impl App {
     /// Used by the `ferrosonic` binary's split path. The in-process
     /// path keeps using `App::new(config)`.
     pub fn with_remote_client(client: Arc<dyn DaemonClient>, config: Config) -> Self {
-        let state = new_shared_state(config);
+        let daemon_state = new_shared_daemon_state(config.clone());
+        let client_state = new_shared_client_state(&config);
         Self {
             core: None,
             client,
-            state,
+            daemon_state,
+            client_state,
             cava_process: None,
             cava_pty_master: None,
             cava_parser: None,
@@ -117,7 +119,7 @@ impl App {
     }
 
     fn spawn_signal_quit(&self) {
-        let state = self.state.clone();
+        let client_state = self.client_state.clone();
         tokio::spawn(async move {
             use tokio::signal::unix::{signal, SignalKind};
             let mut term = match signal(SignalKind::terminate()) { Ok(s) => s, Err(_) => return };
@@ -128,8 +130,8 @@ impl App {
                 _ = int.recv() => {}
                 _ = hup.recv() => {}
             }
-            let mut s = state.write().await;
-            s.client.should_quit = true;
+            let mut s = client_state.write().await;
+            s.should_quit = true;
         });
     }
 
@@ -145,11 +147,8 @@ impl App {
         if let Some(ref core) = self.core {
             if let Err(e) = core.start_mpv().await {
                 warn!("Failed to start MPV: {} - audio playback won't work", e);
-                let mut state = self.state.write().await;
-                state
-                    .client
-                    .notify_error(format!("Failed to start MPV: {}. Is mpv installed?", e));
-                drop(state);
+                let mut cs = self.client_state.write().await;
+                cs.notify_error(format!("Failed to start MPV: {}. Is mpv installed?", e));
             } else {
                 info!("MPV started successfully, ready for playback");
             }
@@ -159,9 +158,15 @@ impl App {
             self.bootstrap_and_pump().await;
         }
 
-        // Start MPRIS server for media key support — passes the client
-        // trait object so phase 4's SocketClient drops in unchanged.
-        match start_mpris_server(self.state.clone(), self.client.clone()).await {
+        // Start MPRIS server. Reads `daemon_state` for properties +
+        // metadata; writes `client_state.should_quit` on MPRIS Quit.
+        match start_mpris_server(
+            self.daemon_state.clone(),
+            self.client_state.clone(),
+            self.client.clone(),
+        )
+        .await
+        {
             Ok(server) => {
                 info!("MPRIS server started");
                 self.spawn_mpris_pump(server);
@@ -181,10 +186,13 @@ impl App {
                 seed_default_themes(&themes_dir);
             }
             let themes = load_themes();
-            let mut state = self.state.write().await;
-            let theme_name = state.daemon.config.theme.clone();
-            state.client.settings_state.themes = themes;
-            state.client.settings_state.set_theme_by_name(&theme_name);
+            let theme_name = {
+                let ds = self.daemon_state.read().await;
+                ds.config.theme.clone()
+            };
+            let mut cs = self.client_state.write().await;
+            cs.settings_state.themes = themes;
+            cs.settings_state.set_theme_by_name(&theme_name);
         }
 
         // Check if cava is available
@@ -197,23 +205,23 @@ impl App {
             .unwrap_or(false);
 
         {
-            let mut state = self.state.write().await;
-            state.client.cava_available = cava_available;
+            let mut cs = self.client_state.write().await;
+            cs.cava_available = cava_available;
             if !cava_available {
-                state.client.settings_state.cava_enabled = false;
+                cs.settings_state.cava_enabled = false;
             }
         }
 
         // Start cava if enabled and available
         {
-            let state = self.state.read().await;
-            if state.client.settings_state.cava_enabled && cava_available {
-                let td = state.client.settings_state.current_theme();
+            let cs = self.client_state.read().await;
+            if cs.settings_state.cava_enabled && cava_available {
+                let td = cs.settings_state.current_theme();
                 let g = td.cava_gradient.clone();
                 let h = td.cava_horizontal_gradient.clone();
-                let cs = state.client.settings_state.cava_size as u32;
-                drop(state);
-                self.start_cava(&g, &h, cs);
+                let size = cs.settings_state.cava_size as u32;
+                drop(cs);
+                self.start_cava(&g, &h, size);
             }
         }
 
@@ -316,33 +324,36 @@ impl App {
         };
 
         if let Some(snap) = snap {
-            let mut state = self.state.write().await;
-            state.daemon = *snap;
+            let mut ds = self.daemon_state.write().await;
+            *ds = *snap;
             info!(
                 "Snapshot: queue={} starred={} artists={} playlists={}",
-                state.daemon.queue.len(),
-                state.daemon.library.starred_songs.len(),
-                state.daemon.library.artists.len(),
-                state.daemon.library.playlists.len(),
+                ds.queue.len(),
+                ds.library.starred_songs.len(),
+                ds.library.artists.len(),
+                ds.library.playlists.len(),
             );
         }
 
-        let state = self.state.clone();
+        let daemon_state = self.daemon_state.clone();
+        let client_state = self.client_state.clone();
         let client = self.client.clone();
-        tokio::spawn(async move { run_event_pump(client, state, rx).await });
+        tokio::spawn(async move {
+            run_event_pump(client, daemon_state, client_state, rx).await
+        });
     }
 
     fn spawn_mpris_pump(&self, server: mpris_server::Server<crate::mpris::server::MprisPlayer>) {
         use crate::ipc::DaemonEvent;
         let mut rx = self.client.subscribe();
-        let state = self.state.clone();
+        let daemon_state = self.daemon_state.clone();
         tokio::spawn(async move {
             let server = server;
             loop {
                 match rx.recv().await {
                     Ok(DaemonEvent::NowPlayingChanged(_))
                     | Ok(DaemonEvent::QueueChanged { .. }) => {
-                        let _ = update_mpris_properties(&server, &state).await;
+                        let _ = update_mpris_properties(&server, &daemon_state).await;
                     }
                     Ok(DaemonEvent::Shutdown) => break,
                     Ok(_) => {}
@@ -358,8 +369,8 @@ impl App {
     /// `DaemonCore`; only the page-default selection is client state.
     pub(crate) async fn load_initial_data(&mut self) {
         {
-            let mut state = self.state.write().await;
-            state.client.songs.selected_option = Some(SongOption::Starred);
+            let mut cs = self.client_state.write().await;
+            cs.songs.selected_option = Some(SongOption::Starred);
         }
         let _ = self.client.request(DaemonRequest::RefreshStarred).await;
         let _ = self.client.request(DaemonRequest::RefreshArtists).await;
@@ -383,18 +394,24 @@ impl App {
                 Duration::from_millis(100)
             };
 
-            // Draw UI
+            // Draw UI — read on daemon, write on client. Daemon poll
+            // and other readers run in parallel with render.
             {
-                let mut state = self.state.write().await;
+                let ds = self.daemon_state.read().await;
+                let mut cs = self.client_state.write().await;
+                let mut bundle = AppState {
+                    daemon: &*ds,
+                    client: &mut *cs,
+                };
                 terminal
-                    .draw(|frame| ui::draw(frame, &mut state))
+                    .draw(|frame| ui::draw(frame, &mut bundle))
                     .map_err(UiError::Render)?;
             }
 
             // Check for quit
             {
-                let state = self.state.read().await;
-                if state.client.should_quit {
+                let cs = self.client_state.read().await;
+                if cs.should_quit {
                     break;
                 }
             }
@@ -410,8 +427,8 @@ impl App {
 
             // Check for notification auto-clear (after 2 seconds)
             {
-                let mut state = self.state.write().await;
-                state.client.check_notification_timeout();
+                let mut cs = self.client_state.write().await;
+                cs.check_notification_timeout();
             }
         }
 
@@ -434,20 +451,21 @@ impl Drop for TerminalGuard {
 
 async fn run_event_pump(
     client: Arc<dyn DaemonClient>,
-    state: SharedState,
+    daemon_state: SharedDaemonState,
+    client_state: SharedClientState,
     mut rx: tokio::sync::broadcast::Receiver<crate::ipc::DaemonEvent>,
 ) {
     loop {
         match rx.recv().await {
-            Ok(ev) => apply_event(&state, ev).await,
+            Ok(ev) => apply_event(&daemon_state, &client_state, ev).await,
             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                 warn!("Event pump lagged by {}; resnapshot + resubscribe", n);
                 let new_rx = client.subscribe();
                 if let Ok(crate::ipc::DaemonResponse::Snapshot(snap)) =
                     client.request(DaemonRequest::Snapshot).await
                 {
-                    let mut s = state.write().await;
-                    s.daemon = *snap;
+                    let mut ds = daemon_state.write().await;
+                    *ds = *snap;
                 }
                 rx = new_rx;
             }
@@ -459,21 +477,33 @@ async fn run_event_pump(
     }
 }
 
-async fn apply_event(state: &SharedState, ev: crate::ipc::DaemonEvent) {
+/// Applies a `DaemonEvent` to local state. Acquires locks in the same
+/// order everywhere (daemon first, then client when needed) to avoid
+/// deadlock with other writers.
+async fn apply_event(
+    daemon_state: &SharedDaemonState,
+    client_state: &SharedClientState,
+    ev: crate::ipc::DaemonEvent,
+) {
     use crate::ipc::DaemonEvent;
-    let mut s = state.write().await;
     match ev {
         DaemonEvent::QueueChanged { queue, position } => {
-            s.daemon.queue = queue;
-            s.daemon.queue_position = position;
+            let mut ds = daemon_state.write().await;
+            ds.queue = queue;
+            ds.queue_position = position;
         }
         DaemonEvent::NowPlayingChanged(np) => {
-            s.daemon.now_playing = np;
+            let mut ds = daemon_state.write().await;
+            ds.now_playing = np;
         }
         DaemonEvent::PositionTick(pos) => {
-            s.daemon.now_playing.position = pos;
+            let mut ds = daemon_state.write().await;
+            ds.now_playing.position = pos;
         }
-        DaemonEvent::StarredChanged(songs) => s.daemon.library.starred_songs = songs,
+        DaemonEvent::StarredChanged(songs) => {
+            let mut ds = daemon_state.write().await;
+            ds.library.starred_songs = songs;
+        }
         DaemonEvent::SongStarChanged { id, starred } => {
             let marker = if starred { Some("1".to_string()) } else { None };
             let update = |song: &mut crate::subsonic::models::Child| {
@@ -481,48 +511,68 @@ async fn apply_event(state: &SharedState, ev: crate::ipc::DaemonEvent) {
                     song.starred = marker.clone();
                 }
             };
-            for song in s.daemon.queue.iter_mut() { update(song); }
-            for song in s.daemon.library.random_songs.iter_mut() { update(song); }
-            for list in s.daemon.library.album_songs_cache.values_mut() {
-                for song in list.iter_mut() { update(song); }
+            // Daemon-side mirror first.
+            {
+                let mut ds = daemon_state.write().await;
+                for song in ds.queue.iter_mut() { update(song); }
+                for song in ds.library.random_songs.iter_mut() { update(song); }
+                for list in ds.library.album_songs_cache.values_mut() {
+                    for song in list.iter_mut() { update(song); }
+                }
+                for list in ds.library.playlist_songs_cache.values_mut() {
+                    for song in list.iter_mut() { update(song); }
+                }
+                if let Some(np) = ds.now_playing.song.as_mut() {
+                    if np.id == id { np.starred = marker.clone(); }
+                }
             }
-            for list in s.daemon.library.playlist_songs_cache.values_mut() {
-                for song in list.iter_mut() { update(song); }
-            }
-            for song in s.client.artists.songs.iter_mut() { update(song); }
-            for song in s.client.playlists.songs.iter_mut() { update(song); }
-            if let Some(np) = s.daemon.now_playing.song.as_mut() {
-                if np.id == id { np.starred = marker.clone(); }
+            // Then client-side per-page song caches.
+            {
+                let mut cs = client_state.write().await;
+                for song in cs.artists.songs.iter_mut() { update(song); }
+                for song in cs.playlists.songs.iter_mut() { update(song); }
             }
         }
-        DaemonEvent::RandomChanged(songs) => s.daemon.library.random_songs = songs,
-        DaemonEvent::ArtistsChanged(artists) => s.daemon.library.artists = artists,
+        DaemonEvent::RandomChanged(songs) => {
+            let mut ds = daemon_state.write().await;
+            ds.library.random_songs = songs;
+        }
+        DaemonEvent::ArtistsChanged(artists) => {
+            let mut ds = daemon_state.write().await;
+            ds.library.artists = artists;
+        }
         DaemonEvent::AlbumsChanged { artist_id, albums } => {
-            s.daemon.library.albums_cache.insert(artist_id, albums);
+            let mut ds = daemon_state.write().await;
+            ds.library.albums_cache.insert(artist_id, albums);
         }
         DaemonEvent::AlbumSongsChanged { album_id, songs } => {
-            s.daemon.library.album_songs_cache.insert(album_id, songs);
+            let mut ds = daemon_state.write().await;
+            ds.library.album_songs_cache.insert(album_id, songs);
         }
-        DaemonEvent::PlaylistsChanged(playlists) => s.daemon.library.playlists = playlists,
+        DaemonEvent::PlaylistsChanged(playlists) => {
+            let mut ds = daemon_state.write().await;
+            ds.library.playlists = playlists;
+        }
         DaemonEvent::PlaylistSongsChanged { playlist_id, songs } => {
-            s.daemon
-                .library
-                .playlist_songs_cache
-                .insert(playlist_id, songs);
+            let mut ds = daemon_state.write().await;
+            ds.library.playlist_songs_cache.insert(playlist_id, songs);
         }
         DaemonEvent::Notification { message, is_error } => {
+            let mut cs = client_state.write().await;
             if is_error {
-                s.client.notify_error(message);
+                cs.notify_error(message);
             } else {
-                s.client.notify(message);
+                cs.notify(message);
             }
         }
         DaemonEvent::ConfigChanged(cfg) => {
-            s.daemon.config = cfg;
+            let mut ds = daemon_state.write().await;
+            ds.config = cfg;
         }
         DaemonEvent::Shutdown => {
-            s.client.notify_error("Daemon shut down — disconnecting");
-            s.client.should_quit = true;
+            let mut cs = client_state.write().await;
+            cs.notify_error("Daemon shut down — disconnecting");
+            cs.should_quit = true;
         }
     }
 }

@@ -7,7 +7,9 @@ use super::*;
 impl App {
     /// Handle playlists page keys
     pub(super) async fn handle_playlists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
 
         match key.code {
             KeyCode::Tab => {
@@ -73,10 +75,12 @@ impl App {
                         if let Some(playlist) = state.daemon.library.playlists.get(idx) {
                             let playlist_id = playlist.id.clone();
                             let playlist_name = playlist.name.clone();
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
 
                             let songs = self.load_playlist(&playlist_id).await;
-                            let mut state = self.state.write().await;
+                            let ds = self.daemon_state.read().await;
+                            let mut cs = self.client_state.write().await;
+                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
                             let count = songs.len();
                             state.client.playlists.songs = songs;
                             state.client.playlists.selected_song =
@@ -94,7 +98,7 @@ impl App {
                     if let Some(idx) = state.client.playlists.selected_song {
                         if idx < state.client.playlists.songs.len() {
                             let songs = state.client.playlists.songs.clone();
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
                             return self
                                 .client
                                 .request(DaemonRequest::EnqueueSongs {
@@ -117,7 +121,7 @@ impl App {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
                             let title = song.title.clone();
                             state.client.notify(format!("Added to queue: {}", title));
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
                             let _ = self
                                 .client
                                 .request(DaemonRequest::EnqueueSongs {
@@ -133,7 +137,7 @@ impl App {
                         let count = state.client.playlists.songs.len();
                         let songs = state.client.playlists.songs.clone();
                         state.client.notify(format!("Added {} songs to queue", count));
-                        drop(state);
+                        drop(state); drop(cs); drop(ds);
                         let _ = self
                             .client
                             .request(DaemonRequest::EnqueueSongs {
@@ -152,7 +156,7 @@ impl App {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
                             let title = song.title.clone();
                             state.client.notify(format!("Playing next: {}", title));
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
                             let mode = match insert_pos {
                                 Some(pos) => EnqueueMode::InsertAfter(pos),
                                 None => EnqueueMode::Append,
@@ -174,7 +178,7 @@ impl App {
                 if !state.client.playlists.songs.is_empty() {
                     let mut songs = state.client.playlists.songs.clone();
                     songs.shuffle(&mut rand::thread_rng());
-                    drop(state);
+                    drop(state); drop(cs); drop(ds);
                     return self
                         .client
                         .request(DaemonRequest::EnqueueSongs {
@@ -192,7 +196,7 @@ impl App {
                     .playlists
                     .selected_song
                     .and_then(|idx| state.client.playlists.songs.get(idx).map(|s| s.id.clone()));
-                drop(state);
+                drop(state); drop(cs); drop(ds);
                 if let Some(id) = song_id {
                     let _ = self
                         .client

@@ -24,7 +24,9 @@ impl App {
         let mut change: Option<SettingChange> = None;
 
         {
-            let mut state = self.state.write().await;
+            let ds = self.daemon_state.read().await;
+            let mut cs = self.client_state.write().await;
+            let mut state = AppState { daemon: &*ds, client: &mut *cs };
             let field = state.client.settings_state.selected_field;
 
             match key.code {
@@ -138,7 +140,9 @@ impl App {
         // Snapshot the new client-side values, then dispatch the
         // matching daemon request (it persists + emits ConfigChanged).
         let (theme_name, cava_enabled, cava_size, daemon_enabled, gradient, h_gradient) = {
-            let state = self.state.read().await;
+            let ds = self.daemon_state.read().await;
+            let mut cs = self.client_state.write().await;
+            let state = AppState { daemon: &*ds, client: &mut *cs };
             let s = &state.client.settings_state;
             (
                 s.theme_name().to_string(),
@@ -156,7 +160,9 @@ impl App {
             SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
         };
         if let Err(e) = self.client.request(req).await {
-            let mut state = self.state.write().await;
+            let ds = self.daemon_state.read().await;
+            let mut cs = self.client_state.write().await;
+            let mut state = AppState { daemon: &*ds, client: &mut *cs };
             state.client.notify_error(format!("Failed to save: {}", e));
             return Ok(());
         }
@@ -164,21 +170,23 @@ impl App {
         // Cava lifecycle stays client-side — start/stop/restart based
         // on what changed. Daemon toggle does not affect cava.
         let cava_running = self.cava_parser.is_some();
-        let cs = cava_size as u32;
+        let cava_h = cava_size as u32;
         match change {
             SettingChange::Cava => {
                 if cava_enabled {
-                    self.start_cava(&gradient, &h_gradient, cs);
+                    self.start_cava(&gradient, &h_gradient, cava_h);
                 } else if cava_running {
                     self.stop_cava();
-                    let mut state = self.state.write().await;
+                    let ds = self.daemon_state.read().await;
+                    let mut cs = self.client_state.write().await;
+                    let mut state = AppState { daemon: &*ds, client: &mut *cs };
                     state.client.cava_screen.clear();
                 }
             }
             SettingChange::Theme | SettingChange::CavaSize => {
                 if cava_enabled {
                     // Restart with new theme colors / size
-                    self.start_cava(&gradient, &h_gradient, cs);
+                    self.start_cava(&gradient, &h_gradient, cava_h);
                 }
             }
             SettingChange::Daemon => {}

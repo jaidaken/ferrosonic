@@ -13,7 +13,11 @@ impl App {
     pub(super) async fn handle_artists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         use crate::ui::pages::artists::{build_tree_items, TreeItem};
 
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+
+        let mut cs = self.client_state.write().await;
+
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
 
         // Handle filter input mode
         if state.client.artists.filter_active {
@@ -81,10 +85,12 @@ impl App {
                             _ => None,
                         });
                     if let Some(album_id) = album_id {
-                        drop(state);
+                        drop(state); drop(cs); drop(ds);
                         let songs = self.load_album(&album_id).await;
                         if !songs.is_empty() {
-                            let mut state = self.state.write().await;
+                            let ds = self.daemon_state.read().await;
+                            let mut cs = self.client_state.write().await;
+                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
                             state.client.artists.songs = songs;
                             state.client.artists.selected_song = Some(0);
                         }
@@ -123,10 +129,12 @@ impl App {
                             _ => None,
                         });
                     if let Some(album_id) = album_id {
-                        drop(state);
+                        drop(state); drop(cs); drop(ds);
                         let songs = self.load_album(&album_id).await;
                         if !songs.is_empty() {
-                            let mut state = self.state.write().await;
+                            let ds = self.daemon_state.read().await;
+                            let mut cs = self.client_state.write().await;
+                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
                             state.client.artists.songs = songs;
                             state.client.artists.selected_song = Some(0);
                         }
@@ -157,7 +165,7 @@ impl App {
                                     let artist_id = artist.id.clone();
                                     let artist_name = artist.name.clone();
 
-                                    drop(state);
+                                    drop(state); drop(cs); drop(ds);
 
                                     let albums_resp = self
                                         .client
@@ -175,7 +183,9 @@ impl App {
                                         }
 
                                         if artists_songs.is_empty() {
-                                            let mut state = self.state.write().await;
+                                            let ds = self.daemon_state.read().await;
+                                            let mut cs = self.client_state.write().await;
+                                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                             state.client.notify_error(format!(
                                                 "No songs found for {}",
                                                 artist_name,
@@ -187,7 +197,9 @@ impl App {
 
                                         let song_count = artists_songs.len();
                                         {
-                                            let mut state = self.state.write().await;
+                                            let ds = self.daemon_state.read().await;
+                                            let mut cs = self.client_state.write().await;
+                                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                             state.client.notify(format!(
                                                 "Shuffling {} songs by {}",
                                                 song_count, artist_name
@@ -211,11 +223,13 @@ impl App {
                                     let album_id = album.id.clone();
                                     let album_name = album.name.clone();
 
-                                    drop(state);
+                                    drop(state); drop(cs); drop(ds);
 
                                     let songs = self.load_album(&album_id).await;
                                     if songs.is_empty() {
-                                        let mut state = self.state.write().await;
+                                        let ds = self.daemon_state.read().await;
+                                        let mut cs = self.client_state.write().await;
+                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.notify_error("Album has no songs");
                                         return Ok(());
                                     }
@@ -224,7 +238,9 @@ impl App {
                                     shuffled_songs.shuffle(&mut thread_rng());
 
                                     {
-                                        let mut state = self.state.write().await;
+                                        let ds = self.daemon_state.read().await;
+                                        let mut cs = self.client_state.write().await;
+                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.notify(format!("Shuffling {}", album_name));
                                     }
 
@@ -260,7 +276,7 @@ impl App {
                                     if was_expanded {
                                         state.client.artists.expanded.remove(&artist_id);
                                     } else if !state.daemon.library.albums_cache.contains_key(&artist_id) {
-                                        drop(state);
+                                        drop(state); drop(cs); drop(ds);
                                         match self
                                             .client
                                             .request(DaemonRequest::LoadArtist(artist_id.clone()))
@@ -270,12 +286,16 @@ impl App {
                                                 // Daemon already cached + emitted
                                                 // AlbumsChanged; the event-pump task
                                                 // mirrors that into our local cache.
-                                                let mut state = self.state.write().await;
+                                                let ds = self.daemon_state.read().await;
+                                                let mut cs = self.client_state.write().await;
+                                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                                 state.client.artists.expanded.insert(artist_id);
                                                 info!("Loaded albums for {}", artist_name);
                                             }
                                             _ => {
-                                                let mut state = self.state.write().await;
+                                                let ds = self.daemon_state.read().await;
+                                                let mut cs = self.client_state.write().await;
+                                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                                 state.client.notify_error("Failed to load artist");
                                             }
                                         }
@@ -287,17 +307,21 @@ impl App {
                                 TreeItem::Album { album } => {
                                     let album_id = album.id.clone();
                                     let album_name = album.name.clone();
-                                    drop(state);
+                                    drop(state); drop(cs); drop(ds);
 
                                     let songs = self.load_album(&album_id).await;
                                     if songs.is_empty() {
-                                        let mut state = self.state.write().await;
+                                        let ds = self.daemon_state.read().await;
+                                        let mut cs = self.client_state.write().await;
+                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.notify_error("Album has no songs");
                                         return Ok(());
                                     }
 
                                     {
-                                        let mut state = self.state.write().await;
+                                        let ds = self.daemon_state.read().await;
+                                        let mut cs = self.client_state.write().await;
+                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
                                         let count = songs.len();
                                         state.client.artists.songs = songs.clone();
                                         state.client.artists.selected_song = Some(0);
@@ -329,7 +353,7 @@ impl App {
                             if let Some(song) = songs.get(idx) {
                                 state.client.notify(format!("Playing: {}", song.title));
                             }
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
                             let _ = self
                                 .client
                                 .request(DaemonRequest::EnqueueSongs {
@@ -355,7 +379,7 @@ impl App {
                         if let Some(song) = state.client.artists.songs.get(idx).cloned() {
                             let title = song.title.clone();
                             state.client.notify(format!("Added to queue: {}", title));
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
                             let _ = self
                                 .client
                                 .request(DaemonRequest::EnqueueSongs {
@@ -369,7 +393,7 @@ impl App {
                     let count = state.client.artists.songs.len();
                     let songs = state.client.artists.songs.clone();
                     state.client.notify(format!("Added {} songs to queue", count));
-                    drop(state);
+                    drop(state); drop(cs); drop(ds);
                     let _ = self
                         .client
                         .request(DaemonRequest::EnqueueSongs {
@@ -386,7 +410,7 @@ impl App {
                         if let Some(song) = state.client.artists.songs.get(idx).cloned() {
                             let title = song.title.clone();
                             state.client.notify(format!("Playing next: {}", title));
-                            drop(state);
+                            drop(state); drop(cs); drop(ds);
                             let mode = match cur_pos {
                                 Some(pos) => EnqueueMode::InsertAfter(pos),
                                 None => EnqueueMode::Append,
@@ -404,7 +428,7 @@ impl App {
                     let count = state.client.artists.songs.len();
                     let songs = state.client.artists.songs.clone();
                     state.client.notify(format!("Playing {} songs next", count));
-                    drop(state);
+                    drop(state); drop(cs); drop(ds);
                     let mode = match cur_pos {
                         Some(pos) => EnqueueMode::InsertAfter(pos),
                         None => EnqueueMode::Append,
@@ -421,7 +445,7 @@ impl App {
                     .artists
                     .selected_song
                     .and_then(|idx| state.client.artists.songs.get(idx).map(|s| s.id.clone()));
-                drop(state);
+                drop(state); drop(cs); drop(ds);
                 if let Some(id) = song_id {
                     let _ = self
                         .client

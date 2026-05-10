@@ -10,7 +10,9 @@ impl App {
         y: u16,
         layout: &LayoutAreas,
     ) -> Result<(), Error> {
-        let mut state = self.state.write().await;
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut state = AppState { daemon: &*ds, client: &mut *cs };
         let left = layout.content_left.unwrap_or(layout.content);
         let right = layout.content_right.unwrap_or(layout.content);
 
@@ -34,10 +36,12 @@ impl App {
                     let playlist = state.daemon.library.playlists[item_index].clone();
                     let playlist_id = playlist.id.clone();
                     let playlist_name = playlist.name.clone();
-                    drop(state);
+                    drop(state); drop(cs); drop(ds);
 
                     let songs = self.load_playlist(&playlist_id).await;
-                    let mut state = self.state.write().await;
+                    let ds = self.daemon_state.read().await;
+                    let mut cs = self.client_state.write().await;
+                    let mut state = AppState { daemon: &*ds, client: &mut *cs };
                     let count = songs.len();
                     state.client.playlists.songs = songs;
                     state.client.playlists.selected_song = if count > 0 { Some(0) } else { None };
@@ -65,7 +69,7 @@ impl App {
                 if is_second_click {
                     // Play selected song from playlist
                     let songs = state.client.playlists.songs.clone();
-                    drop(state);
+                    drop(state); drop(cs); drop(ds);
                     self.last_click = Some((x, y, std::time::Instant::now()));
                     return self
                         .client

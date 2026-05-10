@@ -13,7 +13,7 @@ use super::pages;
 use super::widgets::{CavaWidget, NowPlayingWidget};
 
 /// Draw the entire UI
-pub fn draw(frame: &mut Frame, state: &mut AppState) {
+pub fn draw(frame: &mut Frame, state: &mut AppState<'_>) {
     let area = frame.area();
 
     let cava_active = state.client.settings_state.cava_enabled && !state.client.cava_screen.is_empty();

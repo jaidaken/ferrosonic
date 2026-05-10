@@ -11,7 +11,7 @@ use crate::app::state::AppState;
 use crate::ui::theme::ThemeColors;
 
 /// Render the server page
-pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
+pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     let block = Block::default()

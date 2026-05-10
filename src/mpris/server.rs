@@ -10,7 +10,7 @@ use mpris_server::{
 use tracing::info;
 use url::Url;
 
-use crate::app::state::{NowPlaying, PlaybackState, SharedState};
+use crate::app::state::{NowPlaying, PlaybackState, SharedDaemonState, SharedClientState};
 use crate::config::Config;
 use crate::ipc::{DaemonClient, DaemonRequest};
 use crate::subsonic::auth::generate_auth_params;
@@ -46,20 +46,29 @@ const PLAYER_NAME: &str = "ferrosonic";
 
 /// MPRIS2 player implementation
 pub struct MprisPlayer {
-    state: SharedState,
+    daemon_state: SharedDaemonState,
+    client_state: SharedClientState,
     client: Arc<dyn DaemonClient>,
 }
 
 impl MprisPlayer {
-    pub fn new(state: SharedState, client: Arc<dyn DaemonClient>) -> Self {
-        Self { state, client }
+    pub fn new(
+        daemon_state: SharedDaemonState,
+        client_state: SharedClientState,
+        client: Arc<dyn DaemonClient>,
+    ) -> Self {
+        Self {
+            daemon_state,
+            client_state,
+            client,
+        }
     }
 
     async fn get_state(&self) -> (NowPlaying, Option<Child>, Config) {
-        let state = self.state.read().await;
-        let now_playing = state.daemon.now_playing.clone();
-        let current_song = state.current_song().cloned();
-        let config = state.daemon.config.clone();
+        let ds = self.daemon_state.read().await;
+        let now_playing = ds.now_playing.clone();
+        let current_song = ds.current_song().cloned();
+        let config = ds.config.clone();
         (now_playing, current_song, config)
     }
 }
@@ -71,8 +80,8 @@ impl RootInterface for MprisPlayer {
     }
 
     async fn quit(&self) -> fdo::Result<()> {
-        let mut state = self.state.write().await;
-        state.client.should_quit = true;
+        let mut cs = self.client_state.write().await;
+        cs.should_quit = true;
         Ok(())
     }
 
@@ -279,21 +288,20 @@ impl PlayerInterface for MprisPlayer {
     }
 
     async fn can_go_next(&self) -> fdo::Result<bool> {
-        let state = self.state.read().await;
-        Ok(state.daemon
-            .queue_position
-            .map(|p| p + 1 < state.daemon.queue.len())
+        let ds = self.daemon_state.read().await;
+        Ok(ds.queue_position
+            .map(|p| p + 1 < ds.queue.len())
             .unwrap_or(false))
     }
 
     async fn can_go_previous(&self) -> fdo::Result<bool> {
-        let state = self.state.read().await;
-        Ok(state.daemon.queue_position.map(|p| p > 0).unwrap_or(false))
+        let ds = self.daemon_state.read().await;
+        Ok(ds.queue_position.map(|p| p > 0).unwrap_or(false))
     }
 
     async fn can_play(&self) -> fdo::Result<bool> {
-        let state = self.state.read().await;
-        Ok(!state.daemon.queue.is_empty())
+        let ds = self.daemon_state.read().await;
+        Ok(!ds.queue.is_empty())
     }
 
     async fn can_pause(&self) -> fdo::Result<bool> {
@@ -311,12 +319,13 @@ impl PlayerInterface for MprisPlayer {
 
 /// Start the MPRIS server
 pub async fn start_mpris_server(
-    state: SharedState,
+    daemon_state: SharedDaemonState,
+    client_state: SharedClientState,
     client: Arc<dyn DaemonClient>,
 ) -> Result<Server<MprisPlayer>> {
     info!("Starting MPRIS2 server");
 
-    let player = MprisPlayer::new(state, client);
+    let player = MprisPlayer::new(daemon_state, client_state, client);
     let server = Server::new(PLAYER_NAME, player).await?;
 
     info!(
@@ -337,27 +346,21 @@ pub async fn start_mpris_server(
 /// (which takes a write lock each frame) if D-Bus is slow.
 pub async fn update_mpris_properties(
     server: &Server<MprisPlayer>,
-    state: &SharedState,
+    daemon_state: &SharedDaemonState,
 ) -> Result<()> {
     let (playback, can_go_next, can_go_prev, current_song, config) = {
-        let s = state.read().await;
-        let pb = match s.daemon.now_playing.state {
+        let ds = daemon_state.read().await;
+        let pb = match ds.now_playing.state {
             PlaybackState::Playing => PlaybackStatus::Playing,
             PlaybackState::Paused => PlaybackStatus::Paused,
             PlaybackState::Stopped => PlaybackStatus::Stopped,
         };
-        let cgn = s.daemon
+        let cgn = ds
             .queue_position
-            .map(|p| p + 1 < s.daemon.queue.len())
+            .map(|p| p + 1 < ds.queue.len())
             .unwrap_or(false);
-        let cgp = s.daemon.queue_position.map(|p| p > 0).unwrap_or(false);
-        (
-            pb,
-            cgn,
-            cgp,
-            s.current_song().cloned(),
-            s.daemon.config.clone(),
-        )
+        let cgp = ds.queue_position.map(|p| p > 0).unwrap_or(false);
+        (pb, cgn, cgp, ds.current_song().cloned(), ds.config.clone())
     };
 
     server
