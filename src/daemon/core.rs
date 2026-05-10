@@ -131,14 +131,14 @@ impl DaemonCore {
     /// Start the mpv subprocess. Idempotent — no-ops if already running.
     pub async fn start_mpv(&self) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
-        mpv.start().map_err(Into::into)
+        mpv.start().await.map_err(Into::into)
     }
 
     /// Best-effort shutdown of mpv. Used at TUI exit (phase 2) and at
     /// daemon shutdown (phase 7).
     pub async fn quit_mpv(&self) {
         let mut mpv = self.mpv.lock().await;
-        let _ = mpv.quit();
+        let _ = mpv.quit().await;
     }
 
     /// Spawn the playback-info polling task. Runs `update_playback_info`
@@ -389,7 +389,7 @@ impl DaemonCore {
         }
 
         let mut mpv = self.mpv.lock().await;
-        match mpv.toggle_pause() {
+        match mpv.toggle_pause().await {
             Ok(now_paused) => {
                 drop(mpv);
                 let mut state = self.state.write().await;
@@ -419,7 +419,7 @@ impl DaemonCore {
             }
         }
         let mut mpv = self.mpv.lock().await;
-        match mpv.pause() {
+        match mpv.pause().await {
             Ok(()) => {
                 drop(mpv);
                 let mut state = self.state.write().await;
@@ -442,7 +442,7 @@ impl DaemonCore {
             }
         }
         let mut mpv = self.mpv.lock().await;
-        match mpv.resume() {
+        match mpv.resume().await {
             Ok(()) => {
                 drop(mpv);
                 let mut state = self.state.write().await;
@@ -470,7 +470,7 @@ impl DaemonCore {
             _ => {
                 info!("Reached end of queue");
                 let mut mpv = self.mpv.lock().await;
-                let _ = mpv.stop();
+                let _ = mpv.stop().await;
                 drop(mpv);
                 let mut state = self.state.write().await;
                 state.now_playing.state = PlaybackState::Stopped;
@@ -505,7 +505,7 @@ impl DaemonCore {
             }
             // At track 0 with <3s elapsed — restart from 0
             let mut mpv = self.mpv.lock().await;
-            if let Err(e) = mpv.seek(0.0) {
+            if let Err(e) = mpv.seek(0.0).await {
                 error!("Failed to restart track: {}", e);
             } else {
                 drop(mpv);
@@ -516,7 +516,7 @@ impl DaemonCore {
         }
         // Restart current track from 0
         let mut mpv = self.mpv.lock().await;
-        if let Err(e) = mpv.seek(0.0) {
+        if let Err(e) = mpv.seek(0.0).await {
             error!("Failed to restart track: {}", e);
         } else {
             drop(mpv);
@@ -570,10 +570,10 @@ impl DaemonCore {
         info!("Playing: {} (queue pos {})", song.title, pos);
         {
             let mut mpv = self.mpv.lock().await;
-            if mpv.is_paused().unwrap_or(false) {
-                let _ = mpv.resume();
+            if mpv.is_paused().await.unwrap_or(false) {
+                let _ = mpv.resume().await;
             }
-            if let Err(e) = mpv.loadfile(&stream_url) {
+            if let Err(e) = mpv.loadfile(&stream_url).await {
                 error!("Failed to play: {}", e);
                 drop(mpv);
                 self.emit(DaemonEvent::Notification {
@@ -614,9 +614,9 @@ impl DaemonCore {
 
         debug!("Pre-loading next track for gapless: {}", next_song.title);
         let mut mpv = self.mpv.lock().await;
-        if let Err(e) = mpv.loadfile_append(&url) {
+        if let Err(e) = mpv.loadfile_append(&url).await {
             debug!("Failed to pre-load next track: {}", e);
-        } else if let Ok(count) = mpv.get_playlist_count() {
+        } else if let Ok(count) = mpv.get_playlist_count().await {
             if count < 2 {
                 warn!("Preload may have failed: playlist count is {} (expected 2)", count);
             } else {
@@ -630,7 +630,7 @@ impl DaemonCore {
         use crate::app::state::PlaybackState;
         {
             let mut mpv = self.mpv.lock().await;
-            if let Err(e) = mpv.stop() {
+            if let Err(e) = mpv.stop().await {
                 error!("Failed to stop: {}", e);
             }
         }
@@ -658,7 +658,7 @@ impl DaemonCore {
         use crate::app::state::PlaybackState;
         {
             let mut mpv = self.mpv.lock().await;
-            if let Err(e) = mpv.stop() {
+            if let Err(e) = mpv.stop().await {
                 error!("Failed to stop: {}", e);
             }
         }
@@ -680,7 +680,7 @@ impl DaemonCore {
     /// position on success.
     pub async fn seek(self: &Arc<Self>, pos: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
-        if let Err(e) = mpv.seek(pos) {
+        if let Err(e) = mpv.seek(pos).await {
             warn!("Seek failed: {}", e);
             return Ok(());
         }
@@ -693,14 +693,14 @@ impl DaemonCore {
     /// Direct mpv seek by relative offset.
     pub async fn seek_relative(self: &Arc<Self>, offset: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
-        let _ = mpv.seek_relative(offset);
+        let _ = mpv.seek_relative(offset).await;
         Ok(())
     }
 
     /// Set mpv volume (0-100).
     pub async fn set_volume(self: &Arc<Self>, vol: i32) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
-        let _ = mpv.set_volume(vol);
+        let _ = mpv.set_volume(vol).await;
         Ok(())
     }
 
@@ -743,7 +743,7 @@ impl DaemonCore {
             if has_next && time_remaining > 0.0 && time_remaining < 2.0 {
                 let count_opt = {
                     let mut mpv = self.mpv.lock().await;
-                    mpv.get_playlist_count().ok()
+                    mpv.get_playlist_count().await.ok()
                 };
                 if let Some(count) = count_opt {
                     if count < 2 {
@@ -757,7 +757,7 @@ impl DaemonCore {
             // Re-preload if mpv lost the appended track.
             let count_opt = {
                 let mut mpv = self.mpv.lock().await;
-                mpv.get_playlist_count().ok()
+                mpv.get_playlist_count().await.ok()
             };
             if count_opt == Some(1) {
                 let next_pos_opt = {
@@ -779,7 +779,7 @@ impl DaemonCore {
             // Detect mpv's gapless advance to next track.
             let mpv_pos_opt = {
                 let mut mpv = self.mpv.lock().await;
-                mpv.get_playlist_pos().ok().flatten()
+                mpv.get_playlist_pos().await.ok().flatten()
             };
             if mpv_pos_opt == Some(1) {
                 let advance_info = {
@@ -804,7 +804,7 @@ impl DaemonCore {
                     }
                     {
                         let mut mpv = self.mpv.lock().await;
-                        let _ = mpv.playlist_remove(0);
+                        let _ = mpv.playlist_remove(0).await;
                     }
                     self.preload_next_track(next_pos).await;
                     self.emit_now_playing().await;
@@ -815,7 +815,7 @@ impl DaemonCore {
             // Track ended with no preload.
             let idle_opt = {
                 let mut mpv = self.mpv.lock().await;
-                mpv.is_idle().ok()
+                mpv.is_idle().await.ok()
             };
             if idle_opt == Some(true) {
                 info!("Track ended, advancing to next");
@@ -827,7 +827,7 @@ impl DaemonCore {
         // Update position from mpv.
         let pos_opt = {
             let mut mpv = self.mpv.lock().await;
-            mpv.get_time_pos().ok()
+            mpv.get_time_pos().await.ok()
         };
         if let Some(position) = pos_opt {
             let mut state = self.state.write().await;
@@ -846,7 +846,7 @@ impl DaemonCore {
         if need_duration {
             let dur_opt = {
                 let mut mpv = self.mpv.lock().await;
-                mpv.get_duration().ok()
+                mpv.get_duration().await.ok()
             };
             if let Some(duration) = dur_opt {
                 if duration > 0.0 {
@@ -865,10 +865,10 @@ impl DaemonCore {
             let (sr, bd, fmt, ch) = {
                 let mut mpv = self.mpv.lock().await;
                 (
-                    mpv.get_sample_rate().ok().flatten(),
-                    mpv.get_bit_depth().ok().flatten(),
-                    mpv.get_audio_format().ok().flatten(),
-                    mpv.get_channels().ok().flatten(),
+                    mpv.get_sample_rate().await.ok().flatten(),
+                    mpv.get_bit_depth().await.ok().flatten(),
+                    mpv.get_audio_format().await.ok().flatten(),
+                    mpv.get_channels().await.ok().flatten(),
                 )
             };
             if let Some(rate) = sr {
