@@ -43,10 +43,10 @@ pub use state::*;
 /// subprocess + the TUI event loop. Phase 5 splits `App` into the
 /// `ferrosonic` binary and `DaemonCore` into `ferrosonicd`.
 pub struct App {
-    /// Daemon-side core. Phase 2 keeps a direct handle for the lifecycle
-    /// methods (`start_mpv`/`quit_mpv`) and the polling tick; every
-    /// other touch should go through `client`. Phase 5 removes this
-    /// when the daemon moves into its own process.
+    /// Daemon-side core. Phase 2 keeps a direct handle for the
+    /// lifecycle methods (`start_mpv`/`quit_mpv`/`spawn_polling_task`);
+    /// every other touch should go through `client`. Phase 5 removes
+    /// this when the daemon moves into its own process.
     pub(crate) core: Arc<DaemonCore>,
     /// Daemon command channel. In phase 2 this is an `InProcessClient`
     /// that dispatches directly to `core`; in phase 4 the same trait
@@ -93,6 +93,12 @@ impl App {
 
     /// Run the application
     pub async fn run(&mut self) -> Result<(), Error> {
+        // Spawn the daemon's playback-info poll task. It ticks every
+        // 500ms regardless of TUI activity, so playback continues to
+        // advance / detect track end / handle gapless preload even
+        // when the event loop is idle waiting for input.
+        let _poll_task = self.core.spawn_polling_task();
+
         // Start MPV via the daemon core
         if let Err(e) = self.core.start_mpv().await {
             warn!("Failed to start MPV: {} - audio playback won't work", e);
@@ -225,13 +231,14 @@ impl App {
         let _ = self.client.request(DaemonRequest::RefreshPlaylists).await;
     }
 
-    /// Main event loop
+    /// Main event loop. After phase 2.5 it does only TUI-side work:
+    /// drawing, reading input, reading cava output, and notification
+    /// timeout. Playback tracking runs on the daemon-side polling
+    /// task spawned in `App::run`.
     async fn event_loop(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<(), Error> {
-        let mut last_playback_update = std::time::Instant::now();
-
         loop {
             // Determine tick rate based on whether cava is active
             let cava_active = self.cava_parser.is_some();
@@ -265,15 +272,6 @@ impl App {
 
             // Read cava output (non-blocking)
             self.read_cava_output().await;
-
-            // Update playback position every ~500ms. Phase 2.5 lifts this
-            // into a `tokio::spawn`'d task on `core` itself; for now it's
-            // driven from the event loop tick.
-            let now = std::time::Instant::now();
-            if now.duration_since(last_playback_update) >= Duration::from_millis(500) {
-                last_playback_update = now;
-                self.core.update_playback_info().await;
-            }
 
             // Check for notification auto-clear (after 2 seconds)
             {

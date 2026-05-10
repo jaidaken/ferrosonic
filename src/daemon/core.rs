@@ -104,6 +104,23 @@ impl DaemonCore {
         let _ = mpv.quit();
     }
 
+    /// Spawn the playback-info polling task. Runs `update_playback_info`
+    /// every 500ms on the tokio runtime. The returned `JoinHandle` is
+    /// detached by `App::run` (we don't await it; cancellation happens
+    /// at process exit). Phase 5 keeps this exact loop in the daemon
+    /// process — it is fully self-contained.
+    pub fn spawn_polling_task(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        let core = self.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tick.tick().await;
+                core.update_playback_info().await;
+            }
+        })
+    }
+
     /// Subscribe to daemon events. Returns a `broadcast::Receiver` that
     /// will receive every `DaemonEvent` broadcast after the call.
     /// Used by the upcoming `DaemonClient` (phase 2.3) and the socket
