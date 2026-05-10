@@ -734,7 +734,7 @@ impl DaemonCore {
                 let state = self.state.read().await;
                 let tr = state.now_playing.duration - state.now_playing.position;
                 let hn = state
-                    .daemon.queue_position
+                    .queue_position
                     .map(|p| p + 1 < state.queue.len())
                     .unwrap_or(false);
                 (tr, hn)
@@ -1111,7 +1111,6 @@ impl DaemonCore {
             let mut state = self.state.write().await;
             state.config.theme = name.to_string();
             state
-                .daemon
                 .config
                 .save_default()
                 .map_err(Error::Config)?;
@@ -1126,7 +1125,6 @@ impl DaemonCore {
             let mut state = self.state.write().await;
             state.config.cava = on;
             state
-                .daemon
                 .config
                 .save_default()
                 .map_err(Error::Config)?;
@@ -1143,7 +1141,6 @@ impl DaemonCore {
             let mut state = self.state.write().await;
             state.config.daemon = on;
             state
-                .daemon
                 .config
                 .save_default()
                 .map_err(Error::Config)?;
@@ -1159,7 +1156,6 @@ impl DaemonCore {
             let mut state = self.state.write().await;
             state.config.cava_size = clamped;
             state
-                .daemon
                 .config
                 .save_default()
                 .map_err(Error::Config)?;

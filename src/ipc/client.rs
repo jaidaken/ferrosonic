@@ -194,7 +194,6 @@ impl DaemonClient for InProcessClient {
                 self.core.load_artist(&id).await;
                 let state = self.core.state.read().await;
                 let albums = state
-                    .daemon
                     .library
                     .albums_cache
                     .get(&id)
