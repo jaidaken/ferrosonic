@@ -17,7 +17,7 @@ impl App {
 
         let mut cs = self.client_state.write().await;
 
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
 
         // Handle filter input mode
         if state.client.artists.filter_active {
@@ -90,7 +90,7 @@ impl App {
                         if !songs.is_empty() {
                             let ds = self.daemon_state.read().await;
                             let mut cs = self.client_state.write().await;
-                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                            let state = AppState { daemon: &*ds, client: &mut *cs };
                             state.client.artists.songs = songs;
                             state.client.artists.selected_song = Some(0);
                         }
@@ -134,7 +134,7 @@ impl App {
                         if !songs.is_empty() {
                             let ds = self.daemon_state.read().await;
                             let mut cs = self.client_state.write().await;
-                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                            let state = AppState { daemon: &*ds, client: &mut *cs };
                             state.client.artists.songs = songs;
                             state.client.artists.selected_song = Some(0);
                         }
@@ -185,7 +185,7 @@ impl App {
                                         if artists_songs.is_empty() {
                                             let ds = self.daemon_state.read().await;
                                             let mut cs = self.client_state.write().await;
-                                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                            let state = AppState { daemon: &*ds, client: &mut *cs };
                                             state.client.notify_error(format!(
                                                 "No songs found for {}",
                                                 artist_name,
@@ -199,7 +199,7 @@ impl App {
                                         {
                                             let ds = self.daemon_state.read().await;
                                             let mut cs = self.client_state.write().await;
-                                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                            let state = AppState { daemon: &*ds, client: &mut *cs };
                                             state.client.notify(format!(
                                                 "Shuffling {} songs by {}",
                                                 song_count, artist_name
@@ -229,7 +229,7 @@ impl App {
                                     if songs.is_empty() {
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
-                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                        let state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.notify_error("Album has no songs");
                                         return Ok(());
                                     }
@@ -240,7 +240,7 @@ impl App {
                                     {
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
-                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                        let state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.notify(format!("Shuffling {}", album_name));
                                     }
 
@@ -288,14 +288,14 @@ impl App {
                                                 // mirrors that into our local cache.
                                                 let ds = self.daemon_state.read().await;
                                                 let mut cs = self.client_state.write().await;
-                                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                                let state = AppState { daemon: &*ds, client: &mut *cs };
                                                 state.client.artists.expanded.insert(artist_id);
                                                 info!("Loaded albums for {}", artist_name);
                                             }
                                             _ => {
                                                 let ds = self.daemon_state.read().await;
                                                 let mut cs = self.client_state.write().await;
-                                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                                let state = AppState { daemon: &*ds, client: &mut *cs };
                                                 state.client.notify_error("Failed to load artist");
                                             }
                                         }
@@ -313,7 +313,7 @@ impl App {
                                     if songs.is_empty() {
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
-                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                        let state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.notify_error("Album has no songs");
                                         return Ok(());
                                     }
@@ -321,7 +321,7 @@ impl App {
                                     {
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
-                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                        let state = AppState { daemon: &*ds, client: &mut *cs };
                                         let count = songs.len();
                                         state.client.artists.songs = songs.clone();
                                         state.client.artists.selected_song = Some(0);

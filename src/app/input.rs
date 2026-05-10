@@ -42,7 +42,7 @@ impl App {
     pub(super) async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
 
         // Clear notification on any keypress
         state.client.clear_notification();
@@ -166,7 +166,7 @@ impl App {
                 self.load_initial_data().await;
                 let ds = self.daemon_state.read().await;
                 let mut cs = self.client_state.write().await;
-                let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                let state = AppState { daemon: &*ds, client: &mut *cs };
                 state.client.notify("Data refreshed");
                 return Ok(());
             }

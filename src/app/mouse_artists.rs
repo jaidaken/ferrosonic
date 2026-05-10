@@ -16,7 +16,7 @@ impl App {
 
         let mut cs = self.client_state.write().await;
 
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
         let left = layout.content_left.unwrap_or(layout.content);
         let right = layout.content_right.unwrap_or(layout.content);
 
@@ -62,14 +62,14 @@ impl App {
                                         // We just expand here.
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
-                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                        let state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.artists.expanded.insert(artist_id);
                                         tracing::info!("Loaded albums for {}", artist_name);
                                     }
                                     _ => {
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
-                                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                        let state = AppState { daemon: &*ds, client: &mut *cs };
                                         state.client.notify_error("Failed to load artist");
                                     }
                                 }
@@ -88,7 +88,7 @@ impl App {
                             if songs.is_empty() {
                                 let ds = self.daemon_state.read().await;
                                 let mut cs = self.client_state.write().await;
-                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                let state = AppState { daemon: &*ds, client: &mut *cs };
                                 state.client.notify_error("Album has no songs");
                                 self.last_click = Some((x, y, std::time::Instant::now()));
                                 return Ok(());
@@ -97,7 +97,7 @@ impl App {
                             {
                                 let ds = self.daemon_state.read().await;
                                 let mut cs = self.client_state.write().await;
-                                let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                                let state = AppState { daemon: &*ds, client: &mut *cs };
                                 let count = songs.len();
                                 state.client.artists.songs = songs.clone();
                                 state.client.artists.selected_song = Some(0);
@@ -126,7 +126,7 @@ impl App {
                         if !songs.is_empty() {
                             let ds = self.daemon_state.read().await;
                             let mut cs = self.client_state.write().await;
-                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                            let state = AppState { daemon: &*ds, client: &mut *cs };
                             state.client.artists.songs = songs;
                             state.client.artists.selected_song = Some(0);
                         }

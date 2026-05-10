@@ -39,7 +39,7 @@ impl App {
                     HeaderRegion::Tab(tab_page) => {
                         let ds = self.daemon_state.read().await;
                         let mut cs = self.client_state.write().await;
-                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                        let state = AppState { daemon: &*ds, client: &mut *cs };
                         state.client.page = tab_page;
                     }
                     HeaderRegion::PrevButton => {
@@ -138,7 +138,7 @@ impl App {
                 {
                     let ds = self.daemon_state.read().await;
                     let mut cs = self.client_state.write().await;
-                    let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                    let state = AppState { daemon: &*ds, client: &mut *cs };
                     already = state.client.songs.selected_option.as_ref() == Some(&option);
                     state.client.songs.selected_option = Some(option.clone());
                     state.client.songs.focus = 0;
@@ -161,7 +161,7 @@ impl App {
         let row_in_pane = y.saturating_sub(right.y + 1) as usize;
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
         let item_index = state.client.songs.scroll_offset + row_in_pane;
         if item_index >= state.songs_list().len() {
             return Ok(());
@@ -198,7 +198,7 @@ impl App {
     async fn handle_queue_click(&mut self, y: u16, layout: &LayoutAreas) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
         let content = layout.content;
 
         // Account for border (1 row top)
@@ -229,7 +229,7 @@ impl App {
     async fn handle_mouse_scroll_up(&mut self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
         match state.client.page {
             Page::Library => {
                 if state.client.artists.focus == 0 {
@@ -286,7 +286,7 @@ impl App {
     async fn handle_mouse_scroll_down(&mut self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
         match state.client.page {
             Page::Library => {
                 if state.client.artists.focus == 0 {

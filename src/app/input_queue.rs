@@ -9,7 +9,7 @@ impl App {
     pub(super) async fn handle_queue_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
 
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -128,7 +128,7 @@ impl App {
                     Ok(crate::ipc::DaemonResponse::HistoryCleared(removed)) => {
                         let ds = self.daemon_state.read().await;
                         let mut cs = self.client_state.write().await;
-                        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                        let state = AppState { daemon: &*ds, client: &mut *cs };
                         if removed == 0 {
                             state.client.notify("No history to clear");
                         } else {

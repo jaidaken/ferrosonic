@@ -9,7 +9,7 @@ impl App {
     pub(super) async fn handle_playlists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let mut state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState { daemon: &*ds, client: &mut *cs };
 
         match key.code {
             KeyCode::Tab => {
@@ -80,7 +80,7 @@ impl App {
                             let songs = self.load_playlist(&playlist_id).await;
                             let ds = self.daemon_state.read().await;
                             let mut cs = self.client_state.write().await;
-                            let mut state = AppState { daemon: &*ds, client: &mut *cs };
+                            let state = AppState { daemon: &*ds, client: &mut *cs };
                             let count = songs.len();
                             state.client.playlists.songs = songs;
                             state.client.playlists.selected_song =
