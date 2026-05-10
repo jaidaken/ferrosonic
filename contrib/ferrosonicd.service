@@ -1,0 +1,15 @@
+[Unit]
+Description=Ferrosonic music daemon
+Documentation=https://github.com/jaidaken/ferrosonic
+After=graphical-session.target pipewire.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/ferrosonicd
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target

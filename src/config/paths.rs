@@ -28,6 +28,12 @@ pub fn mpv_socket_path() -> PathBuf {
     std::env::temp_dir().join("ferrosonic-mpv.sock")
 }
 
+/// Persisted queue snapshot path — daemon writes here on queue changes
+/// and restores it at boot so the queue survives daemon restarts.
+pub fn queue_file() -> Option<PathBuf> {
+    config_dir().map(|p| p.join("queue.json"))
+}
+
 /// Ensure the config directory exists
 #[allow(dead_code)]
 pub fn ensure_config_dir() -> std::io::Result<PathBuf> {

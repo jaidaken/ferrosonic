@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
+use tokio::signal::unix::{signal, SignalKind};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -135,11 +136,35 @@ async fn main() -> anyhow::Result<()> {
 
     let path = socket_path();
     info!("Listening on {}", path.display());
-    if let Err(e) = serve(core, &path).await {
-        error!("Server terminated: {}", e);
-        return Err(e.into());
+
+    let serve_core = core.clone();
+    let serve_path = path.clone();
+    let server_task = tokio::spawn(async move {
+        if let Err(e) = serve(serve_core, &serve_path).await {
+            error!("Server terminated: {}", e);
+        }
+    });
+
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigint = signal(SignalKind::interrupt())?;
+    tokio::select! {
+        _ = sigterm.recv() => info!("SIGTERM received, shutting down"),
+        _ = sigint.recv() => info!("SIGINT received, shutting down"),
+        _ = &mut Box::pin(server_task) => warn!("Server task ended unexpectedly"),
     }
 
+    shutdown(&core, &path).await;
     info!("ferrosonicd exiting");
     Ok(())
+}
+
+async fn shutdown(core: &Arc<DaemonCore>, socket: &std::path::Path) {
+    use ferrosonic::ipc::DaemonEvent;
+    let _ = core.event_tx.send(DaemonEvent::Shutdown);
+    core.quit_mpv().await;
+    if let Err(e) = std::fs::remove_file(socket) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            warn!("Failed to remove socket {}: {}", socket.display(), e);
+        }
+    }
 }

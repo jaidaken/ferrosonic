@@ -31,6 +31,7 @@ use crate::app::state::SharedState;
 use crate::audio::mpv::MpvController;
 use crate::audio::pipewire::PipeWireController;
 use crate::config::Config;
+use crate::daemon::persistence::QueueSnapshot;
 use crate::daemon::state::DaemonState;
 use crate::error::Error;
 use crate::ipc::protocol::DaemonEvent;
@@ -61,6 +62,10 @@ pub struct DaemonCore {
     /// Fan-out channel for state-change events. Clients subscribe via
     /// `event_tx.subscribe()` and consume the resulting `Receiver`.
     pub event_tx: broadcast::Sender<DaemonEvent>,
+    /// Trailing-edge debounce signal for the queue-persistence task.
+    /// `try_send(())` on every queue change; the task drains it, sleeps
+    /// briefly, then writes the latest queue to disk.
+    queue_save_tx: tokio::sync::mpsc::Sender<()>,
 }
 
 impl DaemonCore {
@@ -82,13 +87,55 @@ impl DaemonCore {
         };
 
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
+        let (queue_save_tx, queue_save_rx) = tokio::sync::mpsc::channel::<()>(1);
 
-        Arc::new(Self {
+        let core = Arc::new(Self {
             state,
             mpv: Mutex::new(MpvController::new()),
             pipewire: Mutex::new(PipeWireController::new()),
             subsonic: RwLock::new(subsonic),
             event_tx,
+            queue_save_tx,
+        });
+
+        core.clone().spawn_queue_persistence(queue_save_rx);
+        core.clone().restore_queue_blocking();
+        core
+    }
+
+    fn restore_queue_blocking(self: Arc<Self>) {
+        if let Some(snap) = QueueSnapshot::load() {
+            let count = snap.queue.len();
+            let position = snap.position;
+            let st = self.state.clone();
+            tokio::spawn(async move {
+                let mut s = st.write().await;
+                s.daemon.queue = snap.queue;
+                s.daemon.queue_position = snap.position;
+                info!("Restored {} queue items (position={:?})", count, position);
+            });
+        }
+    }
+
+    fn spawn_queue_persistence(
+        self: Arc<Self>,
+        mut rx: tokio::sync::mpsc::Receiver<()>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            while rx.recv().await.is_some() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                while rx.try_recv().is_ok() {} // coalesce burst
+                let snap = {
+                    let s = self.state.read().await;
+                    QueueSnapshot {
+                        queue: s.daemon.queue.clone(),
+                        position: s.daemon.queue_position,
+                    }
+                };
+                if let Err(e) = snap.save() {
+                    warn!("Queue persistence write failed: {}", e);
+                }
+            }
         })
     }
 
@@ -157,6 +204,7 @@ impl DaemonCore {
             let state = self.state.read().await;
             (state.daemon.queue.clone(), state.daemon.queue_position)
         };
+        let _ = self.queue_save_tx.try_send(());
         self.emit(DaemonEvent::QueueChanged { queue, position });
     }
 
