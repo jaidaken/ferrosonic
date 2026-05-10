@@ -379,7 +379,7 @@ impl App {
                         .await;
                 }
             }
-            KeyCode::Char('n') => {
+            KeyCode::Char('i') => {
                 let cur_pos = state.daemon.queue_position;
                 if state.client.artists.focus == 1 {
                     if let Some(idx) = state.client.artists.selected_song {
@@ -414,6 +414,21 @@ impl App {
                         .request(DaemonRequest::EnqueueSongs { songs, mode })
                         .await;
                 }
+            }
+            KeyCode::Char('m') if state.client.artists.focus == 1 => {
+                let song_id = state
+                    .client
+                    .artists
+                    .selected_song
+                    .and_then(|idx| state.client.artists.songs.get(idx).map(|s| s.id.clone()));
+                drop(state);
+                if let Some(id) = song_id {
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::ToggleStarSong(id))
+                        .await;
+                }
+                return Ok(());
             }
             _ => {}
         }

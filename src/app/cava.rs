@@ -48,11 +48,28 @@ impl App {
         let slave_stdout = unsafe { std::fs::File::from_raw_fd(slave) };
         let slave_stdin = unsafe { std::fs::File::from_raw_fd(slave_stdin_fd) };
         let slave_stderr = unsafe { std::fs::File::from_raw_fd(slave_stderr_fd) };
-        let config_path = std::env::temp_dir().join("ferrosonic-cava.conf");
-        if let Err(e) = std::fs::write(&config_path, generate_cava_config(cava_gradient, cava_horizontal_gradient)) {
-            error!("Failed to write cava config: {}", e);
-            return;
-        }
+        let cfg_body = generate_cava_config(cava_gradient, cava_horizontal_gradient);
+        let cfg = match tempfile::Builder::new()
+            .prefix("ferrosonic-cava-")
+            .suffix(".conf")
+            .tempfile()
+        {
+            Ok(mut f) => {
+                use std::io::Write as _;
+                if let Err(e) = f.write_all(cfg_body.as_bytes()) {
+                    error!("Failed to write cava config: {}", e);
+                    unsafe { libc::close(master); }
+                    return;
+                }
+                f
+            }
+            Err(e) => {
+                error!("Failed to create cava temp file: {}", e);
+                unsafe { libc::close(master); }
+                return;
+            }
+        };
+        let config_path = cfg.path().to_path_buf();
         let mut cmd = std::process::Command::new("cava");
         cmd.arg("-p").arg(&config_path);
         cmd.stdout(std::process::Stdio::from(slave_stdout))
@@ -74,6 +91,7 @@ impl App {
                 self.cava_process = Some(child);
                 self.cava_pty_master = Some(master_file);
                 self.cava_parser = Some(parser);
+                self.cava_config = Some(cfg);
                 info!("Cava started in noncurses mode ({}x{})", cava_w, cava_h);
             }
             Err(e) => {
@@ -94,6 +112,7 @@ impl App {
         self.cava_process = None;
         self.cava_pty_master = None;
         self.cava_parser = None;
+        self.cava_config = None;
     }
 
     /// Read cava pty output and snapshot screen to state

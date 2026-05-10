@@ -54,6 +54,12 @@ pub fn draw(frame: &mut Frame, state: &mut AppState) {
                     .split(content_area);
             (Some(panes[0]), Some(panes[1]))
         }
+        Page::QuickPlay => {
+            let panes =
+                Layout::horizontal([Constraint::Length(22), Constraint::Min(0)])
+                    .split(content_area);
+            (Some(panes[0]), Some(panes[1]))
+        }
         _ => (None, None),
     };
 

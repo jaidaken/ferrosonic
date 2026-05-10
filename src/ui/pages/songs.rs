@@ -16,7 +16,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
     let colors = *state.client.settings_state.theme_colors();
 
     let chunks =
-        Layout::vertical([Constraint::Percentage(15), Constraint::Percentage(85)]).split(area);
+        Layout::horizontal([Constraint::Length(22), Constraint::Min(0)]).split(area);
 
     render_options(frame, chunks[0], state, &colors);
     render_songs(frame, chunks[1], state, &colors);

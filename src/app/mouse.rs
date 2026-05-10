@@ -111,14 +111,17 @@ impl App {
         layout: &LayoutAreas,
     ) -> Result<(), Error> {
         use crate::app::models::SongOption;
-        let content = layout.content;
-        // Page splits content vertically 15% options / 85% songs
-        // (mirrors src/ui/pages/songs.rs::render).
-        let options_height = (content.height * 15) / 100;
-        let options_y_end = content.y + options_height;
+        let (left, right) = match (layout.content_left, layout.content_right) {
+            (Some(l), Some(r)) => (l, r),
+            _ => return Ok(()),
+        };
 
-        if y < options_y_end {
-            let row_in_pane = y.saturating_sub(content.y + 1) as usize;
+        let in_pane = |r: ratatui::layout::Rect| {
+            x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
+        };
+
+        if in_pane(left) {
+            let row_in_pane = y.saturating_sub(left.y + 1) as usize;
             let option = match row_in_pane {
                 0 => Some(SongOption::Starred),
                 1 => Some(SongOption::Random),
@@ -143,7 +146,11 @@ impl App {
             return Ok(());
         }
 
-        let row_in_pane = y.saturating_sub(options_y_end + 1) as usize;
+        if !in_pane(right) {
+            return Ok(());
+        }
+
+        let row_in_pane = y.saturating_sub(right.y + 1) as usize;
         let mut state = self.state.write().await;
         let item_index = state.client.songs.scroll_offset + row_in_pane;
         if item_index >= state.songs_list().len() {
@@ -156,7 +163,7 @@ impl App {
         let is_second_click = was_selected
             && self
                 .last_click
-                .is_some_and(|(_, ly, t)| ly == y && t.elapsed().as_millis() < 500);
+                .is_some_and(|(lx, ly, t)| lx == x && ly == y && t.elapsed().as_millis() < 500);
 
         if is_second_click {
             let songs = state.songs_list().to_vec();

@@ -1,9 +1,18 @@
 //! PipeWire sample rate control
 
 use std::process::Command;
+use tokio::process::Command as AsyncCommand;
 use tracing::{debug, error, info};
 
 use crate::error::AudioError;
+
+async fn run_pw_metadata(args: &[&str]) -> Result<std::process::Output, AudioError> {
+    AsyncCommand::new("pw-metadata")
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))
+}
 
 /// PipeWire sample rate controller
 pub struct PipeWireController {
@@ -62,22 +71,16 @@ impl PipeWireController {
     }
 
     /// Set the sample rate
-    pub fn set_rate(&mut self, rate: u32) -> Result<(), AudioError> {
+    pub async fn set_rate(&mut self, rate: u32) -> Result<(), AudioError> {
         if self.current_rate == Some(rate) {
             debug!("Sample rate already set to {}", rate);
             return Ok(());
         }
 
         info!("Setting PipeWire sample rate to {} Hz", rate);
-
-        let output = Command::new("pw-metadata")
-            .arg("-n")
-            .arg("settings")
-            .arg("0")
-            .arg("clock.force-rate")
-            .arg(rate.to_string())
-            .output()
-            .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))?;
+        let rate_str = rate.to_string();
+        let output =
+            run_pw_metadata(&["-n", "settings", "0", "clock.force-rate", &rate_str]).await?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -91,33 +94,46 @@ impl PipeWireController {
         Ok(())
     }
 
-    /// Restore original sample rate
-    pub fn restore_original(&mut self) -> Result<(), AudioError> {
+    /// Restore original sample rate (best-effort sync version used from Drop).
+    /// Process is exiting, so a brief blocking shell-out is acceptable.
+    fn restore_original_blocking(&mut self) -> Result<(), AudioError> {
         if let Some(rate) = self.original_rate {
             if rate > 0 {
                 info!("Restoring original sample rate: {} Hz", rate);
-                self.set_rate(rate)?;
+                let rate_str = rate.to_string();
+                let output = Command::new("pw-metadata")
+                    .args(["-n", "settings", "0", "clock.force-rate", &rate_str])
+                    .output()
+                    .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(AudioError::PipeWire(format!(
+                        "pw-metadata failed: {}",
+                        stderr
+                    )));
+                }
             } else {
                 info!("Clearing forced sample rate");
-                self.clear_forced_rate()?;
+                let output = Command::new("pw-metadata")
+                    .args(["-n", "settings", "0", "clock.force-rate", "0"])
+                    .output()
+                    .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(AudioError::PipeWire(format!(
+                        "pw-metadata failed: {}",
+                        stderr
+                    )));
+                }
             }
         }
         Ok(())
     }
 
     /// Clear the forced sample rate (let PipeWire use default)
-    pub fn clear_forced_rate(&mut self) -> Result<(), AudioError> {
+    pub async fn clear_forced_rate(&mut self) -> Result<(), AudioError> {
         info!("Clearing PipeWire forced sample rate");
-
-        let output = Command::new("pw-metadata")
-            .arg("-n")
-            .arg("settings")
-            .arg("0")
-            .arg("clock.force-rate")
-            .arg("0")
-            .output()
-            .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))?;
-
+        let output = run_pw_metadata(&["-n", "settings", "0", "clock.force-rate", "0"]).await?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(AudioError::PipeWire(format!(
@@ -125,11 +141,9 @@ impl PipeWireController {
                 stderr
             )));
         }
-
         self.current_rate = None;
         Ok(())
     }
-
 }
 
 impl Default for PipeWireController {
@@ -140,7 +154,7 @@ impl Default for PipeWireController {
 
 impl Drop for PipeWireController {
     fn drop(&mut self) {
-        if let Err(e) = self.restore_original() {
+        if let Err(e) = self.restore_original_blocking() {
             error!("Failed to restore sample rate: {}", e);
         }
     }

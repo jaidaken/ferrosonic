@@ -43,19 +43,36 @@ impl App {
         // Clear notification on any keypress
         state.client.clear_notification();
 
-        // Bypass global keybindings when typing in server text fields or filtering artists
-        let is_server_text_field =
-            state.client.page == Page::Server && state.client.server_state.selected_field <= 2;
-        let is_filtering = state.client.page == Page::Library && state.client.artists.filter_active;
+        // F-keys always switch pages, even while typing in a text input.
+        // Discard any unsaved edits on the way out so the form reverts
+        // to the saved config / filter state on return.
+        let is_function_key = matches!(key.code, KeyCode::F(_));
+        if is_function_key {
+            if state.client.page == Page::Server {
+                let cfg = state.daemon.config.clone();
+                state.client.server_state.base_url = cfg.base_url;
+                state.client.server_state.username = cfg.username;
+                state.client.server_state.password = cfg.password;
+                state.client.server_state.status = None;
+            }
+            if state.client.page == Page::Library && state.client.artists.filter_active {
+                state.client.artists.filter_active = false;
+            }
+        } else {
+            let is_server_text_field =
+                state.client.page == Page::Server && state.client.server_state.selected_field <= 2;
+            let is_filtering =
+                state.client.page == Page::Library && state.client.artists.filter_active;
 
-        if is_server_text_field || is_filtering {
-            let page = state.client.page;
-            drop(state);
-            return match page {
-                Page::Server => self.handle_server_key(key).await,
-                Page::Library => self.handle_artists_key(key).await,
-                _ => Ok(()),
-            };
+            if is_server_text_field || is_filtering {
+                let page = state.client.page;
+                drop(state);
+                return match page {
+                    Page::Server => self.handle_server_key(key).await,
+                    Page::Library => self.handle_artists_key(key).await,
+                    _ => Ok(()),
+                };
+            }
         }
 
         // Global keybindings
@@ -123,6 +140,18 @@ impl App {
                     .await;
                 if cava_enabled {
                     self.start_cava(&g, &h, cs);
+                }
+                return Ok(());
+            }
+            // Toggle star on currently-playing song
+            (KeyCode::Char('n'), KeyModifiers::NONE) => {
+                let song_id = state.daemon.now_playing.song.as_ref().map(|s| s.id.clone());
+                drop(state);
+                if let Some(id) = song_id {
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::ToggleStarSong(id))
+                        .await;
                 }
                 return Ok(());
             }

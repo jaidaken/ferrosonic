@@ -317,17 +317,50 @@ impl DaemonCore {
         }
     }
 
+    pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
+        let currently_starred = {
+            let state = self.state.read().await;
+            song_is_starred(&state.daemon, song_id)
+        };
+
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Err(Error::Subsonic(crate::error::SubsonicError::Api {
+                code: 0,
+                message: "Subsonic client not configured".to_string(),
+            }));
+        };
+
+        if currently_starred {
+            client.unstar_song(song_id).await.map_err(Error::Subsonic)?;
+        } else {
+            client.star_song(song_id).await.map_err(Error::Subsonic)?;
+        }
+
+        let new_starred = !currently_starred;
+        {
+            let mut state = self.state.write().await;
+            apply_star_to_cached(&mut state.daemon, song_id, new_starred);
+        }
+        self.emit(DaemonEvent::SongStarChanged {
+            id: song_id.to_string(),
+            starred: new_starred,
+        });
+        self.refresh_starred().await;
+        Ok(new_starred)
+    }
+
     pub async fn load_artist(self: &Arc<Self>, artist_id: &str) {
         let Some(client) = self.subsonic.read().await.clone() else { return; };
         match client.get_artist(artist_id).await {
             Ok((_artist, albums)) => {
                 let mut state = self.state.write().await;
                 let count = albums.len();
-                state
-                    .daemon
-                    .library
-                    .albums_cache
-                    .insert(artist_id.to_string(), albums.clone());
+                crate::daemon::library::cache_insert(
+                    &mut state.daemon.library.albums_cache,
+                    artist_id.to_string(),
+                    albums.clone(),
+                    crate::daemon::library::ALBUMS_CACHE_CAP,
+                );
                 drop(state);
                 info!("Loaded {} albums for {}", count, artist_id);
                 self.emit(DaemonEvent::AlbumsChanged {
@@ -629,6 +662,31 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Stop mpv and clear now-playing, but leave the queue intact. Used
+    /// when removing the currently-playing entry from a queue that
+    /// otherwise still has songs.
+    pub async fn halt_keep_queue(self: &Arc<Self>) {
+        use crate::app::state::PlaybackState;
+        {
+            let mut mpv = self.mpv.lock().await;
+            if let Err(e) = mpv.stop() {
+                error!("Failed to stop: {}", e);
+            }
+        }
+        {
+            let mut state = self.state.write().await;
+            state.daemon.now_playing.state = PlaybackState::Stopped;
+            state.daemon.now_playing.song = None;
+            state.daemon.now_playing.position = 0.0;
+            state.daemon.now_playing.duration = 0.0;
+            state.daemon.now_playing.sample_rate = None;
+            state.daemon.now_playing.bit_depth = None;
+            state.daemon.now_playing.format = None;
+            state.daemon.now_playing.channels = None;
+        }
+        self.emit_now_playing().await;
+    }
+
     /// Direct mpv seek by absolute position in seconds. Updates now_playing
     /// position on success.
     pub async fn seek(self: &Arc<Self>, pos: f64) -> Result<(), Error> {
@@ -675,7 +733,7 @@ impl DaemonCore {
             return;
         }
         {
-            let mpv = self.mpv.lock().await;
+            let mut mpv = self.mpv.lock().await;
             if !mpv.is_running() {
                 return;
             }
@@ -832,7 +890,7 @@ impl DaemonCore {
                 if need_switch {
                     let mut pw = self.pipewire.lock().await;
                     info!("Sample rate change to {} Hz", rate);
-                    if let Err(e) = pw.set_rate(rate) {
+                    if let Err(e) = pw.set_rate(rate).await {
                         warn!("Failed to set PipeWire sample rate: {}", e);
                     }
                 } else {
@@ -946,13 +1004,15 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else { return Vec::new(); };
         match client.get_album(album_id).await {
             Ok((_album, songs)) => {
-                let mut state = self.state.write().await;
-                state
-                    .daemon
-                    .library
-                    .album_songs_cache
-                    .insert(album_id.to_string(), songs.clone());
-                drop(state);
+                {
+                    let mut state = self.state.write().await;
+                    crate::daemon::library::cache_insert(
+                        &mut state.daemon.library.album_songs_cache,
+                        album_id.to_string(),
+                        songs.clone(),
+                        crate::daemon::library::ALBUM_SONGS_CACHE_CAP,
+                    );
+                }
                 self.emit(DaemonEvent::AlbumSongsChanged {
                     album_id: album_id.to_string(),
                     songs: songs.clone(),
@@ -976,13 +1036,15 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else { return Vec::new(); };
         match client.get_playlist(playlist_id).await {
             Ok((_pl, songs)) => {
-                let mut state = self.state.write().await;
-                state
-                    .daemon
-                    .library
-                    .playlist_songs_cache
-                    .insert(playlist_id.to_string(), songs.clone());
-                drop(state);
+                {
+                    let mut state = self.state.write().await;
+                    crate::daemon::library::cache_insert(
+                        &mut state.daemon.library.playlist_songs_cache,
+                        playlist_id.to_string(),
+                        songs.clone(),
+                        crate::daemon::library::PLAYLIST_SONGS_CACHE_CAP,
+                    );
+                }
                 self.emit(DaemonEvent::PlaylistSongsChanged {
                     playlist_id: playlist_id.to_string(),
                     songs: songs.clone(),
@@ -1115,5 +1177,57 @@ impl DaemonCore {
         }
         self.emit_config_changed().await;
         Ok(())
+    }
+}
+
+fn song_is_starred(daemon: &DaemonState, song_id: &str) -> bool {
+    if let Some(s) = daemon.library.starred_songs.iter().find(|s| s.id == song_id) {
+        return s.starred.is_some();
+    }
+    let all_cached = daemon
+        .queue
+        .iter()
+        .chain(daemon.library.random_songs.iter())
+        .chain(daemon.library.album_songs_cache.values().flatten())
+        .chain(daemon.library.playlist_songs_cache.values().flatten());
+    for s in all_cached {
+        if s.id == song_id {
+            return s.starred.is_some();
+        }
+    }
+    false
+}
+
+fn apply_star_to_cached(daemon: &mut DaemonState, song_id: &str, starred: bool) {
+    let marker = if starred { Some("1".to_string()) } else { None };
+    let lists: [&mut Vec<crate::subsonic::models::Child>; 2] = [
+        &mut daemon.queue,
+        &mut daemon.library.random_songs,
+    ];
+    for list in lists {
+        for song in list.iter_mut() {
+            if song.id == song_id {
+                song.starred = marker.clone();
+            }
+        }
+    }
+    for list in daemon.library.album_songs_cache.values_mut() {
+        for song in list.iter_mut() {
+            if song.id == song_id {
+                song.starred = marker.clone();
+            }
+        }
+    }
+    for list in daemon.library.playlist_songs_cache.values_mut() {
+        for song in list.iter_mut() {
+            if song.id == song_id {
+                song.starred = marker.clone();
+            }
+        }
+    }
+    if let Some(np) = daemon.now_playing.song.as_mut() {
+        if np.id == song_id {
+            np.starred = marker;
+        }
     }
 }

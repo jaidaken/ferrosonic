@@ -64,6 +64,10 @@ pub struct App {
     pub(crate) cava_pty_master: Option<std::fs::File>,
     /// Cava terminal parser
     pub(crate) cava_parser: Option<vt100::Parser>,
+    /// Cava config file. Holding the `NamedTempFile` keeps the file
+    /// alive for the duration of the cava process and removes it on
+    /// drop / `stop_cava`.
+    pub(crate) cava_config: Option<tempfile::NamedTempFile>,
     /// Last mouse click position and time (for second-click detection)
     pub(crate) last_click: Option<(u16, u16, std::time::Instant)>,
 }
@@ -85,6 +89,7 @@ impl App {
             cava_process: None,
             cava_pty_master: None,
             cava_parser: None,
+            cava_config: None,
             last_click: None,
         }
     }
@@ -106,6 +111,7 @@ impl App {
             cava_process: None,
             cava_pty_master: None,
             cava_parser: None,
+            cava_config: None,
             last_click: None,
         }
     }
@@ -468,6 +474,27 @@ async fn apply_event(state: &SharedState, ev: crate::ipc::DaemonEvent) {
             s.daemon.now_playing.position = pos;
         }
         DaemonEvent::StarredChanged(songs) => s.daemon.library.starred_songs = songs,
+        DaemonEvent::SongStarChanged { id, starred } => {
+            let marker = if starred { Some("1".to_string()) } else { None };
+            let update = |song: &mut crate::subsonic::models::Child| {
+                if song.id == id {
+                    song.starred = marker.clone();
+                }
+            };
+            for song in s.daemon.queue.iter_mut() { update(song); }
+            for song in s.daemon.library.random_songs.iter_mut() { update(song); }
+            for list in s.daemon.library.album_songs_cache.values_mut() {
+                for song in list.iter_mut() { update(song); }
+            }
+            for list in s.daemon.library.playlist_songs_cache.values_mut() {
+                for song in list.iter_mut() { update(song); }
+            }
+            for song in s.client.artists.songs.iter_mut() { update(song); }
+            for song in s.client.playlists.songs.iter_mut() { update(song); }
+            if let Some(np) = s.daemon.now_playing.song.as_mut() {
+                if np.id == id { np.starred = marker.clone(); }
+            }
+        }
         DaemonEvent::RandomChanged(songs) => s.daemon.library.random_songs = songs,
         DaemonEvent::ArtistsChanged(artists) => s.daemon.library.artists = artists,
         DaemonEvent::AlbumsChanged { artist_id, albums } => {

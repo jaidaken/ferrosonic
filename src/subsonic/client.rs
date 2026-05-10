@@ -62,6 +62,31 @@ impl SubsonicClient {
     }
 
     /// Make an API request and parse the response
+    async fn request_action(&self, endpoint: &str) -> Result<(), SubsonicError> {
+        let url = self.build_url(endpoint)?;
+        let response = self.http.get(url).send().await?;
+        let text = response.text().await?;
+        let parsed: SubsonicResponse<serde_json::Value> = serde_json::from_str(&text)
+            .map_err(|e| SubsonicError::Parse(format!("Failed to parse response: {}", e)))?;
+        let inner = parsed.subsonic_response;
+        if inner.status != "ok" {
+            let (code, message) = match inner.error {
+                Some(e) => (e.code, e.message),
+                None => (0, "Unknown error".to_string()),
+            };
+            return Err(SubsonicError::Api { code, message });
+        }
+        Ok(())
+    }
+
+    pub async fn star_song(&self, id: &str) -> Result<(), SubsonicError> {
+        self.request_action(&format!("star?id={}", urlencoding::encode(id))).await
+    }
+
+    pub async fn unstar_song(&self, id: &str) -> Result<(), SubsonicError> {
+        self.request_action(&format!("unstar?id={}", urlencoding::encode(id))).await
+    }
+
     async fn request<T>(&self, endpoint: &str) -> Result<T, SubsonicError>
     where
         T: serde::de::DeserializeOwned,

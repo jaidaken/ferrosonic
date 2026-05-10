@@ -144,7 +144,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('n') => {
+            KeyCode::Char('i') => {
                 // Add next
                 let insert_pos = state.daemon.queue_position;
                 if state.client.playlists.focus == 1 {
@@ -185,6 +185,21 @@ impl App {
                         .map(|_| ())
                         .map_err(Error::from);
                 }
+            }
+            KeyCode::Char('m') if state.client.playlists.focus == 1 => {
+                let song_id = state
+                    .client
+                    .playlists
+                    .selected_song
+                    .and_then(|idx| state.client.playlists.songs.get(idx).map(|s| s.id.clone()));
+                drop(state);
+                if let Some(id) = song_id {
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::ToggleStarSong(id))
+                        .await;
+                }
+                return Ok(());
             }
             _ => {}
         }

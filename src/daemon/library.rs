@@ -16,6 +16,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::subsonic::models::{Album, Artist, Child, Playlist};
 
+/// Max entries kept in each per-id cache. When over the cap, oldest
+/// insertions are evicted to bound memory. HashMap iteration order is
+/// not strict FIFO but is acceptable for a "stop unbounded growth" cap.
+pub const ALBUMS_CACHE_CAP: usize = 50;
+pub const ALBUM_SONGS_CACHE_CAP: usize = 100;
+pub const PLAYLIST_SONGS_CACHE_CAP: usize = 50;
+
+/// Insert into a HashMap cache, evicting one arbitrary entry first if
+/// at capacity. Returns the cache unchanged when the key already exists
+/// (refreshes the value).
+pub fn cache_insert<V>(map: &mut HashMap<String, V>, key: String, val: V, cap: usize) {
+    if !map.contains_key(&key) && map.len() >= cap {
+        if let Some(evict_key) = map.keys().next().cloned() {
+            map.remove(&evict_key);
+        }
+    }
+    map.insert(key, val);
+}
+
 /// Library data fetched from the Subsonic server. Owned by the daemon.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LibraryCache {

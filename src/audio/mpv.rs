@@ -128,9 +128,24 @@ impl MpvController {
         Ok(())
     }
 
-    /// Check if MPV is running
-    pub fn is_running(&self) -> bool {
-        self.reader.is_some()
+    /// Check if MPV is running. Verifies both that we have an open IPC
+    /// socket reader AND that the child process hasn't exited.
+    pub fn is_running(&mut self) -> bool {
+        if self.reader.is_none() {
+            return false;
+        }
+        match self.process.as_mut() {
+            None => false,
+            Some(child) => match child.try_wait() {
+                Ok(None) => true, // still running
+                Ok(Some(_status)) => {
+                    self.reader = None;
+                    self.process = None;
+                    false
+                }
+                Err(_) => true, // transient — be permissive
+            },
+        }
     }
 
     /// Send a command to MPV

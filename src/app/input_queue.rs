@@ -140,6 +140,21 @@ impl App {
                 }
                 return Ok(());
             }
+            KeyCode::Char('m') => {
+                let song_id = state
+                    .client
+                    .queue_state
+                    .selected
+                    .and_then(|idx| state.daemon.queue.get(idx).map(|s| s.id.clone()));
+                drop(state);
+                if let Some(id) = song_id {
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::ToggleStarSong(id))
+                        .await;
+                }
+                return Ok(());
+            }
             _ => {}
         }
 

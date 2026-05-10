@@ -119,9 +119,16 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::RemoveFromQueue(pos) => {
-                let mut state = self.core.state.write().await;
-                if pos < state.daemon.queue.len() {
+                let was_playing;
+                let new_len;
+                {
+                    let mut state = self.core.state.write().await;
+                    if pos >= state.daemon.queue.len() {
+                        return Ok(DaemonResponse::Ok);
+                    }
+                    was_playing = state.daemon.queue_position == Some(pos);
                     state.daemon.queue.remove(pos);
+                    new_len = state.daemon.queue.len();
                     if let Some(cur) = state.daemon.queue_position {
                         if pos < cur {
                             state.daemon.queue_position = Some(cur - 1);
@@ -130,8 +137,19 @@ impl DaemonClient for InProcessClient {
                         }
                     }
                 }
-                drop(state);
-                self.core.broadcast_queue_changed().await;
+                if was_playing {
+                    if pos < new_len {
+                        // Successor slid into the same index — play it.
+                        self.core.play_queue_position(pos).await.map_err(err)?;
+                    } else {
+                        // Removed the last song; stop mpv but keep the
+                        // remaining (now shorter) queue.
+                        self.core.halt_keep_queue().await;
+                        self.core.broadcast_queue_changed().await;
+                    }
+                } else {
+                    self.core.broadcast_queue_changed().await;
+                }
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::ClearQueue => {
@@ -166,6 +184,10 @@ impl DaemonClient for InProcessClient {
             }
             DaemonRequest::RefreshPlaylists => {
                 self.core.refresh_playlists().await;
+                Ok(DaemonResponse::Ok)
+            }
+            DaemonRequest::ToggleStarSong(id) => {
+                self.core.toggle_star_song(&id).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::LoadArtist(id) => {

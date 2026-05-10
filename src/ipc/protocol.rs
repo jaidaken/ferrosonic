@@ -80,6 +80,9 @@ pub enum DaemonRequest {
     RefreshArtists,
     /// Refetch the playlist list from the Subsonic server.
     RefreshPlaylists,
+    /// Toggle the starred state on a song. Daemon checks the current
+    /// state and calls Subsonic's `star` or `unstar` accordingly.
+    ToggleStarSong(String),
     /// Lazily load albums for an artist into the cache.
     LoadArtist(String),
     /// Lazily load songs for an album into the cache.
@@ -194,6 +197,11 @@ pub enum DaemonEvent {
     PositionTick(f64),
     /// Starred-songs list refetched from the server.
     StarredChanged(Vec<Child>),
+    /// One song's starred flag flipped. Used to update the
+    /// `starred` field on cached Child instances elsewhere
+    /// (queue, album-songs-cache, playlist-songs-cache, random_songs)
+    /// without refetching every list.
+    SongStarChanged { id: String, starred: bool },
     /// Random-songs roll refetched from the server.
     RandomChanged(Vec<Child>),
     /// Artist tree refetched.

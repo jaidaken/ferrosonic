@@ -82,6 +82,32 @@ impl App {
                     .map_err(Error::from);
             }
             KeyCode::Tab => state.client.songs.focus = if state.client.songs.focus == 1 { 0 } else { 1 },
+            KeyCode::Left => {
+                state.client.songs.focus = 0;
+            }
+            KeyCode::Right => {
+                if !state.songs_list().is_empty() {
+                    state.client.songs.focus = 1;
+                    if state.client.songs.selected_index.is_none() {
+                        state.client.songs.selected_index = Some(0);
+                    }
+                }
+            }
+            KeyCode::Char('m') => {
+                let song_id = state
+                    .client
+                    .songs
+                    .selected_index
+                    .and_then(|idx| state.songs_list().get(idx).map(|s| s.id.clone()));
+                drop(state);
+                if let Some(id) = song_id {
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::ToggleStarSong(id))
+                        .await;
+                }
+                return Ok(());
+            }
             _ => {}
         }
 

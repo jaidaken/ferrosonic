@@ -47,23 +47,26 @@ impl<'a> Footer<'a> {
             ("h", "Prev"),
             ("l", "Next"),
             ("t", "Theme"),
+            ("n", "Star playing"),
         ];
 
         match self.page {
             Page::QuickPlay => {
-                binds.extend([("Enter", "Play")]);
+                binds.extend([("m", "Star selected"), ("Enter", "Play")]);
             }
             Page::Library => {
                 binds.extend([
+                    ("m", "Star selected"),
                     ("/", "Filter"),
                     ("←/→", "Focus"),
                     ("e", "Add"),
-                    ("n", "Add next"),
+                    ("i", "Add next"),
                     ("Enter", "Play"),
                 ]);
             }
             Page::Queue => {
                 binds.extend([
+                    ("m", "Star selected"),
                     ("d", "Remove"),
                     ("J/K", "Move"),
                     ("r", "Shuffle"),
@@ -73,9 +76,10 @@ impl<'a> Footer<'a> {
             }
             Page::Playlists => {
                 binds.extend([
+                    ("m", "Star selected"),
                     ("←/→", "Focus"),
                     ("e", "Add"),
-                    ("n", "Add next"),
+                    ("i", "Add next"),
                     ("r", "Shuffle play"),
                     ("Enter", "Play"),
                 ]);
@@ -135,7 +139,12 @@ impl Widget for Footer<'_> {
 
         // Right side: sample rate / status
         if let Some(rate) = self.sample_rate {
-            let rate_str = format!("{}kHz", rate / 1000);
+            let khz = rate as f64 / 1000.0;
+            let rate_str = if khz == khz.floor() {
+                format!("{}kHz", khz as u32)
+            } else {
+                format!("{:.1}kHz", khz)
+            };
             let x = chunks[1].x + chunks[1].width.saturating_sub(rate_str.len() as u16);
             buf.set_string(
                 x,

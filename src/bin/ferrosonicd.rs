@@ -75,10 +75,19 @@ fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerG
     Some(guard)
 }
 
+fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!("Panic: {}", info);
+        prev(info);
+    }));
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let _log_guard = init_logging(args.verbose);
+    install_panic_hook();
 
     info!("ferrosonicd starting...");
 
