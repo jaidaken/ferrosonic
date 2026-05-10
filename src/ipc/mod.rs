@@ -13,9 +13,15 @@
 //! - `IpcError` — error type for IPC failures (transport, serialization, daemon-side)
 
 pub mod client;
+pub mod frame;
+pub mod path;
 pub mod protocol;
+pub mod server;
+pub mod socket_client;
 
-#[allow(unused_imports)] // re-exported for future client.rs / socket.rs consumers
+#[allow(unused_imports)] // re-exported for future binary split / consumers
 pub use client::{DaemonClient, InProcessClient};
-#[allow(unused_imports)] // re-exported for future client.rs / socket.rs consumers
+#[allow(unused_imports)]
 pub use protocol::{DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError};
+#[allow(unused_imports)] // wired up in phase 5 binary
+pub use socket_client::SocketClient;

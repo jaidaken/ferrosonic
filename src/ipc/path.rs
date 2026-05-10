@@ -1,0 +1,61 @@
+//! Socket path resolution.
+//!
+//! Daemon and client both call `socket_path()` to find the per-user
+//! IPC endpoint. Resolution order:
+//!
+//! 1. `$FERROSONIC_SOCK` — explicit override; honoured verbatim. Used
+//!    by tests and unusual deployments.
+//! 2. `$XDG_RUNTIME_DIR/ferrosonic/ferrosonicd.sock` — the standard
+//!    location on a normal NixOS / systemd-user setup. Created with
+//!    mode 0700 on the parent directory; the socket file inherits the
+//!    process umask.
+//! 3. `/tmp/ferrosonic-{uid}/ferrosonicd.sock` — fallback when
+//!    `XDG_RUNTIME_DIR` is unset (Docker, minimal containers, broken
+//!    sessions). The numeric uid keeps it per-user without colliding.
+//!
+//! Path lengths matter: AF_UNIX paths max out at 108 bytes on Linux.
+//! `$XDG_RUNTIME_DIR` is typically `/run/user/<uid>`, well under that.
+
+#![allow(dead_code)] // wired to ferrosonicd binary in phase 5
+
+use std::path::PathBuf;
+
+/// Filename inside the IPC directory.
+const SOCKET_FILENAME: &str = "ferrosonicd.sock";
+
+/// Subdirectory under the runtime root.
+const SUBDIR: &str = "ferrosonic";
+
+/// Resolve the daemon's socket path.
+pub fn socket_path() -> PathBuf {
+    if let Ok(custom) = std::env::var("FERROSONIC_SOCK") {
+        return PathBuf::from(custom);
+    }
+    if let Ok(rt) = std::env::var("XDG_RUNTIME_DIR") {
+        let mut p = PathBuf::from(rt);
+        p.push(SUBDIR);
+        p.push(SOCKET_FILENAME);
+        return p;
+    }
+    let uid = unsafe { libc::getuid() };
+    let mut p = PathBuf::from("/tmp");
+    p.push(format!("ferrosonic-{}", uid));
+    p.push(SOCKET_FILENAME);
+    p
+}
+
+/// Ensure the socket's parent directory exists with sane permissions.
+/// Daemon calls this before binding; client never calls it.
+pub fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    if !parent.exists() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut perm = std::fs::metadata(parent)?.permissions();
+    perm.set_mode(0o700);
+    std::fs::set_permissions(parent, perm)?;
+    Ok(())
+}
