@@ -43,19 +43,20 @@ pub use state::*;
 /// subprocess + the TUI event loop. Phase 5 splits `App` into the
 /// `ferrosonic` binary and `DaemonCore` into `ferrosonicd`.
 pub struct App {
-    /// Daemon-side core. Phase 2 keeps a direct handle for the
-    /// lifecycle methods (`start_mpv`/`quit_mpv`/`spawn_polling_task`);
-    /// every other touch should go through `client`. Phase 5 removes
-    /// this when the daemon moves into its own process.
-    pub(crate) core: Arc<DaemonCore>,
-    /// Daemon command channel. In phase 2 this is an `InProcessClient`
-    /// that dispatches directly to `core`; in phase 4 the same trait
-    /// object becomes a `SocketClient` without any handler change.
+    /// Daemon-side core. `Some` for the in-process build (`App::new`)
+    /// where `App` and `DaemonCore` co-own the same state lock; `None`
+    /// for the split build (`App::with_remote_client`) where mpv lives
+    /// in `ferrosonicd`. Lifecycle calls (`start_mpv`/`quit_mpv`/
+    /// `spawn_polling_task`) only fire when `Some`.
+    pub(crate) core: Option<Arc<DaemonCore>>,
+    /// Daemon command channel. Either `InProcessClient` (in-process
+    /// build) or `SocketClient` (split build) — the input/mouse
+    /// handlers go through this trait either way.
     pub(crate) client: Arc<dyn DaemonClient>,
-    /// Same `Arc<RwLock<AppState>>` that `core.state` wraps. Held here so
-    /// render/input code reads/writes `state.client.X` without going
-    /// through the core. Phase 6 replaces this with a client-side
-    /// snapshot updated from `core.event_tx`.
+    /// `Arc<RwLock<AppState>>`. In the in-process build, the same Arc
+    /// `core.state` wraps. In the split build, the App owns it solely
+    /// — the `state.daemon` half is a mirror written by the event-pump
+    /// task from `client.subscribe()`. Both render and input read it.
     pub(crate) state: SharedState,
     /// Cava child process
     pub(crate) cava_process: Option<std::process::Child>,
@@ -80,7 +81,29 @@ impl App {
         let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(core.clone()));
 
         Self {
-            core,
+            core: Some(core),
+            client,
+            state,
+            cava_process: None,
+            cava_pty_master: None,
+            cava_parser: None,
+            last_click: None,
+            mpris_server: None,
+        }
+    }
+
+    /// Construct an App that talks to a remote daemon via `client`. No
+    /// `DaemonCore` is built — mpv, the queue, and the library cache
+    /// live in `ferrosonicd`. The TUI's `state.daemon` half is a mirror
+    /// populated at boot from `DaemonRequest::Snapshot` and updated by
+    /// the event-pump task spawned in `run()`.
+    ///
+    /// Used by the `ferrosonic` binary's split path. The in-process
+    /// path keeps using `App::new(config)`.
+    pub fn with_remote_client(client: Arc<dyn DaemonClient>, config: Config) -> Self {
+        let state = new_shared_state(config);
+        Self {
+            core: None,
             client,
             state,
             cava_process: None,
@@ -93,22 +116,29 @@ impl App {
 
     /// Run the application
     pub async fn run(&mut self) -> Result<(), Error> {
-        // Spawn the daemon's playback-info poll task. It ticks every
-        // 500ms regardless of TUI activity, so playback continues to
-        // advance / detect track end / handle gapless preload even
-        // when the event loop is idle waiting for input.
-        let _poll_task = self.core.spawn_polling_task();
+        // In-process build: spawn the daemon's playback poll + start
+        // mpv here. Split build: ferrosonicd already did both; the TUI
+        // only does view-side work.
+        let _poll_task = self.core.as_ref().map(|c| c.spawn_polling_task());
 
-        // Start MPV via the daemon core
-        if let Err(e) = self.core.start_mpv().await {
-            warn!("Failed to start MPV: {} - audio playback won't work", e);
-            let mut state = self.state.write().await;
-            state
-                .client
-                .notify_error(format!("Failed to start MPV: {}. Is mpv installed?", e));
-            drop(state);
-        } else {
-            info!("MPV started successfully, ready for playback");
+        if let Some(ref core) = self.core {
+            if let Err(e) = core.start_mpv().await {
+                warn!("Failed to start MPV: {} - audio playback won't work", e);
+                let mut state = self.state.write().await;
+                state
+                    .client
+                    .notify_error(format!("Failed to start MPV: {}. Is mpv installed?", e));
+                drop(state);
+            } else {
+                info!("MPV started successfully, ready for playback");
+            }
+        }
+
+        // Split build: pull the initial state snapshot and start the
+        // event-pump task that mirrors daemon events into state.daemon.
+        if self.core.is_none() {
+            self.bootstrap_remote_mirror().await;
+            self.spawn_event_pump();
         }
 
         // Start MPRIS server for media key support — passes the client
@@ -179,9 +209,12 @@ impl App {
 
         info!("Terminal initialized");
 
-        // Load initial data if configured
-        {
-            let has_client = self.core.subsonic.read().await.is_some();
+        // Load initial data if configured. In-process: directly check
+        // the local SubsonicClient. Split: skip — ferrosonicd already
+        // populated the library before the TUI connected (and the
+        // snapshot at boot delivered it).
+        if let Some(ref core) = self.core {
+            let has_client = core.subsonic.read().await.is_some();
             if has_client {
                 self.load_initial_data().await;
             }
@@ -193,8 +226,11 @@ impl App {
         // Cleanup cava
         self.stop_cava();
 
-        // Cleanup MPV
-        self.core.quit_mpv().await;
+        // Cleanup MPV (in-process only — ferrosonicd manages its own
+        // lifecycle for the split build).
+        if let Some(ref core) = self.core {
+            core.quit_mpv().await;
+        }
 
         // Cleanup terminal
         disable_raw_mode().map_err(UiError::TerminalInit)?;
@@ -211,12 +247,71 @@ impl App {
     }
 
     /// Cheap snapshot of the daemon's Subsonic client (`reqwest::Client`
-    /// is Arc-wrapped internally). Returns `None` when not configured.
-    /// Lets input/mouse handlers run direct API calls without holding a
-    /// `RwLockReadGuard` across `.await` points. Phase 6 removes the
-    /// remaining direct API call sites that motivate this accessor.
+    /// is Arc-wrapped internally). Returns `None` when not configured
+    /// or when running in split-build mode (no local `DaemonCore`).
+    /// In split mode the input handlers should use `LoadAlbum`/
+    /// `LoadPlaylist` requests instead of inline API calls; phase 6b
+    /// completes that migration.
     pub(crate) async fn subsonic_client(&self) -> Option<crate::subsonic::SubsonicClient> {
-        self.core.subsonic.read().await.clone()
+        match self.core {
+            Some(ref core) => core.subsonic.read().await.clone(),
+            None => None,
+        }
+    }
+
+    /// Pull the initial daemon state snapshot via `Snapshot` request and
+    /// install it as the local `state.daemon` mirror. Split build only.
+    async fn bootstrap_remote_mirror(&self) {
+        match self.client.request(DaemonRequest::Snapshot).await {
+            Ok(crate::ipc::DaemonResponse::Snapshot(snap)) => {
+                let mut state = self.state.write().await;
+                state.daemon = *snap;
+                info!(
+                    "Daemon snapshot received: {} queue items, {} starred, {} artists, {} playlists",
+                    state.daemon.queue.len(),
+                    state.daemon.library.starred_songs.len(),
+                    state.daemon.library.artists.len(),
+                    state.daemon.library.playlists.len(),
+                );
+            }
+            Ok(other) => {
+                warn!("Unexpected snapshot response: {:?}", other);
+            }
+            Err(e) => {
+                warn!("Failed to fetch daemon snapshot: {}", e);
+            }
+        }
+    }
+
+    /// Spawn the event-pump task. Subscribes to daemon events and
+    /// applies them to `state.daemon` so the TUI render path sees the
+    /// same data the daemon does. Split build only.
+    fn spawn_event_pump(&self) {
+        let client = self.client.clone();
+        let state = self.state.clone();
+        tokio::spawn(async move {
+            let mut rx = client.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(ev) => apply_event(&state, ev).await,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("Event pump lagged by {}; resubscribing + resnapshot", n);
+                        // Resnapshot to recover from the lag.
+                        if let Ok(crate::ipc::DaemonResponse::Snapshot(snap)) =
+                            client.request(DaemonRequest::Snapshot).await
+                        {
+                            let mut s = state.write().await;
+                            s.daemon = *snap;
+                        }
+                        rx = client.subscribe();
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        warn!("Daemon event broadcast closed; pump exiting");
+                        break;
+                    }
+                }
+            }
+        });
     }
 
     /// Load initial data from server. Delegates the library fetches to
@@ -281,5 +376,56 @@ impl App {
         }
 
         Ok(())
+    }
+}
+
+/// Apply one `DaemonEvent` to the local state mirror. Used by the
+/// event-pump task in the split build. Each variant writes the
+/// matching `state.daemon` slot; client-side state (`state.client`) is
+/// only touched for `Notification` events.
+async fn apply_event(state: &SharedState, ev: crate::ipc::DaemonEvent) {
+    use crate::ipc::DaemonEvent;
+    let mut s = state.write().await;
+    match ev {
+        DaemonEvent::QueueChanged { queue, position } => {
+            s.daemon.queue = queue;
+            s.daemon.queue_position = position;
+        }
+        DaemonEvent::NowPlayingChanged(np) => {
+            s.daemon.now_playing = np;
+        }
+        DaemonEvent::PositionTick(pos) => {
+            s.daemon.now_playing.position = pos;
+        }
+        DaemonEvent::StarredChanged(songs) => s.daemon.library.starred_songs = songs,
+        DaemonEvent::RandomChanged(songs) => s.daemon.library.random_songs = songs,
+        DaemonEvent::ArtistsChanged(artists) => s.daemon.library.artists = artists,
+        DaemonEvent::AlbumsChanged { artist_id, albums } => {
+            s.daemon.library.albums_cache.insert(artist_id, albums);
+        }
+        DaemonEvent::AlbumSongsChanged { album_id, songs } => {
+            s.daemon.library.album_songs_cache.insert(album_id, songs);
+        }
+        DaemonEvent::PlaylistsChanged(playlists) => s.daemon.library.playlists = playlists,
+        DaemonEvent::PlaylistSongsChanged { playlist_id, songs } => {
+            s.daemon
+                .library
+                .playlist_songs_cache
+                .insert(playlist_id, songs);
+        }
+        DaemonEvent::Notification { message, is_error } => {
+            if is_error {
+                s.client.notify_error(message);
+            } else {
+                s.client.notify(message);
+            }
+        }
+        DaemonEvent::ConfigChanged(cfg) => {
+            s.daemon.config = cfg;
+        }
+        DaemonEvent::Shutdown => {
+            s.client.notify_error("Daemon shut down — disconnecting");
+            s.client.should_quit = true;
+        }
     }
 }

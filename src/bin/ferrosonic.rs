@@ -1,20 +1,31 @@
 //! Ferrosonic TUI client binary.
 //!
-//! Phase 5a: still runs the full single-process build (App::new
-//! constructs `DaemonCore` + `InProcessClient`; mpv lives in this
-//! process). Phase 5b switches to `SocketClient::connect` against a
-//! running `ferrosonicd`, with auto-spawn fallback.
+//! Connect order at startup:
+//! 1. Try `SocketClient::connect($XDG_RUNTIME_DIR/ferrosonic/ferrosonicd.sock)`.
+//!    If a daemon is running, use it. The TUI is a thin view: queue,
+//!    library, and playback live in `ferrosonicd`; events arrive via
+//!    `DaemonEvent` broadcasts and update the local mirror.
+//! 2. If the connect fails (daemon not running), fall back to the
+//!    in-process build: `App::new(config)` constructs a private
+//!    `DaemonCore`. Music stops when the TUI exits, but the user can
+//!    still play. Phase 7 adds auto-spawn here so the daemon is
+//!    started transparently when the connect fails.
+//!
+//! Override the connect with `--standalone` to force the in-process
+//! path (handy for testing).
 
 use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
 
 use clap::Parser;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use ferrosonic::app::App;
 use ferrosonic::config::paths::config_dir;
 use ferrosonic::config::Config;
+use ferrosonic::ipc::path::socket_path;
+use ferrosonic::ipc::SocketClient;
 
 /// Ferrosonic - Terminal Subsonic Music Client
 #[derive(Parser, Debug)]
@@ -28,6 +39,11 @@ struct Args {
     /// Enable verbose/debug logging
     #[arg(short, long)]
     verbose: bool,
+
+    /// Force in-process mode — don't try to connect to ferrosonicd.
+    /// Useful for testing or when a daemon connection is undesirable.
+    #[arg(long)]
+    standalone: bool,
 }
 
 /// Initialize file-based logging. Returns the worker guard which must
@@ -102,7 +118,27 @@ async fn main() -> anyhow::Result<()> {
         }
     );
 
-    let mut app = App::new(config);
+    let mut app = if args.standalone {
+        info!("--standalone: forcing in-process mode");
+        App::new(config)
+    } else {
+        let path = socket_path();
+        match SocketClient::connect(&path).await {
+            Ok(client) => {
+                info!("Connected to ferrosonicd at {}", path.display());
+                App::with_remote_client(client, config)
+            }
+            Err(e) => {
+                warn!(
+                    "ferrosonicd not reachable at {} ({}); falling back to in-process mode",
+                    path.display(),
+                    e
+                );
+                App::new(config)
+            }
+        }
+    };
+
     if let Err(e) = app.run().await {
         tracing::error!("Application error: {}", e);
         return Err(e.into());

@@ -12,10 +12,12 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::subsonic::models::{Album, Artist, Child, Playlist};
 
 /// Library data fetched from the Subsonic server. Owned by the daemon.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LibraryCache {
     /// All starred songs (Songs page, "Starred" filter).
     pub starred_songs: Vec<Child>,

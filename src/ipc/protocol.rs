@@ -14,8 +14,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::app::state::NowPlaying;
 use crate::config::Config;
-use crate::subsonic::models::{Album, Child};
+use crate::daemon::state::DaemonState;
+use crate::subsonic::models::{Album, Artist, Child, Playlist};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Requests: commands client sends to daemon
@@ -111,6 +113,9 @@ pub enum DaemonRequest {
     /// Subscribe to event broadcast. Daemon's first event after this is a
     /// fresh state snapshot, then incremental events.
     Subscribe,
+    /// Fetch the current full daemon state. Used by a connecting TUI to
+    /// populate its mirror before applying incremental events.
+    Snapshot,
     /// Request graceful daemon shutdown.
     Shutdown,
     /// Health check — daemon replies with `Pong`.
@@ -155,6 +160,10 @@ pub enum DaemonResponse {
     ConnectionTestResult { ok: bool, message: String },
     /// Reply to `ClearQueueHistory`: the number of entries removed.
     HistoryCleared(usize),
+    /// Reply to `Snapshot`: the daemon's current state. Carries the full
+    /// queue, now_playing, library cache, and config so the TUI can
+    /// populate its mirror in one round-trip.
+    Snapshot(Box<DaemonState>),
     /// Reply to `Ping`.
     Pong,
 }
@@ -163,24 +172,50 @@ pub enum DaemonResponse {
 // Events: server-pushed state changes
 // ────────────────────────────────────────────────────────────────────────────
 
-/// State-change broadcast from daemon to all subscribed clients. The wire
-/// flow is: client sends `Subscribe`, daemon replies `Ok`, daemon then pushes
-/// these events whenever state changes.
+/// State-change broadcast from daemon to all subscribed clients. Phase 6
+/// payload-inline: each variant carries the new value so subscribers
+/// (the TUI's event-pump task) update their mirror in one step without
+/// a follow-up RPC. Wire size is bigger (a `QueueChanged` carrying a
+/// 500-track queue is ~50KB JSON), but the round-trip count drops
+/// from 2N to N for an N-event burst, which dominates at our scale.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum DaemonEvent {
-    /// The queue contents changed (track added/removed/reordered, or
-    /// `queue_position` advanced).
-    QueueChanged,
-    /// `now_playing` state changed (Playing/Paused/Stopped, song change,
-    /// sample-rate change). Position-only updates use `PositionTick` to
-    /// avoid event spam.
-    NowPlayingChanged,
-    /// Cheap, lossy position tick. Emitted from a `tokio::sync::watch`-style
-    /// channel; subscribers expect it at ~2 Hz when playing.
+    /// The queue contents or `queue_position` changed. Carries the full
+    /// new queue and position so the client mirror replaces in one shot.
+    QueueChanged {
+        queue: Vec<Child>,
+        position: Option<usize>,
+    },
+    /// `now_playing` state changed (song, playback state, sample-rate).
+    /// Position-only updates use `PositionTick` to avoid event spam.
+    NowPlayingChanged(NowPlaying),
+    /// Cheap, lossy position tick. Emitted at ~2 Hz when playing. Clients
+    /// apply this to `state.daemon.now_playing.position` only.
     PositionTick(f64),
-    /// One of the library cache slots changed.
-    LibraryChanged(LibrarySection),
+    /// Starred-songs list refetched from the server.
+    StarredChanged(Vec<Child>),
+    /// Random-songs roll refetched from the server.
+    RandomChanged(Vec<Child>),
+    /// Artist tree refetched.
+    ArtistsChanged(Vec<Artist>),
+    /// One artist's albums loaded into the cache.
+    AlbumsChanged {
+        artist_id: String,
+        albums: Vec<Album>,
+    },
+    /// One album's songs loaded into the cache.
+    AlbumSongsChanged {
+        album_id: String,
+        songs: Vec<Child>,
+    },
+    /// Playlists list refetched.
+    PlaylistsChanged(Vec<Playlist>),
+    /// One playlist's songs loaded into the cache.
+    PlaylistSongsChanged {
+        playlist_id: String,
+        songs: Vec<Child>,
+    },
     /// User-facing toast/notification from the daemon.
     Notification {
         message: String,
@@ -193,9 +228,10 @@ pub enum DaemonEvent {
     Shutdown,
 }
 
-/// Which slice of the library cache changed in a `LibraryChanged` event.
-/// Phase 6 splits these into finer-grained events that carry the new payload
-/// inline; phase 2 keeps it coarse.
+/// Which slice of the library cache to query (used by `LoadAlbum` /
+/// `LoadPlaylist` request paths). Retained for callers that want to
+/// poke a specific cache slot; phase 6 events carry payloads inline
+/// instead of a section discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum LibrarySection {

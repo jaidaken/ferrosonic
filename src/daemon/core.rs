@@ -31,8 +31,9 @@ use crate::app::state::SharedState;
 use crate::audio::mpv::MpvController;
 use crate::audio::pipewire::PipeWireController;
 use crate::config::Config;
+use crate::daemon::state::DaemonState;
 use crate::error::Error;
-use crate::ipc::protocol::{DaemonEvent, LibrarySection};
+use crate::ipc::protocol::DaemonEvent;
 use crate::subsonic::SubsonicClient;
 
 /// Capacity of the broadcast channel for daemon events. Slow consumers
@@ -137,6 +138,34 @@ impl DaemonCore {
         // fine — events are best-effort fan-out.
         let _ = self.event_tx.send(event);
     }
+
+    /// Snapshot the current `NowPlaying` and emit it. Convenience for
+    /// the many call sites that mutated `state.daemon.now_playing` and
+    /// then dropped the lock — they now don't have to re-clone it.
+    async fn emit_now_playing(&self) {
+        let np = {
+            let state = self.state.read().await;
+            state.daemon.now_playing.clone()
+        };
+        self.emit(DaemonEvent::NowPlayingChanged(np));
+    }
+
+    /// Snapshot the current queue + position and emit. Same convenience
+    /// rationale as `emit_now_playing`.
+    async fn emit_queue(&self) {
+        let (queue, position) = {
+            let state = self.state.read().await;
+            (state.daemon.queue.clone(), state.daemon.queue_position)
+        };
+        self.emit(DaemonEvent::QueueChanged { queue, position });
+    }
+
+    /// Build a full snapshot of the daemon state. Used to seed the TUI
+    /// mirror at connect time. Allocates a fresh `DaemonState` clone.
+    pub async fn snapshot(&self) -> DaemonState {
+        let state = self.state.read().await;
+        state.daemon.clone()
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -154,9 +183,9 @@ impl DaemonCore {
         match client.get_starred_songs().await {
             Ok(songs) => {
                 let mut state = self.state.write().await;
-                state.daemon.library.starred_songs = songs;
+                state.daemon.library.starred_songs = songs.clone();
                 drop(state);
-                self.emit(DaemonEvent::LibraryChanged(LibrarySection::Starred));
+                self.emit(DaemonEvent::StarredChanged(songs));
             }
             Err(e) => {
                 error!("Failed to load starred songs: {}", e);
@@ -176,9 +205,9 @@ impl DaemonCore {
         match client.get_random_songs().await {
             Ok(songs) => {
                 let mut state = self.state.write().await;
-                state.daemon.library.random_songs = songs;
+                state.daemon.library.random_songs = songs.clone();
                 drop(state);
-                self.emit(DaemonEvent::LibraryChanged(LibrarySection::Random));
+                self.emit(DaemonEvent::RandomChanged(songs));
             }
             Err(e) => {
                 error!("Failed to load random songs: {}", e);
@@ -199,10 +228,10 @@ impl DaemonCore {
             Ok(artists) => {
                 let mut state = self.state.write().await;
                 let count = artists.len();
-                state.daemon.library.artists = artists;
+                state.daemon.library.artists = artists.clone();
                 drop(state);
                 info!("Loaded {} artists", count);
-                self.emit(DaemonEvent::LibraryChanged(LibrarySection::Artists));
+                self.emit(DaemonEvent::ArtistsChanged(artists));
             }
             Err(e) => {
                 error!("Failed to load artists: {}", e);
@@ -223,10 +252,10 @@ impl DaemonCore {
             Ok(playlists) => {
                 let mut state = self.state.write().await;
                 let count = playlists.len();
-                state.daemon.library.playlists = playlists;
+                state.daemon.library.playlists = playlists.clone();
                 drop(state);
                 info!("Loaded {} playlists", count);
-                self.emit(DaemonEvent::LibraryChanged(LibrarySection::Playlists));
+                self.emit(DaemonEvent::PlaylistsChanged(playlists));
             }
             Err(e) => {
                 error!("Failed to load playlists: {}", e);
@@ -235,7 +264,6 @@ impl DaemonCore {
         }
     }
 
-    #[allow(dead_code)] // wired up in phase 2.4 via DaemonRequest::LoadArtist
     pub async fn load_artist(self: &Arc<Self>, artist_id: &str) {
         let client = self.subsonic.read().await;
         let Some(ref client) = *client else {
@@ -249,10 +277,13 @@ impl DaemonCore {
                     .daemon
                     .library
                     .albums_cache
-                    .insert(artist_id.to_string(), albums);
+                    .insert(artist_id.to_string(), albums.clone());
                 drop(state);
                 info!("Loaded {} albums for {}", count, artist_id);
-                self.emit(DaemonEvent::LibraryChanged(LibrarySection::Albums));
+                self.emit(DaemonEvent::AlbumsChanged {
+                    artist_id: artist_id.to_string(),
+                    albums,
+                });
             }
             Err(e) => {
                 error!("Failed to load albums: {}", e);
@@ -297,7 +328,7 @@ impl DaemonCore {
                 };
                 debug!("toggle_pause: now {:?}", state.daemon.now_playing.state);
                 drop(state);
-                self.emit(DaemonEvent::NowPlayingChanged);
+                self.emit_now_playing().await;
             }
             Err(e) => {
                 error!("Failed to toggle pause: {}", e);
@@ -322,7 +353,7 @@ impl DaemonCore {
                 let mut state = self.state.write().await;
                 state.daemon.now_playing.state = PlaybackState::Paused;
                 drop(state);
-                self.emit(DaemonEvent::NowPlayingChanged);
+                self.emit_now_playing().await;
             }
             Err(e) => error!("Failed to pause: {}", e),
         }
@@ -345,7 +376,7 @@ impl DaemonCore {
                 let mut state = self.state.write().await;
                 state.daemon.now_playing.state = PlaybackState::Playing;
                 drop(state);
-                self.emit(DaemonEvent::NowPlayingChanged);
+                self.emit_now_playing().await;
             }
             Err(e) => error!("Failed to resume: {}", e),
         }
@@ -373,7 +404,7 @@ impl DaemonCore {
                 state.daemon.now_playing.state = PlaybackState::Stopped;
                 state.daemon.now_playing.position = 0.0;
                 drop(state);
-                self.emit(DaemonEvent::NowPlayingChanged);
+                self.emit_now_playing().await;
                 return Ok(());
             }
         };
@@ -485,8 +516,8 @@ impl DaemonCore {
         }
 
         self.preload_next_track(pos).await;
-        self.emit(DaemonEvent::NowPlayingChanged);
-        self.emit(DaemonEvent::QueueChanged);
+        self.emit_now_playing().await;
+        self.emit_queue().await;
         Ok(())
     }
 
@@ -549,8 +580,8 @@ impl DaemonCore {
         state.daemon.queue.clear();
         state.daemon.queue_position = None;
         drop(state);
-        self.emit(DaemonEvent::NowPlayingChanged);
-        self.emit(DaemonEvent::QueueChanged);
+        self.emit_now_playing().await;
+        self.emit_queue().await;
         Ok(())
     }
 
@@ -685,7 +716,7 @@ impl DaemonCore {
                         let _ = mpv.playlist_remove(0);
                     }
                     self.preload_next_track(next_pos).await;
-                    self.emit(DaemonEvent::NowPlayingChanged);
+                    self.emit_now_playing().await;
                     return;
                 }
             }
@@ -769,7 +800,7 @@ impl DaemonCore {
                 state.daemon.now_playing.format = fmt;
                 state.daemon.now_playing.channels = ch;
                 drop(state);
-                self.emit(DaemonEvent::NowPlayingChanged);
+                self.emit_now_playing().await;
             }
         }
     }
@@ -783,8 +814,8 @@ impl DaemonCore {
 impl DaemonCore {
     /// Public emit hook for external mutators (e.g., `InProcessClient`
     /// after a queue rewrite that touches `state.daemon.queue` directly).
-    pub fn broadcast_queue_changed(self: &Arc<Self>) {
-        self.emit(DaemonEvent::QueueChanged);
+    pub async fn broadcast_queue_changed(self: &Arc<Self>) {
+        self.emit_queue().await;
     }
 
     /// Move a queue item from `from` to `to`. Adjusts `queue_position`
@@ -811,7 +842,7 @@ impl DaemonCore {
             state.daemon.queue_position = Some(new_cur);
         }
         drop(state);
-        self.emit(DaemonEvent::QueueChanged);
+        self.emit_queue().await;
     }
 
     /// Drain queue entries [0..queue_position]. Used by the "clear
@@ -829,7 +860,7 @@ impl DaemonCore {
         state.daemon.queue.drain(0..pos);
         state.daemon.queue_position = Some(0);
         drop(state);
-        self.emit(DaemonEvent::QueueChanged);
+        self.emit_queue().await;
         removed
     }
 
@@ -837,22 +868,25 @@ impl DaemonCore {
     /// position. No-op on an empty queue.
     pub async fn shuffle_queue(self: &Arc<Self>) {
         use rand::seq::SliceRandom;
-        let mut state = self.state.write().await;
-        if state.daemon.queue.is_empty() {
-            return;
-        }
-        let mut rng = rand::thread_rng();
-        match state.daemon.queue_position {
-            Some(cur) if cur < state.daemon.queue.len() => {
-                // Pull current song aside, shuffle the rest, reinsert.
-                let current = state.daemon.queue.remove(cur);
-                state.daemon.queue.shuffle(&mut rng);
-                state.daemon.queue.insert(cur, current);
+        // Scope the !Send `thread_rng` so it's dropped before the
+        // `emit_queue().await` below; otherwise the resulting future
+        // is !Send and the broadcast server can't spawn it.
+        {
+            let mut state = self.state.write().await;
+            if state.daemon.queue.is_empty() {
+                return;
             }
-            _ => state.daemon.queue.shuffle(&mut rng),
+            let mut rng = rand::thread_rng();
+            match state.daemon.queue_position {
+                Some(cur) if cur < state.daemon.queue.len() => {
+                    let current = state.daemon.queue.remove(cur);
+                    state.daemon.queue.shuffle(&mut rng);
+                    state.daemon.queue.insert(cur, current);
+                }
+                _ => state.daemon.queue.shuffle(&mut rng),
+            }
         }
-        drop(state);
-        self.emit(DaemonEvent::QueueChanged);
+        self.emit_queue().await;
     }
 }
 
@@ -878,7 +912,10 @@ impl DaemonCore {
                     .album_songs_cache
                     .insert(album_id.to_string(), songs.clone());
                 drop(state);
-                self.emit(DaemonEvent::LibraryChanged(LibrarySection::AlbumSongs));
+                self.emit(DaemonEvent::AlbumSongsChanged {
+                    album_id: album_id.to_string(),
+                    songs: songs.clone(),
+                });
                 songs
             }
             Err(e) => {
@@ -908,7 +945,10 @@ impl DaemonCore {
                     .playlist_songs_cache
                     .insert(playlist_id.to_string(), songs.clone());
                 drop(state);
-                self.emit(DaemonEvent::LibraryChanged(LibrarySection::PlaylistSongs));
+                self.emit(DaemonEvent::PlaylistSongsChanged {
+                    playlist_id: playlist_id.to_string(),
+                    songs: songs.clone(),
+                });
                 songs
             }
             Err(e) => {

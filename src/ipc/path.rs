@@ -46,16 +46,28 @@ pub fn socket_path() -> PathBuf {
 
 /// Ensure the socket's parent directory exists with sane permissions.
 /// Daemon calls this before binding; client never calls it.
+///
+/// Only chmods the directory when we just created it. The standard
+/// `XDG_RUNTIME_DIR` path is already mode 0700; `/tmp` is 1777 and
+/// chmodding it would fail and is undesirable. The per-uid subdir
+/// is what we care about: when *we* mkdir it, set 0700.
 pub fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let Some(parent) = path.parent() else {
         return Ok(());
     };
-    if !parent.exists() {
-        std::fs::create_dir_all(parent)?;
+    if parent.exists() {
+        return Ok(());
     }
-    let mut perm = std::fs::metadata(parent)?.permissions();
+    std::fs::create_dir_all(parent)?;
+    // Best-effort chmod on the directory we just created. If this
+    // fails (e.g., parent of parent is sticky), ignore — the socket
+    // file itself is the security boundary.
+    let mut perm = match std::fs::metadata(parent) {
+        Ok(m) => m.permissions(),
+        Err(_) => return Ok(()),
+    };
     perm.set_mode(0o700);
-    std::fs::set_permissions(parent, perm)?;
+    let _ = std::fs::set_permissions(parent, perm);
     Ok(())
 }

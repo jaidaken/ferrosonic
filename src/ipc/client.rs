@@ -131,7 +131,7 @@ impl DaemonClient for InProcessClient {
                     }
                 }
                 drop(state);
-                self.core.broadcast_queue_changed();
+                self.core.broadcast_queue_changed().await;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::ClearQueue => {
@@ -233,6 +233,10 @@ impl DaemonClient for InProcessClient {
                 warn!("Subscribe sent as request; use DaemonClient::subscribe instead");
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::Snapshot => {
+                let snap = self.core.snapshot().await;
+                Ok(DaemonResponse::Snapshot(Box::new(snap)))
+            }
             DaemonRequest::Shutdown => {
                 self.core.quit_mpv().await;
                 Ok(DaemonResponse::Ok)
@@ -259,7 +263,7 @@ impl InProcessClient {
                     state.daemon.queue = songs;
                     state.daemon.queue_position = None;
                 }
-                self.core.broadcast_queue_changed();
+                self.core.broadcast_queue_changed().await;
                 if let Some(idx) = play_from {
                     self.core.play_queue_position(idx).await.map_err(err)?;
                 }
@@ -269,7 +273,7 @@ impl InProcessClient {
                     let mut state = self.core.state.write().await;
                     state.daemon.queue.extend(songs);
                 }
-                self.core.broadcast_queue_changed();
+                self.core.broadcast_queue_changed().await;
             }
             EnqueueMode::InsertAfter(pos) => {
                 {
@@ -279,7 +283,7 @@ impl InProcessClient {
                         state.daemon.queue.insert(insert_at + i, song);
                     }
                 }
-                self.core.broadcast_queue_changed();
+                self.core.broadcast_queue_changed().await;
             }
         }
         Ok(DaemonResponse::Ok)

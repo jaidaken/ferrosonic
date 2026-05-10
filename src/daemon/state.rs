@@ -3,6 +3,8 @@
 //! the canonical config. The TUI reads a snapshot of this state and reflects
 //! it; only the daemon mutates it.
 
+use serde::{Deserialize, Serialize};
+
 use crate::app::state::NowPlaying;
 use crate::config::Config;
 use crate::daemon::library::LibraryCache;
@@ -11,7 +13,7 @@ use crate::subsonic::models::Child;
 /// All state owned by the (future) ferrosonicd daemon. In phase 1 this is
 /// embedded inside `AppState` alongside `ClientState` so the existing single
 /// binary keeps working; phase 5 lifts it into a separate process.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct DaemonState {
     /// Application configuration (server URL, credentials, theme, cava).
     pub config: Config,

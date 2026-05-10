@@ -5,6 +5,7 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 
 use ratatui::layout::Rect;
+use serde::{Deserialize, Serialize};
 
 use crate::app::models::SongOption;
 use crate::config::Config;
@@ -63,7 +64,7 @@ impl Page {
 }
 
 /// Playback state
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PlaybackState {
     #[default]
     Stopped,
@@ -72,7 +73,7 @@ pub enum PlaybackState {
 }
 
 /// Now playing information
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NowPlaying {
     /// Currently playing song
     pub song: Option<Child>,
