@@ -12,6 +12,7 @@ mod audio;
 mod config;
 mod daemon;
 mod error;
+mod ipc;
 mod mpris;
 mod subsonic;
 mod ui;
