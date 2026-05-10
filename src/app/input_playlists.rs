@@ -75,29 +75,17 @@ impl App {
                             let playlist_name = playlist.name.clone();
                             drop(state);
 
-                            if let Some(client) = self.subsonic_client().await {
-                                match client.get_playlist(&playlist_id).await {
-                                    Ok((_playlist, songs)) => {
-                                        let mut state = self.state.write().await;
-                                        let count = songs.len();
-                                        state.client.playlists.songs = songs;
-                                        state.client.playlists.selected_song =
-                                            if count > 0 { Some(0) } else { None };
-                                        state.client.playlists.focus = 1;
-                                        state.client.notify(format!(
-                                                "Loaded playlist: {} ({} songs)",
-                                                playlist_name, count
-                                        ));
-                                    }
-                                    Err(e) => {
-                                        let mut state = self.state.write().await;
-                                        state.client.notify_error(format!(
-                                                "Failed to load playlist: {}",
-                                                e
-                                        ));
-                                    }
-                                }
-                            }
+                            let songs = self.load_playlist(&playlist_id).await;
+                            let mut state = self.state.write().await;
+                            let count = songs.len();
+                            state.client.playlists.songs = songs;
+                            state.client.playlists.selected_song =
+                                if count > 0 { Some(0) } else { None };
+                            state.client.playlists.focus = 1;
+                            state.client.notify(format!(
+                                "Loaded playlist: {} ({} songs)",
+                                playlist_name, count
+                            ));
                             return Ok(());
                         }
                     }

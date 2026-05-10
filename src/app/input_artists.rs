@@ -1,5 +1,5 @@
 use crossterm::event::{self, KeyCode};
-use tracing::{error, info};
+use tracing::info;
 
 use crate::error::Error;
 
@@ -82,12 +82,11 @@ impl App {
                         });
                     if let Some(album_id) = album_id {
                         drop(state);
-                        if let Some(client) = self.subsonic_client().await {
-                            if let Ok((_album, songs)) = client.get_album(&album_id).await {
-                                let mut state = self.state.write().await;
-                                state.client.artists.songs = songs;
-                                state.client.artists.selected_song = Some(0);
-                            }
+                        let songs = self.load_album(&album_id).await;
+                        if !songs.is_empty() {
+                            let mut state = self.state.write().await;
+                            state.client.artists.songs = songs;
+                            state.client.artists.selected_song = Some(0);
                         }
                         return Ok(());
                     }
@@ -125,12 +124,11 @@ impl App {
                         });
                     if let Some(album_id) = album_id {
                         drop(state);
-                        if let Some(client) = self.subsonic_client().await {
-                            if let Ok((_album, songs)) = client.get_album(&album_id).await {
-                                let mut state = self.state.write().await;
-                                state.client.artists.songs = songs;
-                                state.client.artists.selected_song = Some(0);
-                            }
+                        let songs = self.load_album(&album_id).await;
+                        if !songs.is_empty() {
+                            let mut state = self.state.write().await;
+                            state.client.artists.songs = songs;
+                            state.client.artists.selected_song = Some(0);
                         }
                         return Ok(());
                     }
@@ -161,62 +159,52 @@ impl App {
 
                                     drop(state);
 
-                                    if let Some(client) = self.subsonic_client().await {
-                                        match client.get_artist(&artist_id).await {
-                                            Ok((_artist, albums)) => {
-                                                let mut artists_songs: Vec<_> = Vec::new();
-
-                                                for (_i, album) in albums.into_iter().enumerate() {
-                                                    match client.get_album(&album.id).await {
-                                                        Ok((_album, songs)) => {
-                                                            artists_songs.extend(songs);
-                                                        }
-                                                        Err(e) => {
-                                                            // Skip failed album and shuffle the
-                                                            // rest. Could be handled better.
-                                                            error!("Failed to load: {}", e);
-                                                        }
-                                                    }
-                                                }
-
-                                                if artists_songs.is_empty() {
-                                                    let mut state = self.state.write().await;
-                                                    state.client.notify_error(format!(
-                                                        "No songs found for {}",
-                                                        artist_name,
-                                                    ));
-                                                    return Ok(());
-                                                }
-
-                                                artists_songs.shuffle(&mut thread_rng());
-
-                                                let song_count = artists_songs.len();
-                                                {
-                                                    let mut state = self.state.write().await;
-                                                    state.client.notify(format!(
-                                                        "Shuffling {} songs by {}",
-                                                        song_count, artist_name
-                                                    ));
-                                                }
-
-                                                return self
-                                                    .client
-                                                    .request(DaemonRequest::EnqueueSongs {
-                                                        songs: artists_songs,
-                                                        mode: EnqueueMode::Replace {
-                                                            play_from: Some(0),
-                                                        },
-                                                    })
-                                                    .await
-                                                    .map(|_| ())
-                                                    .map_err(Error::from);
-                                            }
-                                            Err(e) => {
-                                                let mut state = self.state.write().await;
-                                                state.client
-                                                    .notify_error(format!("Failed to load: {}", e));
-                                            }
+                                    let albums_resp = self
+                                        .client
+                                        .request(DaemonRequest::LoadArtist(artist_id.clone()))
+                                        .await;
+                                    let albums = match albums_resp {
+                                        Ok(crate::ipc::DaemonResponse::ArtistAlbums(a)) => a,
+                                        _ => Vec::new(),
+                                    };
+                                    if !albums.is_empty() {
+                                        let mut artists_songs: Vec<_> = Vec::new();
+                                        for album in albums {
+                                            let songs = self.load_album(&album.id).await;
+                                            artists_songs.extend(songs);
                                         }
+
+                                        if artists_songs.is_empty() {
+                                            let mut state = self.state.write().await;
+                                            state.client.notify_error(format!(
+                                                "No songs found for {}",
+                                                artist_name,
+                                            ));
+                                            return Ok(());
+                                        }
+
+                                        artists_songs.shuffle(&mut thread_rng());
+
+                                        let song_count = artists_songs.len();
+                                        {
+                                            let mut state = self.state.write().await;
+                                            state.client.notify(format!(
+                                                "Shuffling {} songs by {}",
+                                                song_count, artist_name
+                                            ));
+                                        }
+
+                                        return self
+                                            .client
+                                            .request(DaemonRequest::EnqueueSongs {
+                                                songs: artists_songs,
+                                                mode: EnqueueMode::Replace {
+                                                    play_from: Some(0),
+                                                },
+                                            })
+                                            .await
+                                            .map(|_| ())
+                                            .map_err(Error::from);
                                     }
                                 }
                                 TreeItem::Album { album } => {
@@ -225,42 +213,32 @@ impl App {
 
                                     drop(state);
 
-                                    if let Some(client) = self.subsonic_client().await {
-                                        match client.get_album(&album_id).await {
-                                            Ok((_album, songs)) => {
-                                                if songs.is_empty() {
-                                                    let mut state = self.state.write().await;
-                                                    state.client.notify_error("Album has no songs");
-                                                    return Ok(());
-                                                }
-
-                                                let mut shuffled_songs = songs;
-                                                shuffled_songs.shuffle(&mut thread_rng());
-
-                                                {
-                                                    let mut state = self.state.write().await;
-                                                    state.client.notify(format!("Shuffling {}", album_name));
-                                                }
-
-                                                return self
-                                                    .client
-                                                    .request(DaemonRequest::EnqueueSongs {
-                                                        songs: shuffled_songs,
-                                                        mode: EnqueueMode::Replace {
-                                                            play_from: Some(0),
-                                                        },
-                                                    })
-                                                    .await
-                                                    .map(|_| ())
-                                                    .map_err(Error::from);
-                                            }
-                                            Err(e) => {
-                                                let mut state = self.state.write().await;
-                                                state.client
-                                                    .notify_error(format!("Failed to load: {}", e));
-                                            }
-                                        }
+                                    let songs = self.load_album(&album_id).await;
+                                    if songs.is_empty() {
+                                        let mut state = self.state.write().await;
+                                        state.client.notify_error("Album has no songs");
+                                        return Ok(());
                                     }
+
+                                    let mut shuffled_songs = songs;
+                                    shuffled_songs.shuffle(&mut thread_rng());
+
+                                    {
+                                        let mut state = self.state.write().await;
+                                        state.client.notify(format!("Shuffling {}", album_name));
+                                    }
+
+                                    return self
+                                        .client
+                                        .request(DaemonRequest::EnqueueSongs {
+                                            songs: shuffled_songs,
+                                            mode: EnqueueMode::Replace {
+                                                play_from: Some(0),
+                                            },
+                                        })
+                                        .await
+                                        .map(|_| ())
+                                        .map_err(Error::from);
                                 }
                             }
                         }
@@ -283,29 +261,22 @@ impl App {
                                         state.client.artists.expanded.remove(&artist_id);
                                     } else if !state.daemon.library.albums_cache.contains_key(&artist_id) {
                                         drop(state);
-                                        if let Some(client) = self.subsonic_client().await {
-                                            match client.get_artist(&artist_id).await {
-                                                Ok((_artist, albums)) => {
-                                                    let mut state = self.state.write().await;
-                                                    let count = albums.len();
-                                                    state
-                                                        .daemon
-                                                        .library
-                                                        .albums_cache
-                                                        .insert(artist_id.clone(), albums);
-                                                    state.client.artists.expanded.insert(artist_id);
-                                                    info!(
-                                                        "Loaded {} albums for {}",
-                                                        count, artist_name
-                                                    );
-                                                }
-                                                Err(e) => {
-                                                    let mut state = self.state.write().await;
-                                                    state.client.notify_error(format!(
-                                                        "Failed to load: {}",
-                                                        e
-                                                    ));
-                                                }
+                                        match self
+                                            .client
+                                            .request(DaemonRequest::LoadArtist(artist_id.clone()))
+                                            .await
+                                        {
+                                            Ok(crate::ipc::DaemonResponse::ArtistAlbums(_)) => {
+                                                // Daemon already cached + emitted
+                                                // AlbumsChanged; the event-pump task
+                                                // mirrors that into our local cache.
+                                                let mut state = self.state.write().await;
+                                                state.client.artists.expanded.insert(artist_id);
+                                                info!("Loaded albums for {}", artist_name);
+                                            }
+                                            _ => {
+                                                let mut state = self.state.write().await;
+                                                state.client.notify_error("Failed to load artist");
                                             }
                                         }
                                         return Ok(());
@@ -318,45 +289,33 @@ impl App {
                                     let album_name = album.name.clone();
                                     drop(state);
 
-                                    if let Some(client) = self.subsonic_client().await {
-                                        match client.get_album(&album_id).await {
-                                            Ok((_album, songs)) => {
-                                                if songs.is_empty() {
-                                                    let mut state = self.state.write().await;
-                                                    state.client.notify_error("Album has no songs");
-                                                    return Ok(());
-                                                }
-
-                                                {
-                                                    let mut state = self.state.write().await;
-                                                    let count = songs.len();
-                                                    state.client.artists.songs = songs.clone();
-                                                    state.client.artists.selected_song = Some(0);
-                                                    state.client.artists.focus = 1;
-                                                    state.client.notify(format!(
-                                                        "Playing album: {} ({} songs)",
-                                                        album_name, count
-                                                    ));
-                                                }
-                                                let _ = self
-                                                    .client
-                                                    .request(DaemonRequest::EnqueueSongs {
-                                                        songs,
-                                                        mode: EnqueueMode::Replace {
-                                                            play_from: Some(0),
-                                                        },
-                                                    })
-                                                    .await;
-                                            }
-                                            Err(e) => {
-                                                let mut state = self.state.write().await;
-                                                state.client.notify_error(format!(
-                                                    "Failed to load album: {}",
-                                                    e
-                                                ));
-                                            }
-                                        }
+                                    let songs = self.load_album(&album_id).await;
+                                    if songs.is_empty() {
+                                        let mut state = self.state.write().await;
+                                        state.client.notify_error("Album has no songs");
+                                        return Ok(());
                                     }
+
+                                    {
+                                        let mut state = self.state.write().await;
+                                        let count = songs.len();
+                                        state.client.artists.songs = songs.clone();
+                                        state.client.artists.selected_song = Some(0);
+                                        state.client.artists.focus = 1;
+                                        state.client.notify(format!(
+                                            "Playing album: {} ({} songs)",
+                                            album_name, count
+                                        ));
+                                    }
+                                    let _ = self
+                                        .client
+                                        .request(DaemonRequest::EnqueueSongs {
+                                            songs,
+                                            mode: EnqueueMode::Replace {
+                                                play_from: Some(0),
+                                            },
+                                        })
+                                        .await;
                                     return Ok(());
                                 }
                             }

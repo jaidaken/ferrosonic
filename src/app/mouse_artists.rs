@@ -45,19 +45,24 @@ impl App {
                                 state.client.artists.expanded.remove(&artist_id);
                             } else if !state.daemon.library.albums_cache.contains_key(&artist_id) {
                                 drop(state);
-                                if let Some(client) = self.subsonic_client().await {
-                                    match client.get_artist(&artist_id).await {
-                                        Ok((_artist, albums)) => {
-                                            let mut state = self.state.write().await;
-                                            let count = albums.len();
-                                            state.daemon.library.albums_cache.insert(artist_id.clone(), albums);
-                                            state.client.artists.expanded.insert(artist_id);
-                                            tracing::info!("Loaded {} albums for {}", count, artist_name);
-                                        }
-                                        Err(e) => {
-                                            let mut state = self.state.write().await;
-                                            state.client.notify_error(format!("Failed to load: {}", e));
-                                        }
+                                let albums_resp = self
+                                    .client
+                                    .request(DaemonRequest::LoadArtist(artist_id.clone()))
+                                    .await;
+                                match albums_resp {
+                                    Ok(crate::ipc::DaemonResponse::ArtistAlbums(_)) => {
+                                        // The daemon already inserted into the
+                                        // library cache and emitted AlbumsChanged;
+                                        // the event-pump task will mirror that
+                                        // into state.daemon.library.albums_cache.
+                                        // We just expand here.
+                                        let mut state = self.state.write().await;
+                                        state.client.artists.expanded.insert(artist_id);
+                                        tracing::info!("Loaded albums for {}", artist_name);
+                                    }
+                                    _ => {
+                                        let mut state = self.state.write().await;
+                                        state.client.notify_error("Failed to load artist");
                                     }
                                 }
                                 self.last_click = Some((x, y, std::time::Instant::now()));
@@ -71,40 +76,31 @@ impl App {
                             let album_name = album.name.clone();
                             drop(state);
 
-                            if let Some(client) = self.subsonic_client().await {
-                                match client.get_album(&album_id).await {
-                                    Ok((_album, songs)) => {
-                                        if songs.is_empty() {
-                                            let mut state = self.state.write().await;
-                                            state.client.notify_error("Album has no songs");
-                                            self.last_click = Some((x, y, std::time::Instant::now()));
-                                            return Ok(());
-                                        }
-
-                                        {
-                                            let mut state = self.state.write().await;
-                                            let count = songs.len();
-                                            state.client.artists.songs = songs.clone();
-                                            state.client.artists.selected_song = Some(0);
-                                            state.client.artists.focus = 1;
-                                            state.client.notify(format!("Playing album: {} ({} songs)", album_name, count));
-                                        }
-                                        let _ = self
-                                            .client
-                                            .request(DaemonRequest::EnqueueSongs {
-                                                songs,
-                                                mode: EnqueueMode::Replace {
-                                                    play_from: Some(0),
-                                                },
-                                            })
-                                            .await;
-                                    }
-                                    Err(e) => {
-                                        let mut state = self.state.write().await;
-                                        state.client.notify_error(format!("Failed to load album: {}", e));
-                                    }
-                                }
+                            let songs = self.load_album(&album_id).await;
+                            if songs.is_empty() {
+                                let mut state = self.state.write().await;
+                                state.client.notify_error("Album has no songs");
+                                self.last_click = Some((x, y, std::time::Instant::now()));
+                                return Ok(());
                             }
+
+                            {
+                                let mut state = self.state.write().await;
+                                let count = songs.len();
+                                state.client.artists.songs = songs.clone();
+                                state.client.artists.selected_song = Some(0);
+                                state.client.artists.focus = 1;
+                                state.client.notify(format!("Playing album: {} ({} songs)", album_name, count));
+                            }
+                            let _ = self
+                                .client
+                                .request(DaemonRequest::EnqueueSongs {
+                                    songs,
+                                    mode: EnqueueMode::Replace {
+                                        play_from: Some(0),
+                                    },
+                                })
+                                .await;
                             self.last_click = Some((x, y, std::time::Instant::now()));
                             return Ok(());
                         }
@@ -114,12 +110,11 @@ impl App {
                     if let TreeItem::Album { album } = &tree_items[item_index] {
                         let album_id = album.id.clone();
                         drop(state);
-                        if let Some(client) = self.subsonic_client().await {
-                            if let Ok((_album, songs)) = client.get_album(&album_id).await {
-                                let mut state = self.state.write().await;
-                                state.client.artists.songs = songs;
-                                state.client.artists.selected_song = Some(0);
-                            }
+                        let songs = self.load_album(&album_id).await;
+                        if !songs.is_empty() {
+                            let mut state = self.state.write().await;
+                            state.client.artists.songs = songs;
+                            state.client.artists.selected_song = Some(0);
                         }
                         self.last_click = Some((x, y, std::time::Instant::now()));
                         return Ok(());

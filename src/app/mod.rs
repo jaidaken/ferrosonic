@@ -246,16 +246,33 @@ impl App {
         result
     }
 
-    /// Cheap snapshot of the daemon's Subsonic client (`reqwest::Client`
-    /// is Arc-wrapped internally). Returns `None` when not configured
-    /// or when running in split-build mode (no local `DaemonCore`).
-    /// In split mode the input handlers should use `LoadAlbum`/
-    /// `LoadPlaylist` requests instead of inline API calls; phase 6b
-    /// completes that migration.
-    pub(crate) async fn subsonic_client(&self) -> Option<crate::subsonic::SubsonicClient> {
-        match self.core {
-            Some(ref core) => core.subsonic.read().await.clone(),
-            None => None,
+    /// Fetch an album's songs through the daemon. Works in both
+    /// in-process and split-build modes. Returns an empty `Vec` on
+    /// failure (the daemon logs + emits a notification event).
+    pub(crate) async fn load_album(&self, album_id: &str) -> Vec<crate::subsonic::models::Child> {
+        match self
+            .client
+            .request(DaemonRequest::LoadAlbum(album_id.to_string()))
+            .await
+        {
+            Ok(crate::ipc::DaemonResponse::AlbumSongs(songs)) => songs,
+            _ => Vec::new(),
+        }
+    }
+
+    /// Fetch a playlist's songs through the daemon. Same shape as
+    /// `load_album`.
+    pub(crate) async fn load_playlist(
+        &self,
+        playlist_id: &str,
+    ) -> Vec<crate::subsonic::models::Child> {
+        match self
+            .client
+            .request(DaemonRequest::LoadPlaylist(playlist_id.to_string()))
+            .await
+        {
+            Ok(crate::ipc::DaemonResponse::PlaylistSongs(songs)) => songs,
+            _ => Vec::new(),
         }
     }
 
