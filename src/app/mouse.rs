@@ -23,9 +23,9 @@ impl App {
         use crate::ui::header::{Header, HeaderRegion};
 
         let state = self.state.read().await;
-        let layout = state.layout.clone();
-        let page = state.page;
-        let duration = state.now_playing.duration;
+        let layout = state.client.layout.clone();
+        let page = state.client.page;
+        let duration = state.daemon.now_playing.duration;
         drop(state);
 
         // Check header area
@@ -34,7 +34,7 @@ impl App {
                 match region {
                     HeaderRegion::Tab(tab_page) => {
                         let mut state = self.state.write().await;
-                        state.page = tab_page;
+                        state.client.page = tab_page;
                     }
                     HeaderRegion::PrevButton => {
                         return self.prev_track().await;
@@ -74,7 +74,7 @@ impl App {
                         let seek_pos = fraction * duration;
                         let _ = self.mpv.seek(seek_pos);
                         let mut state = self.state.write().await;
-                        state.now_playing.position = seek_pos;
+                        state.daemon.now_playing.position = seek_pos;
                     }
                 }
             }
@@ -100,7 +100,7 @@ impl App {
         match page {
             Page::Songs => {
                 let mut state = self.state.write().await;
-                state.notify("Mouse input not supported for this page yet");
+                state.client.notify("Mouse input not supported for this page yet");
                 Ok(())
             }
             Page::Artists => self.handle_artists_click(x, y, layout).await,
@@ -117,11 +117,11 @@ impl App {
 
         // Account for border (1 row top)
         let row_in_viewport = y.saturating_sub(content.y + 1) as usize;
-        let item_index = state.queue_state.scroll_offset + row_in_viewport;
+        let item_index = state.client.queue_state.scroll_offset + row_in_viewport;
 
-        if item_index < state.queue.len() {
-            let was_selected = state.queue_state.selected == Some(item_index);
-            state.queue_state.selected = Some(item_index);
+        if item_index < state.daemon.queue.len() {
+            let was_selected = state.client.queue_state.selected == Some(item_index);
+            state.client.queue_state.selected = Some(item_index);
 
             let is_second_click = was_selected
                 && self
@@ -142,39 +142,39 @@ impl App {
     /// Handle mouse scroll up (move selection up in current list)
     async fn handle_mouse_scroll_up(&mut self) -> Result<(), Error> {
         let mut state = self.state.write().await;
-        match state.page {
+        match state.client.page {
             Page::Artists => {
-                if state.artists.focus == 0 {
-                    if let Some(sel) = state.artists.selected_index {
+                if state.client.artists.focus == 0 {
+                    if let Some(sel) = state.client.artists.selected_index {
                         if sel > 0 {
-                            state.artists.selected_index = Some(sel - 1);
+                            state.client.artists.selected_index = Some(sel - 1);
                         }
                     }
-                } else if let Some(sel) = state.artists.selected_song {
+                } else if let Some(sel) = state.client.artists.selected_song {
                     if sel > 0 {
-                        state.artists.selected_song = Some(sel - 1);
+                        state.client.artists.selected_song = Some(sel - 1);
                     }
                 }
             }
             Page::Queue => {
-                if let Some(sel) = state.queue_state.selected {
+                if let Some(sel) = state.client.queue_state.selected {
                     if sel > 0 {
-                        state.queue_state.selected = Some(sel - 1);
+                        state.client.queue_state.selected = Some(sel - 1);
                     }
-                } else if !state.queue.is_empty() {
-                    state.queue_state.selected = Some(0);
+                } else if !state.daemon.queue.is_empty() {
+                    state.client.queue_state.selected = Some(0);
                 }
             }
             Page::Playlists => {
-                if state.playlists.focus == 0 {
-                    if let Some(sel) = state.playlists.selected_playlist {
+                if state.client.playlists.focus == 0 {
+                    if let Some(sel) = state.client.playlists.selected_playlist {
                         if sel > 0 {
-                            state.playlists.selected_playlist = Some(sel - 1);
+                            state.client.playlists.selected_playlist = Some(sel - 1);
                         }
                     }
-                } else if let Some(sel) = state.playlists.selected_song {
+                } else if let Some(sel) = state.client.playlists.selected_song {
                     if sel > 0 {
-                        state.playlists.selected_song = Some(sel - 1);
+                        state.client.playlists.selected_song = Some(sel - 1);
                     }
                 }
             }
@@ -186,57 +186,57 @@ impl App {
     /// Handle mouse scroll down (move selection down in current list)
     async fn handle_mouse_scroll_down(&mut self) -> Result<(), Error> {
         let mut state = self.state.write().await;
-        match state.page {
+        match state.client.page {
             Page::Artists => {
-                if state.artists.focus == 0 {
+                if state.client.artists.focus == 0 {
                     let tree_items = crate::ui::pages::artists::build_tree_items(&state);
                     let max = tree_items.len().saturating_sub(1);
-                    if let Some(sel) = state.artists.selected_index {
+                    if let Some(sel) = state.client.artists.selected_index {
                         if sel < max {
-                            state.artists.selected_index = Some(sel + 1);
+                            state.client.artists.selected_index = Some(sel + 1);
                         }
                     } else if !tree_items.is_empty() {
-                        state.artists.selected_index = Some(0);
+                        state.client.artists.selected_index = Some(0);
                     }
                 } else {
-                    let max = state.artists.songs.len().saturating_sub(1);
-                    if let Some(sel) = state.artists.selected_song {
+                    let max = state.client.artists.songs.len().saturating_sub(1);
+                    if let Some(sel) = state.client.artists.selected_song {
                         if sel < max {
-                            state.artists.selected_song = Some(sel + 1);
+                            state.client.artists.selected_song = Some(sel + 1);
                         }
-                    } else if !state.artists.songs.is_empty() {
-                        state.artists.selected_song = Some(0);
+                    } else if !state.client.artists.songs.is_empty() {
+                        state.client.artists.selected_song = Some(0);
                     }
                 }
             }
             Page::Queue => {
-                let max = state.queue.len().saturating_sub(1);
-                if let Some(sel) = state.queue_state.selected {
+                let max = state.daemon.queue.len().saturating_sub(1);
+                if let Some(sel) = state.client.queue_state.selected {
                     if sel < max {
-                        state.queue_state.selected = Some(sel + 1);
+                        state.client.queue_state.selected = Some(sel + 1);
                     }
-                } else if !state.queue.is_empty() {
-                    state.queue_state.selected = Some(0);
+                } else if !state.daemon.queue.is_empty() {
+                    state.client.queue_state.selected = Some(0);
                 }
             }
             Page::Playlists => {
-                if state.playlists.focus == 0 {
-                    let max = state.playlists.playlists.len().saturating_sub(1);
-                    if let Some(sel) = state.playlists.selected_playlist {
+                if state.client.playlists.focus == 0 {
+                    let max = state.daemon.library.playlists.len().saturating_sub(1);
+                    if let Some(sel) = state.client.playlists.selected_playlist {
                         if sel < max {
-                            state.playlists.selected_playlist = Some(sel + 1);
+                            state.client.playlists.selected_playlist = Some(sel + 1);
                         }
-                    } else if !state.playlists.playlists.is_empty() {
-                        state.playlists.selected_playlist = Some(0);
+                    } else if !state.daemon.library.playlists.is_empty() {
+                        state.client.playlists.selected_playlist = Some(0);
                     }
                 } else {
-                    let max = state.playlists.songs.len().saturating_sub(1);
-                    if let Some(sel) = state.playlists.selected_song {
+                    let max = state.client.playlists.songs.len().saturating_sub(1);
+                    if let Some(sel) = state.client.playlists.selected_song {
                         if sel < max {
-                            state.playlists.selected_song = Some(sel + 1);
+                            state.client.playlists.selected_song = Some(sel + 1);
                         }
-                    } else if !state.playlists.songs.is_empty() {
-                        state.playlists.selected_song = Some(0);
+                    } else if !state.client.playlists.songs.is_empty() {
+                        state.client.playlists.selected_song = Some(0);
                     }
                 }
             }

@@ -8,8 +8,12 @@ use ratatui::layout::Rect;
 
 use crate::app::models::SongOption;
 use crate::config::Config;
-use crate::subsonic::models::{Album, Artist, Child, Playlist};
+use crate::subsonic::models::Child;
 use crate::ui::theme::{ThemeColors, ThemeData};
+
+// `Notification`, `LayoutAreas`, etc. live here but are read from
+// `client_state::ClientState`. Keep them re-exported so existing imports
+// (`use crate::app::state::Notification`) continue to compile.
 
 /// Current page in the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -122,25 +126,26 @@ pub fn format_duration(seconds: f64) -> String {
 
 #[derive(Debug, Clone, Default)]
 pub struct SongsState {
-    pub songs: Vec<Child>,
+    /// Which option (Starred / Random) is selected. The actual song list
+    /// for this option lives in `daemon.library.starred_songs` /
+    /// `random_songs`; use `AppState::songs_list()` to resolve.
     pub selected_option: Option<SongOption>,
     pub selected_index: Option<usize>,
     pub focus: usize,
     pub scroll_offset: usize,
 }
 
-/// Artists page state
+/// Artists page state — pure UI state (selection, expansion, filter, focus,
+/// scroll). The artist list and album cache live in `daemon.library`.
 #[derive(Debug, Clone, Default)]
 pub struct ArtistsState {
-    /// List of all artists
-    pub artists: Vec<Artist>,
     /// Currently selected index in the tree (artists + expanded albums)
     pub selected_index: Option<usize>,
     /// Set of expanded artist IDs
     pub expanded: std::collections::HashSet<String>,
-    /// Albums cached per artist ID
-    pub albums_cache: std::collections::HashMap<String, Vec<Album>>,
-    /// Songs in the selected album (shown in right pane)
+    /// Songs in the selected album (shown in right pane). Stays client-side
+    /// in phase 1 (it's populated by the user's click action). Phase 2 lifts
+    /// this into `daemon.library.album_songs_cache` keyed by album id.
     pub songs: Vec<Child>,
     /// Currently selected song index
     pub selected_song: Option<usize>,
@@ -165,14 +170,14 @@ pub struct QueueState {
     pub scroll_offset: usize,
 }
 
-/// Playlists page state
+/// Playlists page state — pure UI state. The playlist list lives in
+/// `daemon.library.playlists`.
 #[derive(Debug, Clone, Default)]
 pub struct PlaylistsState {
-    /// List of all playlists
-    pub playlists: Vec<Playlist>,
     /// Currently selected playlist index
     pub selected_playlist: Option<usize>,
-    /// Songs in the selected playlist
+    /// Songs in the selected playlist. Stays client-side in phase 1; phase 2
+    /// lifts into `daemon.library.playlist_songs_cache` keyed by playlist id.
     pub songs: Vec<Child>,
     /// Currently selected song index
     pub selected_song: Option<usize>,
@@ -287,41 +292,20 @@ pub struct LayoutAreas {
     pub content_right: Option<Rect>,
 }
 
-/// Complete application state
+/// Complete application state — now a thin facade composing the
+/// `DaemonState` (audio, queue, library, config) and `ClientState`
+/// (page, selection, scroll, notifications, cava buffer, layout).
+///
+/// Phase 1 of the daemon split: both halves live in the same process,
+/// embedded here. Phase 5 separates them into a daemon process plus a
+/// thin TUI client that mirrors a snapshot of the daemon's state.
 #[derive(Debug, Default)]
 pub struct AppState {
-    /// Application configuration
-    pub config: Config,
-    /// Current page
-    pub page: Page,
-    /// Now playing information
-    pub now_playing: NowPlaying,
-    /// Play queue (songs)
-    pub queue: Vec<Child>,
-    /// Current position in queue
-    pub queue_position: Option<usize>,
-    /// Songs page state
-    pub songs: SongsState,
-    /// Artists page state
-    pub artists: ArtistsState,
-    /// Queue page state
-    pub queue_state: QueueState,
-    /// Playlists page state
-    pub playlists: PlaylistsState,
-    /// Server page state (connection settings)
-    pub server_state: ServerState,
-    /// Settings page state (app preferences)
-    pub settings_state: SettingsState,
-    /// Current notification
-    pub notification: Option<Notification>,
-    /// Whether the app should quit
-    pub should_quit: bool,
-    /// Cava visualizer screen content (rows of styled spans)
-    pub cava_screen: Vec<CavaRow>,
-    /// Whether the cava binary is available on the system
-    pub cava_available: bool,
-    /// Cached layout areas from last render (for mouse hit-testing)
-    pub layout: LayoutAreas,
+    /// Daemon-owned state: queue, now_playing, config, library cache.
+    pub daemon: crate::daemon::DaemonState,
+    /// Client-owned state: page, selection, scroll, notifications, cava,
+    /// layout cache.
+    pub client: crate::app::client_state::ClientState,
 }
 
 /// A row of styled segments from cava's terminal output
@@ -350,54 +334,33 @@ pub enum CavaColor {
 impl AppState {
     pub fn new(config: Config) -> Self {
         let mut state = Self {
-            config: config.clone(),
-            ..Default::default()
+            daemon: crate::daemon::DaemonState::new(config.clone()),
+            client: crate::app::client_state::ClientState::default(),
         };
         // Initialize server page with current values
-        state.server_state.base_url = config.base_url.clone();
-        state.server_state.username = config.username.clone();
-        state.server_state.password = config.password.clone();
+        state.client.server_state.base_url = config.base_url.clone();
+        state.client.server_state.username = config.username.clone();
+        state.client.server_state.password = config.password.clone();
         // Initialize cava from config
-        state.settings_state.cava_enabled = config.cava;
-        state.settings_state.cava_size = config.cava_size.clamp(10, 80);
+        state.client.settings_state.cava_enabled = config.cava;
+        state.client.settings_state.cava_size = config.cava_size.clamp(10, 80);
         state
     }
 
-    /// Get the currently playing song from the queue
+    /// Get the currently playing song from the queue. Convenience pass-through
+    /// to `daemon.current_song()`.
     pub fn current_song(&self) -> Option<&Child> {
-        self.queue_position.and_then(|pos| self.queue.get(pos))
+        self.daemon.current_song()
     }
 
-    /// Show a notification
-    pub fn notify(&mut self, message: impl Into<String>) {
-        self.notification = Some(Notification {
-            message: message.into(),
-            is_error: false,
-            created_at: Instant::now(),
-        });
-    }
-
-    /// Show an error notification
-    pub fn notify_error(&mut self, message: impl Into<String>) {
-        self.notification = Some(Notification {
-            message: message.into(),
-            is_error: true,
-            created_at: Instant::now(),
-        });
-    }
-
-    /// Check if notification should be auto-cleared (after 2 seconds)
-    pub fn check_notification_timeout(&mut self) {
-        if let Some(ref notif) = self.notification {
-            if notif.created_at.elapsed().as_secs() >= 2 {
-                self.notification = None;
-            }
+    /// Songs page: resolve the currently-displayed song list. Picks
+    /// starred or random from the library cache based on the user's
+    /// option selection (defaulting to Starred).
+    pub fn songs_list(&self) -> &[Child] {
+        match self.client.songs.selected_option {
+            Some(SongOption::Random) => &self.daemon.library.random_songs,
+            _ => &self.daemon.library.starred_songs,
         }
-    }
-
-    /// Clear the notification
-    pub fn clear_notification(&mut self) {
-        self.notification = None;
     }
 }
 

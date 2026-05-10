@@ -21,23 +21,24 @@ pub enum TreeItem {
 
 /// Build flattened tree items from state
 pub fn build_tree_items(state: &AppState) -> Vec<TreeItem> {
-    let artists = &state.artists;
+    let ui = &state.client.artists;
+    let library_artists = &state.daemon.library.artists;
+    let albums_cache = &state.daemon.library.albums_cache;
     let mut items = Vec::new();
 
     // Filter artists by name
-    let filtered_artists: Vec<_> = if artists.filter.is_empty() {
-        artists.artists.iter().collect()
+    let filtered_artists: Vec<_> = if ui.filter.is_empty() {
+        library_artists.iter().collect()
     } else {
-        let filter_lower = artists.filter.to_lowercase();
-        artists
-            .artists
+        let filter_lower = ui.filter.to_lowercase();
+        library_artists
             .iter()
             .filter(|a| a.name.to_lowercase().contains(&filter_lower))
             .collect()
     };
 
     for artist in filtered_artists {
-        let is_expanded = artists.expanded.contains(&artist.id);
+        let is_expanded = ui.expanded.contains(&artist.id);
         items.push(TreeItem::Artist {
             artist: artist.clone(),
             expanded: is_expanded,
@@ -45,7 +46,7 @@ pub fn build_tree_items(state: &AppState) -> Vec<TreeItem> {
 
         // If expanded, add albums sorted by year (oldest first)
         if is_expanded {
-            if let Some(albums) = artists.albums_cache.get(&artist.id) {
+            if let Some(albums) = albums_cache.get(&artist.id) {
                 let mut sorted_albums: Vec<Album> = albums.to_vec();
                 sorted_albums.sort_by(|a, b| {
                     // Albums with no year go last
@@ -68,7 +69,7 @@ pub fn build_tree_items(state: &AppState) -> Vec<TreeItem> {
 
 /// Render the artists page
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
-    let colors = *state.settings_state.theme_colors();
+    let colors = *state.client.settings_state.theme_colors();
 
     // Split into two panes: [Tree Browser] [Song List]
     let chunks =
@@ -80,7 +81,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
 
 /// Render the artist/album tree
 fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
-    let artists = &state.artists;
+    let artists = &state.client.artists;
 
     let focused = artists.focus == 0;
     let border_style = if focused {
@@ -155,18 +156,18 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &The
     }
 
     let mut list_state = ListState::default();
-    *list_state.offset_mut() = state.artists.tree_scroll_offset;
+    *list_state.offset_mut() = state.client.artists.tree_scroll_offset;
     if focused {
-        list_state.select(state.artists.selected_index);
+        list_state.select(state.client.artists.selected_index);
     }
 
     frame.render_stateful_widget(list, area, &mut list_state);
-    state.artists.tree_scroll_offset = list_state.offset();
+    state.client.artists.tree_scroll_offset = list_state.offset();
 }
 
 /// Render the song list for selected album
 fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
-    let artists = &state.artists;
+    let artists = &state.client.artists;
 
     let focused = artists.focus == 1;
     let border_style = if focused {
@@ -237,11 +238,11 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &Th
     }
 
     let mut list_state = ListState::default();
-    *list_state.offset_mut() = state.artists.song_scroll_offset;
+    *list_state.offset_mut() = state.client.artists.song_scroll_offset;
     if focused {
         list_state.select(artists.selected_song);
     }
 
     frame.render_stateful_widget(list, area, &mut list_state);
-    state.artists.song_scroll_offset = list_state.offset();
+    state.client.artists.song_scroll_offset = list_state.offset();
 }

@@ -56,9 +56,9 @@ impl MprisPlayer {
 
     async fn get_state(&self) -> (NowPlaying, Option<Child>, Config) {
         let state = self.state.read().await;
-        let now_playing = state.now_playing.clone();
+        let now_playing = state.daemon.now_playing.clone();
         let current_song = state.current_song().cloned();
-        let config = state.config.clone();
+        let config = state.daemon.config.clone();
         (now_playing, current_song, config)
     }
 }
@@ -71,7 +71,7 @@ impl RootInterface for MprisPlayer {
 
     async fn quit(&self) -> fdo::Result<()> {
         let mut state = self.state.write().await;
-        state.should_quit = true;
+        state.client.should_quit = true;
         Ok(())
     }
 
@@ -270,20 +270,20 @@ impl PlayerInterface for MprisPlayer {
 
     async fn can_go_next(&self) -> fdo::Result<bool> {
         let state = self.state.read().await;
-        Ok(state
+        Ok(state.daemon
             .queue_position
-            .map(|p| p + 1 < state.queue.len())
+            .map(|p| p + 1 < state.daemon.queue.len())
             .unwrap_or(false))
     }
 
     async fn can_go_previous(&self) -> fdo::Result<bool> {
         let state = self.state.read().await;
-        Ok(state.queue_position.map(|p| p > 0).unwrap_or(false))
+        Ok(state.daemon.queue_position.map(|p| p > 0).unwrap_or(false))
     }
 
     async fn can_play(&self) -> fdo::Result<bool> {
         let state = self.state.read().await;
-        Ok(!state.queue.is_empty())
+        Ok(!state.daemon.queue.is_empty())
     }
 
     async fn can_pause(&self) -> fdo::Result<bool> {
@@ -326,18 +326,18 @@ pub async fn update_mpris_properties(
     // Emit property changes
     server
         .properties_changed([
-            Property::PlaybackStatus(match state.now_playing.state {
+            Property::PlaybackStatus(match state.daemon.now_playing.state {
                 PlaybackState::Playing => PlaybackStatus::Playing,
                 PlaybackState::Paused => PlaybackStatus::Paused,
                 PlaybackState::Stopped => PlaybackStatus::Stopped,
             }),
             Property::CanGoNext(
-                state
+                state.daemon
                     .queue_position
-                    .map(|p| p + 1 < state.queue.len())
+                    .map(|p| p + 1 < state.daemon.queue.len())
                     .unwrap_or(false),
             ),
-            Property::CanGoPrevious(state.queue_position.map(|p| p > 0).unwrap_or(false)),
+            Property::CanGoPrevious(state.daemon.queue_position.map(|p| p > 0).unwrap_or(false)),
         ])
         .await?;
 
@@ -358,7 +358,7 @@ pub async fn update_mpris_properties(
 
         // Add cover art URL
         if let Some(ref cover_art_id) = song.cover_art {
-            if let Some(cover_url) = build_cover_art_url(&state.config, cover_art_id) {
+            if let Some(cover_url) = build_cover_art_url(&state.daemon.config, cover_art_id) {
                 metadata.set_art_url(Some(cover_url));
             }
         }

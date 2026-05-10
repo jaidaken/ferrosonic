@@ -2,6 +2,7 @@
 
 pub mod actions;
 mod cava;
+pub mod client_state;
 mod input;
 mod input_artists;
 mod input_playlists;
@@ -110,7 +111,7 @@ impl App {
         if let Err(e) = self.mpv.start() {
             warn!("Failed to start MPV: {} - audio playback won't work", e);
             let mut state = self.state.write().await;
-            state.notify_error(format!("Failed to start MPV: {}. Is mpv installed?", e));
+            state.client.notify_error(format!("Failed to start MPV: {}. Is mpv installed?", e));
             drop(state);
         } else {
             info!("MPV started successfully, ready for playback");
@@ -138,9 +139,9 @@ impl App {
             }
             let themes = load_themes();
             let mut state = self.state.write().await;
-            let theme_name = state.config.theme.clone();
-            state.settings_state.themes = themes;
-            state.settings_state.set_theme_by_name(&theme_name);
+            let theme_name = state.daemon.config.theme.clone();
+            state.client.settings_state.themes = themes;
+            state.client.settings_state.set_theme_by_name(&theme_name);
         }
 
         // Check if cava is available
@@ -154,20 +155,20 @@ impl App {
 
         {
             let mut state = self.state.write().await;
-            state.cava_available = cava_available;
+            state.client.cava_available = cava_available;
             if !cava_available {
-                state.settings_state.cava_enabled = false;
+                state.client.settings_state.cava_enabled = false;
             }
         }
 
         // Start cava if enabled and available
         {
             let state = self.state.read().await;
-            if state.settings_state.cava_enabled && cava_available {
-                let td = state.settings_state.current_theme();
+            if state.client.settings_state.cava_enabled && cava_available {
+                let td = state.client.settings_state.current_theme();
                 let g = td.cava_gradient.clone();
                 let h = td.cava_horizontal_gradient.clone();
-                let cs = state.settings_state.cava_size as u32;
+                let cs = state.client.settings_state.cava_size as u32;
                 drop(state);
                 self.start_cava(&g, &h, cs);
             }
@@ -214,7 +215,7 @@ impl App {
     /// Load initial data from server
     async fn load_initial_data(&mut self) {
         let mut state = self.state.write().await;
-        state.songs.selected_option = Some(SongOption::Starred);
+        state.client.songs.selected_option = Some(SongOption::Starred);
         drop(state);
 
         self.get_starred_songs().await;
@@ -249,7 +250,7 @@ impl App {
             // Check for quit
             {
                 let state = self.state.read().await;
-                if state.should_quit {
+                if state.client.should_quit {
                     break;
                 }
             }
@@ -286,7 +287,7 @@ impl App {
                             warn!("MPRIS seek failed: {}", e);
                         } else {
                             let mut state = self.state.write().await;
-                            state.now_playing.position = pos;
+                            state.daemon.now_playing.position = pos;
                         }
                     }
                     AudioAction::SeekRelative(offset) => {
@@ -311,7 +312,7 @@ impl App {
             // Check for notification auto-clear (after 2 seconds)
             {
                 let mut state = self.state.write().await;
-                state.check_notification_timeout();
+                state.client.check_notification_timeout();
             }
         }
 

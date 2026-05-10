@@ -16,20 +16,20 @@ impl App {
         let mut state = self.state.write().await;
 
         // Handle filter input mode
-        if state.artists.filter_active {
+        if state.client.artists.filter_active {
             match key.code {
                 KeyCode::Esc => {
-                    state.artists.filter_active = false;
-                    state.artists.filter.clear();
+                    state.client.artists.filter_active = false;
+                    state.client.artists.filter.clear();
                 }
                 KeyCode::Enter => {
-                    state.artists.filter_active = false;
+                    state.client.artists.filter_active = false;
                 }
                 KeyCode::Backspace => {
-                    state.artists.filter.pop();
+                    state.client.artists.filter.pop();
                 }
                 KeyCode::Char(c) => {
-                    state.artists.filter.push(c);
+                    state.client.artists.filter.push(c);
                 }
                 _ => {}
             }
@@ -38,41 +38,41 @@ impl App {
 
         match key.code {
             KeyCode::Char('/') => {
-                state.artists.filter_active = true;
+                state.client.artists.filter_active = true;
             }
             KeyCode::Esc => {
-                state.artists.filter.clear();
-                state.artists.expanded.clear();
-                state.artists.selected_index = Some(0);
+                state.client.artists.filter.clear();
+                state.client.artists.expanded.clear();
+                state.client.artists.selected_index = Some(0);
             }
             KeyCode::Tab => {
-                state.artists.focus = (state.artists.focus + 1) % 2;
+                state.client.artists.focus = (state.client.artists.focus + 1) % 2;
             }
             KeyCode::Left => {
-                state.artists.focus = 0;
+                state.client.artists.focus = 0;
             }
             KeyCode::Right => {
                 // Move focus to songs (right pane)
-                if !state.artists.songs.is_empty() {
-                    state.artists.focus = 1;
-                    if state.artists.selected_song.is_none() {
-                        state.artists.selected_song = Some(0);
+                if !state.client.artists.songs.is_empty() {
+                    state.client.artists.focus = 1;
+                    if state.client.artists.selected_song.is_none() {
+                        state.client.artists.selected_song = Some(0);
                     }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if state.artists.focus == 0 {
+                if state.client.artists.focus == 0 {
                     // Tree navigation
                     let tree_items = build_tree_items(&state);
-                    if let Some(sel) = state.artists.selected_index {
+                    if let Some(sel) = state.client.artists.selected_index {
                         if sel > 0 {
-                            state.artists.selected_index = Some(sel - 1);
+                            state.client.artists.selected_index = Some(sel - 1);
                         }
                     } else if !tree_items.is_empty() {
-                        state.artists.selected_index = Some(0);
+                        state.client.artists.selected_index = Some(0);
                     }
                     // Preview album songs in right pane
-                    let album_id = state
+                    let album_id = state.client
                         .artists
                         .selected_index
                         .and_then(|i| tree_items.get(i))
@@ -85,37 +85,37 @@ impl App {
                         if let Some(ref client) = self.subsonic {
                             if let Ok((_album, songs)) = client.get_album(&album_id).await {
                                 let mut state = self.state.write().await;
-                                state.artists.songs = songs;
-                                state.artists.selected_song = Some(0);
+                                state.client.artists.songs = songs;
+                                state.client.artists.selected_song = Some(0);
                             }
                         }
                         return Ok(());
                     }
                 } else {
                     // Song list
-                    if let Some(sel) = state.artists.selected_song {
+                    if let Some(sel) = state.client.artists.selected_song {
                         if sel > 0 {
-                            state.artists.selected_song = Some(sel - 1);
+                            state.client.artists.selected_song = Some(sel - 1);
                         }
-                    } else if !state.artists.songs.is_empty() {
-                        state.artists.selected_song = Some(0);
+                    } else if !state.client.artists.songs.is_empty() {
+                        state.client.artists.selected_song = Some(0);
                     }
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if state.artists.focus == 0 {
+                if state.client.artists.focus == 0 {
                     // Tree navigation
                     let tree_items = build_tree_items(&state);
                     let max = tree_items.len().saturating_sub(1);
-                    if let Some(sel) = state.artists.selected_index {
+                    if let Some(sel) = state.client.artists.selected_index {
                         if sel < max {
-                            state.artists.selected_index = Some(sel + 1);
+                            state.client.artists.selected_index = Some(sel + 1);
                         }
                     } else if !tree_items.is_empty() {
-                        state.artists.selected_index = Some(0);
+                        state.client.artists.selected_index = Some(0);
                     }
                     // Preview album songs in right pane
-                    let album_id = state
+                    let album_id = state.client
                         .artists
                         .selected_index
                         .and_then(|i| tree_items.get(i))
@@ -128,28 +128,28 @@ impl App {
                         if let Some(ref client) = self.subsonic {
                             if let Ok((_album, songs)) = client.get_album(&album_id).await {
                                 let mut state = self.state.write().await;
-                                state.artists.songs = songs;
-                                state.artists.selected_song = Some(0);
+                                state.client.artists.songs = songs;
+                                state.client.artists.selected_song = Some(0);
                             }
                         }
                         return Ok(());
                     }
                 } else {
                     // Song list
-                    let max = state.artists.songs.len().saturating_sub(1);
-                    if let Some(sel) = state.artists.selected_song {
+                    let max = state.client.artists.songs.len().saturating_sub(1);
+                    if let Some(sel) = state.client.artists.selected_song {
                         if sel < max {
-                            state.artists.selected_song = Some(sel + 1);
+                            state.client.artists.selected_song = Some(sel + 1);
                         }
-                    } else if !state.artists.songs.is_empty() {
-                        state.artists.selected_song = Some(0);
+                    } else if !state.client.artists.songs.is_empty() {
+                        state.client.artists.selected_song = Some(0);
                     }
                 }
             }
             KeyCode::Char('s') => {
-                if state.artists.focus == 0 {
+                if state.client.artists.focus == 0 {
                     let tree_items = build_tree_items(&state);
-                    if let Some(idx) = state.artists.selected_index {
+                    if let Some(idx) = state.client.artists.selected_index {
                         if let Some(item) = tree_items.get(idx) {
                             match item {
                                 TreeItem::Artist {
@@ -181,7 +181,7 @@ impl App {
 
                                                 if artists_songs.is_empty() {
                                                     let mut state = self.state.write().await;
-                                                    state.notify_error(format!(
+                                                    state.client.notify_error(format!(
                                                         "No songs found for {}",
                                                         artist_name,
                                                     ));
@@ -193,11 +193,11 @@ impl App {
                                                 let song_count = artists_songs.len();
                                                 let mut state = self.state.write().await;
 
-                                                state.queue.clear();
-                                                state.queue.extend(artists_songs);
-                                                state.queue_position = Some(0);
+                                                state.daemon.queue.clear();
+                                                state.daemon.queue.extend(artists_songs);
+                                                state.daemon.queue_position = Some(0);
 
-                                                state.notify(format!(
+                                                state.client.notify(format!(
                                                     "Shuffling {} songs by {}",
                                                     song_count, artist_name
                                                 ));
@@ -208,7 +208,7 @@ impl App {
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
-                                                state
+                                                state.client
                                                     .notify_error(format!("Failed to load: {}", e));
                                             }
                                         }
@@ -225,7 +225,7 @@ impl App {
                                             Ok((_album, songs)) => {
                                                 if songs.is_empty() {
                                                     let mut state = self.state.write().await;
-                                                    state.notify_error("Album has no songs");
+                                                    state.client.notify_error("Album has no songs");
                                                     return Ok(());
                                                 }
 
@@ -234,11 +234,11 @@ impl App {
 
                                                 let mut state = self.state.write().await;
 
-                                                state.queue.clear();
-                                                state.queue.extend(shuffled_songs);
-                                                state.queue_position = Some(0);
+                                                state.daemon.queue.clear();
+                                                state.daemon.queue.extend(shuffled_songs);
+                                                state.daemon.queue_position = Some(0);
 
-                                                state.notify(format!("Shuffling {}", album_name));
+                                                state.client.notify(format!("Shuffling {}", album_name));
 
                                                 drop(state);
 
@@ -246,7 +246,7 @@ impl App {
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
-                                                state
+                                                state.client
                                                     .notify_error(format!("Failed to load: {}", e));
                                             }
                                         }
@@ -258,10 +258,10 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                if state.artists.focus == 0 {
+                if state.client.artists.focus == 0 {
                     // Get current tree item
                     let tree_items = build_tree_items(&state);
-                    if let Some(idx) = state.artists.selected_index {
+                    if let Some(idx) = state.client.artists.selected_index {
                         if let Some(item) = tree_items.get(idx) {
                             match item {
                                 TreeItem::Artist { artist, expanded } => {
@@ -270,8 +270,8 @@ impl App {
                                     let was_expanded = *expanded;
 
                                     if was_expanded {
-                                        state.artists.expanded.remove(&artist_id);
-                                    } else if !state.artists.albums_cache.contains_key(&artist_id) {
+                                        state.client.artists.expanded.remove(&artist_id);
+                                    } else if !state.daemon.library.albums_cache.contains_key(&artist_id) {
                                         drop(state);
                                         if let Some(ref client) = self.subsonic {
                                             match client.get_artist(&artist_id).await {
@@ -279,10 +279,11 @@ impl App {
                                                     let mut state = self.state.write().await;
                                                     let count = albums.len();
                                                     state
-                                                        .artists
+                                                        .daemon
+                                                        .library
                                                         .albums_cache
                                                         .insert(artist_id.clone(), albums);
-                                                    state.artists.expanded.insert(artist_id);
+                                                    state.client.artists.expanded.insert(artist_id);
                                                     info!(
                                                         "Loaded {} albums for {}",
                                                         count, artist_name
@@ -290,7 +291,7 @@ impl App {
                                                 }
                                                 Err(e) => {
                                                     let mut state = self.state.write().await;
-                                                    state.notify_error(format!(
+                                                    state.client.notify_error(format!(
                                                         "Failed to load: {}",
                                                         e
                                                     ));
@@ -299,7 +300,7 @@ impl App {
                                         }
                                         return Ok(());
                                     } else {
-                                        state.artists.expanded.insert(artist_id);
+                                        state.client.artists.expanded.insert(artist_id);
                                     }
                                 }
                                 TreeItem::Album { album } => {
@@ -312,7 +313,7 @@ impl App {
                                             Ok((_album, songs)) => {
                                                 if songs.is_empty() {
                                                     let mut state = self.state.write().await;
-                                                    state.notify_error("Album has no songs");
+                                                    state.client.notify_error("Album has no songs");
                                                     return Ok(());
                                                 }
 
@@ -322,22 +323,22 @@ impl App {
 
                                                 let mut state = self.state.write().await;
                                                 let count = songs.len();
-                                                state.queue.clear();
-                                                state.queue.extend(songs.clone());
-                                                state.queue_position = Some(0);
-                                                state.artists.songs = songs;
-                                                state.artists.selected_song = Some(0);
-                                                state.artists.focus = 1;
-                                                state.now_playing.song = Some(first_song.clone());
-                                                state.now_playing.state = PlaybackState::Playing;
-                                                state.now_playing.position = 0.0;
-                                                state.now_playing.duration =
+                                                state.daemon.queue.clear();
+                                                state.daemon.queue.extend(songs.clone());
+                                                state.daemon.queue_position = Some(0);
+                                                state.client.artists.songs = songs;
+                                                state.client.artists.selected_song = Some(0);
+                                                state.client.artists.focus = 1;
+                                                state.daemon.now_playing.song = Some(first_song.clone());
+                                                state.daemon.now_playing.state = PlaybackState::Playing;
+                                                state.daemon.now_playing.position = 0.0;
+                                                state.daemon.now_playing.duration =
                                                     first_song.duration.unwrap_or(0) as f64;
-                                                state.now_playing.sample_rate = None;
-                                                state.now_playing.bit_depth = None;
-                                                state.now_playing.format = None;
-                                                state.now_playing.channels = None;
-                                                state.notify(format!(
+                                                state.daemon.now_playing.sample_rate = None;
+                                                state.daemon.now_playing.bit_depth = None;
+                                                state.daemon.now_playing.format = None;
+                                                state.daemon.now_playing.channels = None;
+                                                state.client.notify(format!(
                                                     "Playing album: {} ({} songs)",
                                                     album_name, count
                                                 ));
@@ -359,7 +360,7 @@ impl App {
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
-                                                state.notify_error(format!(
+                                                state.client.notify_error(format!(
                                                     "Failed to load album: {}",
                                                     e
                                                 ));
@@ -373,22 +374,22 @@ impl App {
                     }
                 } else {
                     // Play selected song from current position
-                    if let Some(idx) = state.artists.selected_song {
-                        if idx < state.artists.songs.len() {
-                            let song = state.artists.songs[idx].clone();
-                            let songs = state.artists.songs.clone();
-                            state.queue.clear();
-                            state.queue.extend(songs);
-                            state.queue_position = Some(idx);
-                            state.now_playing.song = Some(song.clone());
-                            state.now_playing.state = PlaybackState::Playing;
-                            state.now_playing.position = 0.0;
-                            state.now_playing.duration = song.duration.unwrap_or(0) as f64;
-                            state.now_playing.sample_rate = None;
-                            state.now_playing.bit_depth = None;
-                            state.now_playing.format = None;
-                            state.now_playing.channels = None;
-                            state.notify(format!("Playing: {}", song.title));
+                    if let Some(idx) = state.client.artists.selected_song {
+                        if idx < state.client.artists.songs.len() {
+                            let song = state.client.artists.songs[idx].clone();
+                            let songs = state.client.artists.songs.clone();
+                            state.daemon.queue.clear();
+                            state.daemon.queue.extend(songs);
+                            state.daemon.queue_position = Some(idx);
+                            state.daemon.now_playing.song = Some(song.clone());
+                            state.daemon.now_playing.state = PlaybackState::Playing;
+                            state.daemon.now_playing.position = 0.0;
+                            state.daemon.now_playing.duration = song.duration.unwrap_or(0) as f64;
+                            state.daemon.now_playing.sample_rate = None;
+                            state.daemon.now_playing.bit_depth = None;
+                            state.daemon.now_playing.format = None;
+                            state.daemon.now_playing.channels = None;
+                            state.client.notify(format!("Playing: {}", song.title));
                             drop(state);
 
                             if let Some(ref client) = self.subsonic {
@@ -412,43 +413,43 @@ impl App {
                 }
             }
             KeyCode::Backspace => {
-                if state.artists.focus == 1 {
-                    state.artists.focus = 0;
+                if state.client.artists.focus == 1 {
+                    state.client.artists.focus = 0;
                 }
             }
             KeyCode::Char('e') => {
-                if state.artists.focus == 1 {
-                    if let Some(idx) = state.artists.selected_song {
-                        if let Some(song) = state.artists.songs.get(idx).cloned() {
+                if state.client.artists.focus == 1 {
+                    if let Some(idx) = state.client.artists.selected_song {
+                        if let Some(song) = state.client.artists.songs.get(idx).cloned() {
                             let title = song.title.clone();
-                            state.queue.push(song);
-                            state.notify(format!("Added to queue: {}", title));
+                            state.daemon.queue.push(song);
+                            state.client.notify(format!("Added to queue: {}", title));
                         }
                     }
-                } else if !state.artists.songs.is_empty() {
-                    let count = state.artists.songs.len();
-                    let songs = state.artists.songs.clone();
-                    state.queue.extend(songs);
-                    state.notify(format!("Added {} songs to queue", count));
+                } else if !state.client.artists.songs.is_empty() {
+                    let count = state.client.artists.songs.len();
+                    let songs = state.client.artists.songs.clone();
+                    state.daemon.queue.extend(songs);
+                    state.client.notify(format!("Added {} songs to queue", count));
                 }
             }
             KeyCode::Char('n') => {
-                let insert_pos = state.queue_position.map(|p| p + 1).unwrap_or(0);
-                if state.artists.focus == 1 {
-                    if let Some(idx) = state.artists.selected_song {
-                        if let Some(song) = state.artists.songs.get(idx).cloned() {
+                let insert_pos = state.daemon.queue_position.map(|p| p + 1).unwrap_or(0);
+                if state.client.artists.focus == 1 {
+                    if let Some(idx) = state.client.artists.selected_song {
+                        if let Some(song) = state.client.artists.songs.get(idx).cloned() {
                             let title = song.title.clone();
-                            state.queue.insert(insert_pos, song);
-                            state.notify(format!("Playing next: {}", title));
+                            state.daemon.queue.insert(insert_pos, song);
+                            state.client.notify(format!("Playing next: {}", title));
                         }
                     }
-                } else if !state.artists.songs.is_empty() {
-                    let count = state.artists.songs.len();
-                    let songs: Vec<_> = state.artists.songs.to_vec();
+                } else if !state.client.artists.songs.is_empty() {
+                    let count = state.client.artists.songs.len();
+                    let songs: Vec<_> = state.client.artists.songs.to_vec();
                     for (i, song) in songs.into_iter().enumerate() {
-                        state.queue.insert(insert_pos + i, song);
+                        state.daemon.queue.insert(insert_pos + i, song);
                     }
-                    state.notify(format!("Playing {} songs next", count));
+                    state.client.notify(format!("Playing {} songs next", count));
                 }
             }
             _ => {}

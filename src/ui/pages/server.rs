@@ -12,7 +12,7 @@ use crate::ui::theme::ThemeColors;
 
 /// Render the server page
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
-    let colors = *state.settings_state.theme_colors();
+    let colors = *state.client.settings_state.theme_colors();
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -26,7 +26,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         return;
     }
 
-    let server = &state.server_state;
+    let server = &state.client.server_state;
 
     // Layout fields vertically with spacing
     let chunks = Layout::vertical([

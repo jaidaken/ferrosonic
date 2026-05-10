@@ -172,7 +172,7 @@ impl App {
             }
 
             let mut state = self.state.write().await;
-            state.cava_screen = cava_screen;
+            state.client.cava_screen = cava_screen;
     }
 }
 

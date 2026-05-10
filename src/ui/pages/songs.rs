@@ -13,7 +13,7 @@ use crate::ui::theme::ThemeColors;
 use strum::IntoEnumIterator;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
-    let colors = *state.settings_state.theme_colors();
+    let colors = *state.client.settings_state.theme_colors();
 
     let chunks =
         Layout::vertical([Constraint::Percentage(15), Constraint::Percentage(85)]).split(area);
@@ -23,8 +23,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
 }
 
 fn render_options(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
-    let focus = state.songs.focus;
-    let selected_option = state
+    let focus = state.client.songs.focus;
+    let selected_option = state.client
         .songs
         .selected_option
         .clone()
@@ -73,9 +73,11 @@ fn render_options(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &
 }
 
 fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
-    let songs = &state.songs;
+    let songs_ui = &state.client.songs;
+    // Resolve which library list this page is showing (Starred or Random).
+    let library_songs: Vec<crate::subsonic::models::Child> = state.songs_list().to_vec();
 
-    let focused = songs.focus == 1;
+    let focused = songs_ui.focus == 1;
     let border_style = if focused {
         Style::default().fg(colors.border_focused)
     } else {
@@ -87,12 +89,11 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &Th
         .title("Songs")
         .border_style(border_style);
 
-    let items: Vec<ListItem> = songs
-        .songs
+    let items: Vec<ListItem> = library_songs
         .iter()
         .enumerate()
         .map(|(i, song)| {
-            let is_selected = Some(i) == songs.selected_index && focused;
+            let is_selected = Some(i) == songs_ui.selected_index && focused;
 
             let is_playing = state
                 .current_song()
@@ -114,11 +115,11 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &Th
     }
 
     let mut list_state = ListState::default();
-    *list_state.offset_mut() = state.songs.scroll_offset;
+    *list_state.offset_mut() = state.client.songs.scroll_offset;
     if focused {
-        list_state.select(state.songs.selected_index);
+        list_state.select(state.client.songs.selected_index);
     }
 
     frame.render_stateful_widget(list, area, &mut list_state);
-    state.songs.scroll_offset = list_state.offset();
+    state.client.songs.scroll_offset = list_state.offset();
 }

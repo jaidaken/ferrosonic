@@ -7,17 +7,19 @@ impl App {
                 Ok(songs) => {
                     let mut state = self.state.write().await;
                     let count = songs.len();
-                    state.songs.songs = songs;
+                    state.daemon.library.starred_songs = songs;
                     if count > 0 {
-                        state.songs.selected_index = Some(0);
+                        state.client.songs.selected_index = Some(0);
                     } else {
-                        state.songs.selected_index = None;
+                        state.client.songs.selected_index = None;
                     }
                 }
                 Err(e) => {
                     error!("Failed to load starred songs: {}", e);
                     let mut state = self.state.write().await;
-                    state.notify_error(format!("Failed to load starred songs: {}", e));
+                    state
+                        .client
+                        .notify_error(format!("Failed to load starred songs: {}", e));
                 }
             }
         }
@@ -29,17 +31,19 @@ impl App {
                 Ok(songs) => {
                     let mut state = self.state.write().await;
                     let count = songs.len();
-                    state.songs.songs = songs;
+                    state.daemon.library.random_songs = songs;
                     if count > 0 {
-                        state.songs.selected_index = Some(0);
+                        state.client.songs.selected_index = Some(0);
                     } else {
-                        state.songs.selected_index = None;
+                        state.client.songs.selected_index = None;
                     }
                 }
                 Err(e) => {
                     error!("Failed to load random songs: {}", e);
                     let mut state = self.state.write().await;
-                    state.notify_error(format!("Failed to load random songs: {}", e));
+                    state
+                        .client
+                        .notify_error(format!("Failed to load random songs: {}", e));
                 }
             }
         }
@@ -51,16 +55,18 @@ impl App {
                 Ok(artists) => {
                     let mut state = self.state.write().await;
                     let count = artists.len();
-                    state.artists.artists = artists;
+                    state.daemon.library.artists = artists;
                     if count > 0 {
-                        state.artists.selected_index = Some(0);
+                        state.client.artists.selected_index = Some(0);
                     }
                     info!("Loaded {} artists", count);
                 }
                 Err(e) => {
                     error!("Failed to load artists: {}", e);
                     let mut state = self.state.write().await;
-                    state.notify_error(format!("Failed to load artists: {}", e));
+                    state
+                        .client
+                        .notify_error(format!("Failed to load artists: {}", e));
                 }
             }
         }
@@ -72,7 +78,7 @@ impl App {
                 Ok(playlists) => {
                     let mut state = self.state.write().await;
                     let count = playlists.len();
-                    state.playlists.playlists = playlists;
+                    state.daemon.library.playlists = playlists;
                     info!("Loaded {} playlists", count);
                 }
                 Err(e) => {

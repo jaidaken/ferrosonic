@@ -21,14 +21,14 @@ impl App {
                 // Restart cava so it picks up the new terminal dimensions
                 if self.cava_parser.is_some() {
                     let state = self.state.read().await;
-                    let td = state.settings_state.current_theme();
+                    let td = state.client.settings_state.current_theme();
                     let g = td.cava_gradient.clone();
                     let h = td.cava_horizontal_gradient.clone();
-                    let cs = state.settings_state.cava_size as u32;
+                    let cs = state.client.settings_state.cava_size as u32;
                     drop(state);
                     self.start_cava(&g, &h, cs);
                     let mut state = self.state.write().await;
-                    state.cava_screen.clear();
+                    state.client.cava_screen.clear();
                 }
                 Ok(())
             }
@@ -41,15 +41,15 @@ impl App {
         let mut state = self.state.write().await;
 
         // Clear notification on any keypress
-        state.clear_notification();
+        state.client.clear_notification();
 
         // Bypass global keybindings when typing in server text fields or filtering artists
         let is_server_text_field =
-            state.page == Page::Server && state.server_state.selected_field <= 2;
-        let is_filtering = state.page == Page::Artists && state.artists.filter_active;
+            state.client.page == Page::Server && state.client.server_state.selected_field <= 2;
+        let is_filtering = state.client.page == Page::Artists && state.client.artists.filter_active;
 
         if is_server_text_field || is_filtering {
-            let page = state.page;
+            let page = state.client.page;
             drop(state);
             return match page {
                 Page::Server => self.handle_server_key(key).await,
@@ -62,32 +62,32 @@ impl App {
         match (key.code, key.modifiers) {
             // Quit
             (KeyCode::Char('q'), KeyModifiers::NONE) => {
-                state.should_quit = true;
+                state.client.should_quit = true;
                 return Ok(());
             }
             // Page switching
             (KeyCode::F(1), _) => {
-                state.page = Page::Songs;
+                state.client.page = Page::Songs;
                 return Ok(());
             }
             (KeyCode::F(2), _) => {
-                state.page = Page::Artists;
+                state.client.page = Page::Artists;
                 return Ok(());
             }
             (KeyCode::F(3), _) => {
-                state.page = Page::Queue;
+                state.client.page = Page::Queue;
                 return Ok(());
             }
             (KeyCode::F(4), _) => {
-                state.page = Page::Playlists;
+                state.client.page = Page::Playlists;
                 return Ok(());
             }
             (KeyCode::F(5), _) => {
-                state.page = Page::Server;
+                state.client.page = Page::Server;
                 return Ok(());
             }
             (KeyCode::F(6), _) => {
-                state.page = Page::Settings;
+                state.client.page = Page::Settings;
                 return Ok(());
             }
             // Playback controls (global)
@@ -108,16 +108,16 @@ impl App {
             }
             // Cycle theme (global)
             (KeyCode::Char('t'), KeyModifiers::NONE) => {
-                state.settings_state.next_theme();
-                state.config.theme = state.settings_state.theme_name().to_string();
-                let label = state.settings_state.theme_name().to_string();
-                state.notify(format!("Theme: {}", label));
-                let _ = state.config.save_default();
-                let cava_enabled = state.settings_state.cava_enabled;
-                let td = state.settings_state.current_theme();
+                state.client.settings_state.next_theme();
+                state.daemon.config.theme = state.client.settings_state.theme_name().to_string();
+                let label = state.client.settings_state.theme_name().to_string();
+                state.client.notify(format!("Theme: {}", label));
+                let _ = state.daemon.config.save_default();
+                let cava_enabled = state.client.settings_state.cava_enabled;
+                let td = state.client.settings_state.current_theme();
                 let g = td.cava_gradient.clone();
                 let h = td.cava_horizontal_gradient.clone();
-                let cs = state.settings_state.cava_size as u32;
+                let cs = state.client.settings_state.cava_size as u32;
                 drop(state);
                 if cava_enabled {
                     self.start_cava(&g, &h, cs);
@@ -126,18 +126,18 @@ impl App {
             }
             // Ctrl+R to refresh data from server
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
-                state.notify("Refreshing...");
+                state.client.notify("Refreshing...");
                 drop(state);
                 self.load_initial_data().await;
                 let mut state = self.state.write().await;
-                state.notify("Data refreshed");
+                state.client.notify("Data refreshed");
                 return Ok(());
             }
             _ => {}
         }
 
         // Page-specific keybindings
-        let page = state.page;
+        let page = state.client.page;
         drop(state);
         match page {
             Page::Songs => self.handle_songs_key(key).await,

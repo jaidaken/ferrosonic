@@ -12,7 +12,7 @@ use crate::ui::theme::ThemeColors;
 
 /// Render the settings page
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
-    let colors = *state.settings_state.theme_colors();
+    let colors = *state.client.settings_state.theme_colors();
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -26,7 +26,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         return;
     }
 
-    let settings = &state.settings_state;
+    let settings = &state.client.settings_state;
 
     // Layout fields vertically with spacing
     let chunks = Layout::vertical([
@@ -51,7 +51,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     );
 
     // Cava toggle (field 1)
-    let cava_value = if !state.cava_available {
+    let cava_value = if !state.client.cava_available {
         "Off (cava not found)"
     } else if settings.cava_enabled {
         "On"
@@ -69,7 +69,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     );
 
     // Cava size (field 2)
-    let cava_size_value = if !state.cava_available {
+    let cava_size_value = if !state.client.cava_available {
         "N/A (cava not found)".to_string()
     } else {
         format!("{}%", settings.cava_size)
@@ -87,9 +87,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     // Help text at bottom
     let help_text = match settings.selected_field {
         0 => "← → or Enter to change theme (auto-saves)",
-        1 if state.cava_available => "← → or Enter to toggle cava visualizer (auto-saves)",
+        1 if state.client.cava_available => "← → or Enter to toggle cava visualizer (auto-saves)",
         1 => "cava is not installed on this system",
-        2 if state.cava_available => "← → to adjust cava size (10%-80%, auto-saves)",
+        2 if state.client.cava_available => "← → to adjust cava size (10%-80%, auto-saves)",
         2 => "cava is not installed on this system",
         _ => "",
     };

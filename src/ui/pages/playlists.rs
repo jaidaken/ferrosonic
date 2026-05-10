@@ -14,7 +14,7 @@ use crate::ui::theme::ThemeColors;
 
 /// Render the playlists page
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
-    let colors = *state.settings_state.theme_colors();
+    let colors = *state.client.settings_state.theme_colors();
 
     // Split into two panes: [Playlists] [Songs]
     let chunks =
@@ -26,7 +26,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
 
 /// Render the playlists list
 fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
-    let playlists = &state.playlists;
+    // `playlists` is the per-page UI state (selection, focus, scroll).
+    // `library_playlists` is the actual list, owned by the daemon.
+    let playlists = &state.client.playlists;
+    let library_playlists = &state.daemon.library.playlists;
 
     let focused = playlists.focus == 0;
     let border_style = if focused {
@@ -37,10 +40,10 @@ fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState, colors:
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" Playlists ({}) ", playlists.playlists.len()))
+        .title(format!(" Playlists ({}) ", library_playlists.len()))
         .border_style(border_style);
 
-    if playlists.playlists.is_empty() {
+    if library_playlists.is_empty() {
         let hint = Paragraph::new("No playlists found")
             .style(Style::default().fg(colors.muted))
             .block(block);
@@ -48,8 +51,7 @@ fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState, colors:
         return;
     }
 
-    let items: Vec<ListItem> = playlists
-        .playlists
+    let items: Vec<ListItem> = library_playlists
         .iter()
         .enumerate()
         .map(|(i, playlist)| {
@@ -106,12 +108,12 @@ fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState, colors:
     }
 
     frame.render_stateful_widget(list, area, &mut list_state);
-    state.playlists.playlist_scroll_offset = list_state.offset();
+    state.client.playlists.playlist_scroll_offset = list_state.offset();
 }
 
 /// Render the songs in selected playlist
 fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &ThemeColors) {
-    let playlists = &state.playlists;
+    let playlists = &state.client.playlists;
 
     let focused = playlists.focus == 1;
     let border_style = if focused {
@@ -197,5 +199,5 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState, colors: &Th
     }
 
     frame.render_stateful_widget(list, area, &mut list_state);
-    state.playlists.song_scroll_offset = list_state.offset();
+    state.client.playlists.song_scroll_offset = list_state.offset();
 }

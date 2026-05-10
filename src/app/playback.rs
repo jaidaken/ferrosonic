@@ -7,8 +7,8 @@ impl App {
     pub(super) async fn update_playback_info(&mut self) {
         // Only update if something should be playing
         let state = self.state.read().await;
-        let is_playing = state.now_playing.state == PlaybackState::Playing;
-        let is_active = is_playing || state.now_playing.state == PlaybackState::Paused;
+        let is_playing = state.daemon.now_playing.state == PlaybackState::Playing;
+        let is_active = is_playing || state.daemon.now_playing.state == PlaybackState::Paused;
         drop(state);
 
         if !is_active || !self.mpv.is_running() {
@@ -21,10 +21,10 @@ impl App {
             // advance immediately instead of waiting for idle detection
             {
                 let state = self.state.read().await;
-                let time_remaining = state.now_playing.duration - state.now_playing.position;
-                let has_next = state
+                let time_remaining = state.daemon.now_playing.duration - state.daemon.now_playing.position;
+                let has_next = state.daemon
                     .queue_position
-                    .map(|p| p + 1 < state.queue.len())
+                    .map(|p| p + 1 < state.daemon.queue.len())
                     .unwrap_or(false);
                 drop(state);
 
@@ -43,8 +43,8 @@ impl App {
             if let Ok(count) = self.mpv.get_playlist_count() {
                 if count == 1 {
                     let state = self.state.read().await;
-                    if let Some(pos) = state.queue_position {
-                        if pos + 1 < state.queue.len() {
+                    if let Some(pos) = state.daemon.queue_position {
+                        if pos + 1 < state.daemon.queue.len() {
                             drop(state);
                             debug!("Playlist count is 1, re-preloading next track");
                             self.preload_next_track(pos).await;
@@ -58,20 +58,20 @@ impl App {
                 if mpv_pos == 1 {
                     // Gapless advance happened - update our state to match
                     let state = self.state.read().await;
-                    if let Some(current_pos) = state.queue_position {
+                    if let Some(current_pos) = state.daemon.queue_position {
                         let next_pos = current_pos + 1;
-                        if next_pos < state.queue.len() {
+                        if next_pos < state.daemon.queue.len() {
                             drop(state);
                             info!("Gapless advancement to track {}", next_pos);
 
                             // Update state - keep audio properties since they'll be similar
                             // for gapless transitions (same album, same format)
                             let mut state = self.state.write().await;
-                            state.queue_position = Some(next_pos);
-                            if let Some(song) = state.queue.get(next_pos).cloned() {
-                                state.now_playing.song = Some(song.clone());
-                                state.now_playing.position = 0.0;
-                                state.now_playing.duration = song.duration.unwrap_or(0) as f64;
+                            state.daemon.queue_position = Some(next_pos);
+                            if let Some(song) = state.daemon.queue.get(next_pos).cloned() {
+                                state.daemon.now_playing.song = Some(song.clone());
+                                state.daemon.now_playing.position = 0.0;
+                                state.daemon.now_playing.duration = song.duration.unwrap_or(0) as f64;
                                 // Don't reset audio properties - let them update naturally
                                 // This avoids triggering PipeWire rate changes unnecessarily
                             }
@@ -103,18 +103,18 @@ impl App {
         // Get position from MPV
         if let Ok(position) = self.mpv.get_time_pos() {
             let mut state = self.state.write().await;
-            state.now_playing.position = position;
+            state.daemon.now_playing.position = position;
         }
 
         // Get duration if not set
         {
             let state = self.state.read().await;
-            if state.now_playing.duration <= 0.0 {
+            if state.daemon.now_playing.duration <= 0.0 {
                 drop(state);
                 if let Ok(duration) = self.mpv.get_duration() {
                     if duration > 0.0 {
                         let mut state = self.state.write().await;
-                        state.now_playing.duration = duration;
+                        state.daemon.now_playing.duration = duration;
                     }
                 }
             }
@@ -124,7 +124,7 @@ impl App {
         // MPV may not have them ready immediately when playback starts
         {
             let state = self.state.read().await;
-            let need_sample_rate = state.now_playing.sample_rate.is_none();
+            let need_sample_rate = state.daemon.now_playing.sample_rate.is_none();
             drop(state);
 
             if need_sample_rate {
@@ -153,10 +153,10 @@ impl App {
                     }
 
                     let mut state = self.state.write().await;
-                    state.now_playing.sample_rate = Some(rate);
-                    state.now_playing.bit_depth = bit_depth;
-                    state.now_playing.format = format;
-                    state.now_playing.channels = channels;
+                    state.daemon.now_playing.sample_rate = Some(rate);
+                    state.daemon.now_playing.bit_depth = bit_depth;
+                    state.daemon.now_playing.format = format;
+                    state.daemon.now_playing.channels = channels;
                 }
             }
         }
@@ -172,8 +172,8 @@ impl App {
     /// Toggle play/pause
     pub(super) async fn toggle_pause(&mut self) -> Result<(), Error> {
         let state = self.state.read().await;
-        let is_playing = state.now_playing.state == PlaybackState::Playing;
-        let is_paused = state.now_playing.state == PlaybackState::Paused;
+        let is_playing = state.daemon.now_playing.state == PlaybackState::Playing;
+        let is_paused = state.daemon.now_playing.state == PlaybackState::Paused;
         drop(state);
 
         if !is_playing && !is_paused {
@@ -184,10 +184,10 @@ impl App {
             Ok(now_paused) => {
                 let mut state = self.state.write().await;
                 if now_paused {
-                    state.now_playing.state = PlaybackState::Paused;
+                    state.daemon.now_playing.state = PlaybackState::Paused;
                     debug!("Paused playback");
                 } else {
-                    state.now_playing.state = PlaybackState::Playing;
+                    state.daemon.now_playing.state = PlaybackState::Playing;
                     debug!("Resumed playback");
                 }
             }
@@ -201,7 +201,7 @@ impl App {
     /// Pause playback (only if currently playing)
     pub(super) async fn pause_playback(&mut self) -> Result<(), Error> {
         let state = self.state.read().await;
-        if state.now_playing.state != PlaybackState::Playing {
+        if state.daemon.now_playing.state != PlaybackState::Playing {
             return Ok(());
         }
         drop(state);
@@ -209,7 +209,7 @@ impl App {
         match self.mpv.pause() {
             Ok(()) => {
                 let mut state = self.state.write().await;
-                state.now_playing.state = PlaybackState::Paused;
+                state.daemon.now_playing.state = PlaybackState::Paused;
                 debug!("Paused playback");
             }
             Err(e) => {
@@ -222,7 +222,7 @@ impl App {
     /// Resume playback (only if currently paused)
     pub(super) async fn resume_playback(&mut self) -> Result<(), Error> {
         let state = self.state.read().await;
-        if state.now_playing.state != PlaybackState::Paused {
+        if state.daemon.now_playing.state != PlaybackState::Paused {
             return Ok(());
         }
         drop(state);
@@ -230,7 +230,7 @@ impl App {
         match self.mpv.resume() {
             Ok(()) => {
                 let mut state = self.state.write().await;
-                state.now_playing.state = PlaybackState::Playing;
+                state.daemon.now_playing.state = PlaybackState::Playing;
                 debug!("Resumed playback");
             }
             Err(e) => {
@@ -243,8 +243,8 @@ impl App {
     /// Play next track in queue
     pub(super) async fn next_track(&mut self) -> Result<(), Error> {
         let state = self.state.read().await;
-        let queue_len = state.queue.len();
-        let current_pos = state.queue_position;
+        let queue_len = state.daemon.queue.len();
+        let current_pos = state.daemon.queue_position;
         drop(state);
 
         if queue_len == 0 {
@@ -257,8 +257,8 @@ impl App {
                 info!("Reached end of queue");
                 let _ = self.mpv.stop();
                 let mut state = self.state.write().await;
-                state.now_playing.state = PlaybackState::Stopped;
-                state.now_playing.position = 0.0;
+                state.daemon.now_playing.state = PlaybackState::Stopped;
+                state.daemon.now_playing.position = 0.0;
                 return Ok(());
             }
         };
@@ -269,9 +269,9 @@ impl App {
     /// Play previous track in queue (or restart current if < 3 seconds in)
     pub(super) async fn prev_track(&mut self) -> Result<(), Error> {
         let state = self.state.read().await;
-        let queue_len = state.queue.len();
-        let current_pos = state.queue_position;
-        let position = state.now_playing.position;
+        let queue_len = state.daemon.queue.len();
+        let current_pos = state.daemon.queue_position;
+        let position = state.daemon.now_playing.position;
         drop(state);
 
         if queue_len == 0 {
@@ -288,7 +288,7 @@ impl App {
                 error!("Failed to restart track: {}", e);
             } else {
                 let mut state = self.state.write().await;
-                state.now_playing.position = 0.0;
+                state.daemon.now_playing.position = 0.0;
             }
             return Ok(());
         }
@@ -298,7 +298,7 @@ impl App {
             error!("Failed to restart track: {}", e);
         } else {
             let mut state = self.state.write().await;
-            state.now_playing.position = 0.0;
+            state.daemon.now_playing.position = 0.0;
         }
         Ok(())
     }
@@ -306,7 +306,7 @@ impl App {
     /// Play a specific position in the queue
     pub(super) async fn play_queue_position(&mut self, pos: usize) -> Result<(), Error> {
         let state = self.state.read().await;
-        let song = match state.queue.get(pos) {
+        let song = match state.daemon.queue.get(pos) {
             Some(s) => s.clone(),
             None => return Ok(()),
         };
@@ -318,7 +318,7 @@ impl App {
                 Err(e) => {
                     error!("Failed to get stream URL: {}", e);
                     let mut state = self.state.write().await;
-                    state.notify_error(format!("Failed to get stream URL: {}", e));
+                    state.client.notify_error(format!("Failed to get stream URL: {}", e));
                     return Ok(());
                 }
             }
@@ -328,15 +328,15 @@ impl App {
 
         {
             let mut state = self.state.write().await;
-            state.queue_position = Some(pos);
-            state.now_playing.song = Some(song.clone());
-            state.now_playing.state = PlaybackState::Playing;
-            state.now_playing.position = 0.0;
-            state.now_playing.duration = song.duration.unwrap_or(0) as f64;
-            state.now_playing.sample_rate = None;
-            state.now_playing.bit_depth = None;
-            state.now_playing.format = None;
-            state.now_playing.channels = None;
+            state.daemon.queue_position = Some(pos);
+            state.daemon.now_playing.song = Some(song.clone());
+            state.daemon.now_playing.state = PlaybackState::Playing;
+            state.daemon.now_playing.position = 0.0;
+            state.daemon.now_playing.duration = song.duration.unwrap_or(0) as f64;
+            state.daemon.now_playing.sample_rate = None;
+            state.daemon.now_playing.bit_depth = None;
+            state.daemon.now_playing.format = None;
+            state.daemon.now_playing.channels = None;
         }
 
         info!("Playing: {} (queue pos {})", song.title, pos);
@@ -346,7 +346,7 @@ impl App {
         if let Err(e) = self.mpv.loadfile(&stream_url) {
             error!("Failed to play: {}", e);
             let mut state = self.state.write().await;
-            state.notify_error(format!("MPV error: {}", e));
+            state.client.notify_error(format!("MPV error: {}", e));
             return Ok(());
         }
 
@@ -360,11 +360,11 @@ impl App {
         let state = self.state.read().await;
         let next_pos = current_pos + 1;
 
-        if next_pos >= state.queue.len() {
+        if next_pos >= state.daemon.queue.len() {
             return;
         }
 
-        let next_song = match state.queue.get(next_pos) {
+        let next_song = match state.daemon.queue.get(next_pos) {
             Some(s) => s.clone(),
             None => return,
         };
@@ -396,16 +396,16 @@ impl App {
         }
 
         let mut state = self.state.write().await;
-        state.now_playing.state = PlaybackState::Stopped;
-        state.now_playing.song = None;
-        state.now_playing.position = 0.0;
-        state.now_playing.duration = 0.0;
-        state.now_playing.sample_rate = None;
-        state.now_playing.bit_depth = None;
-        state.now_playing.format = None;
-        state.now_playing.channels = None;
-        state.queue.clear();
-        state.queue_position = None;
+        state.daemon.now_playing.state = PlaybackState::Stopped;
+        state.daemon.now_playing.song = None;
+        state.daemon.now_playing.position = 0.0;
+        state.daemon.now_playing.duration = 0.0;
+        state.daemon.now_playing.sample_rate = None;
+        state.daemon.now_playing.bit_depth = None;
+        state.daemon.now_playing.format = None;
+        state.daemon.now_playing.channels = None;
+        state.daemon.queue.clear();
+        state.daemon.queue_position = None;
         Ok(())
     }
 }

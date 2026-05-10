@@ -10,6 +10,7 @@
 mod app;
 mod audio;
 mod config;
+mod daemon;
 mod error;
 mod mpris;
 mod subsonic;

@@ -12,14 +12,14 @@ use crate::app::state::AppState;
 
 /// Render the queue page
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
-    let colors = *state.settings_state.theme_colors();
+    let colors = *state.client.settings_state.theme_colors();
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" Queue ({}) ", state.queue.len()))
+        .title(format!(" Queue ({}) ", state.daemon.queue.len()))
         .border_style(Style::default().fg(colors.border_focused));
 
-    if state.queue.is_empty() {
+    if state.daemon.queue.is_empty() {
         let hint = Paragraph::new("Queue is empty. Add songs from Artists or Playlists.")
             .style(Style::default().fg(colors.muted))
             .block(block);
@@ -27,15 +27,15 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
         return;
     }
 
-    let items: Vec<ListItem> = state
+    let items: Vec<ListItem> = state.daemon
         .queue
         .iter()
         .enumerate()
         .map(|(i, song)| {
             // TODO: update this code to use styled_lines
-            let is_current = state.queue_position == Some(i);
-            let is_selected = state.queue_state.selected == Some(i);
-            let is_played = state.queue_position.map(|pos| i < pos).unwrap_or(false);
+            let is_current = state.daemon.queue_position == Some(i);
+            let is_selected = state.client.queue_state.selected == Some(i);
+            let is_played = state.daemon.queue_position.map(|pos| i < pos).unwrap_or(false);
             let is_starred = song.starred.is_some();
 
             let indicator = if is_current { "▶ " } else { "  " };
@@ -117,8 +117,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState) {
         .highlight_symbol("▸ ");
 
     let mut list_state = ListState::default();
-    list_state.select(state.queue_state.selected);
+    list_state.select(state.client.queue_state.selected);
 
     frame.render_stateful_widget(list, area, &mut list_state);
-    state.queue_state.scroll_offset = list_state.offset();
+    state.client.queue_state.scroll_offset = list_state.offset();
 }
