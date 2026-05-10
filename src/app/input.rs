@@ -46,14 +46,14 @@ impl App {
         // Bypass global keybindings when typing in server text fields or filtering artists
         let is_server_text_field =
             state.client.page == Page::Server && state.client.server_state.selected_field <= 2;
-        let is_filtering = state.client.page == Page::Artists && state.client.artists.filter_active;
+        let is_filtering = state.client.page == Page::Library && state.client.artists.filter_active;
 
         if is_server_text_field || is_filtering {
             let page = state.client.page;
             drop(state);
             return match page {
                 Page::Server => self.handle_server_key(key).await,
-                Page::Artists => self.handle_artists_key(key).await,
+                Page::Library => self.handle_artists_key(key).await,
                 _ => Ok(()),
             };
         }
@@ -67,15 +67,15 @@ impl App {
             }
             // Page switching
             (KeyCode::F(1), _) => {
-                state.client.page = Page::Songs;
+                state.client.page = Page::Library;
                 return Ok(());
             }
             (KeyCode::F(2), _) => {
-                state.client.page = Page::Artists;
+                state.client.page = Page::Queue;
                 return Ok(());
             }
             (KeyCode::F(3), _) => {
-                state.client.page = Page::Queue;
+                state.client.page = Page::QuickPlay;
                 return Ok(());
             }
             (KeyCode::F(4), _) => {
@@ -142,8 +142,8 @@ impl App {
         let page = state.client.page;
         drop(state);
         match page {
-            Page::Songs => self.handle_songs_key(key).await,
-            Page::Artists => self.handle_artists_key(key).await,
+            Page::QuickPlay => self.handle_songs_key(key).await,
+            Page::Library => self.handle_artists_key(key).await,
             Page::Queue => self.handle_queue_key(key).await,
             Page::Playlists => self.handle_playlists_key(key).await,
             Page::Server => self.handle_server_key(key).await,

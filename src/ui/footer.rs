@@ -50,10 +50,10 @@ impl<'a> Footer<'a> {
         ];
 
         match self.page {
-            Page::Songs => {
+            Page::QuickPlay => {
                 binds.extend([("Enter", "Play")]);
             }
-            Page::Artists => {
+            Page::Library => {
                 binds.extend([
                     ("/", "Filter"),
                     ("←/→", "Focus"),

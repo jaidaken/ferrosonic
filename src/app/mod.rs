@@ -110,8 +110,27 @@ impl App {
         }
     }
 
+    fn spawn_signal_quit(&self) {
+        let state = self.state.clone();
+        tokio::spawn(async move {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut term = match signal(SignalKind::terminate()) { Ok(s) => s, Err(_) => return };
+            let mut int = match signal(SignalKind::interrupt()) { Ok(s) => s, Err(_) => return };
+            let mut hup = match signal(SignalKind::hangup()) { Ok(s) => s, Err(_) => return };
+            tokio::select! {
+                _ = term.recv() => {}
+                _ = int.recv() => {}
+                _ = hup.recv() => {}
+            }
+            let mut s = state.write().await;
+            s.client.should_quit = true;
+        });
+    }
+
     /// Run the application
     pub async fn run(&mut self) -> Result<(), Error> {
+        self.spawn_signal_quit();
+        let _term_guard = TerminalGuard;
         // In-process build: spawn the daemon's playback poll + start
         // mpv here. Split build: ferrosonicd already did both; the TUI
         // only does view-side work.
@@ -130,11 +149,8 @@ impl App {
             }
         }
 
-        // Split build: pull the initial state snapshot and start the
-        // event-pump task that mirrors daemon events into state.daemon.
         if self.core.is_none() {
-            self.bootstrap_remote_mirror().await;
-            self.spawn_event_pump();
+            self.bootstrap_and_pump().await;
         }
 
         // Start MPRIS server for media key support — passes the client
@@ -272,28 +288,42 @@ impl App {
         }
     }
 
-    /// Pull the initial daemon state snapshot via `Snapshot` request and
-    /// install it as the local `state.daemon` mirror. Split build only.
-    async fn bootstrap_remote_mirror(&self) {
-        match self.client.request(DaemonRequest::Snapshot).await {
-            Ok(crate::ipc::DaemonResponse::Snapshot(snap)) => {
-                let mut state = self.state.write().await;
-                state.daemon = *snap;
-                info!(
-                    "Daemon snapshot received: {} queue items, {} starred, {} artists, {} playlists",
-                    state.daemon.queue.len(),
-                    state.daemon.library.starred_songs.len(),
-                    state.daemon.library.artists.len(),
-                    state.daemon.library.playlists.len(),
-                );
-            }
+    /// Subscribe to events first, then fetch the snapshot, then spawn
+    /// the pump. Subscribing first means any events the daemon emits
+    /// during the snapshot RPC are buffered in the receiver instead of
+    /// dropped (tokio broadcast only delivers events sent after
+    /// subscribe). The pump applies the snapshot then drains the
+    /// buffered events normally.
+    async fn bootstrap_and_pump(&self) {
+        let rx = self.client.subscribe();
+
+        let snap = match self.client.request(DaemonRequest::Snapshot).await {
+            Ok(crate::ipc::DaemonResponse::Snapshot(s)) => Some(s),
             Ok(other) => {
                 warn!("Unexpected snapshot response: {:?}", other);
+                None
             }
             Err(e) => {
                 warn!("Failed to fetch daemon snapshot: {}", e);
+                None
             }
+        };
+
+        if let Some(snap) = snap {
+            let mut state = self.state.write().await;
+            state.daemon = *snap;
+            info!(
+                "Snapshot: queue={} starred={} artists={} playlists={}",
+                state.daemon.queue.len(),
+                state.daemon.library.starred_songs.len(),
+                state.daemon.library.artists.len(),
+                state.daemon.library.playlists.len(),
+            );
         }
+
+        let state = self.state.clone();
+        let client = self.client.clone();
+        tokio::spawn(async move { run_event_pump(client, state, rx).await });
     }
 
     fn spawn_mpris_pump(&self, server: mpris_server::Server<crate::mpris::server::MprisPlayer>) {
@@ -317,36 +347,6 @@ impl App {
         });
     }
 
-    /// Spawn the event-pump task. Subscribes to daemon events and
-    /// applies them to `state.daemon` so the TUI render path sees the
-    /// same data the daemon does. Split build only.
-    fn spawn_event_pump(&self) {
-        let client = self.client.clone();
-        let state = self.state.clone();
-        tokio::spawn(async move {
-            let mut rx = client.subscribe();
-            loop {
-                match rx.recv().await {
-                    Ok(ev) => apply_event(&state, ev).await,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("Event pump lagged by {}; resubscribing + resnapshot", n);
-                        // Resnapshot to recover from the lag.
-                        if let Ok(crate::ipc::DaemonResponse::Snapshot(snap)) =
-                            client.request(DaemonRequest::Snapshot).await
-                        {
-                            let mut s = state.write().await;
-                            s.daemon = *snap;
-                        }
-                        rx = client.subscribe();
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        warn!("Daemon event broadcast closed; pump exiting");
-                        break;
-                    }
-                }
-            }
-        });
-    }
 
     /// Load initial data from server. Delegates the library fetches to
     /// `DaemonCore`; only the page-default selection is client state.
@@ -413,10 +413,46 @@ impl App {
     }
 }
 
-/// Apply one `DaemonEvent` to the local state mirror. Used by the
-/// event-pump task in the split build. Each variant writes the
-/// matching `state.daemon` slot; client-side state (`state.client`) is
-/// only touched for `Notification` events.
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::event::DisableMouseCapture
+        );
+    }
+}
+
+async fn run_event_pump(
+    client: Arc<dyn DaemonClient>,
+    state: SharedState,
+    mut rx: tokio::sync::broadcast::Receiver<crate::ipc::DaemonEvent>,
+) {
+    loop {
+        match rx.recv().await {
+            Ok(ev) => apply_event(&state, ev).await,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                warn!("Event pump lagged by {}; resnapshot + resubscribe", n);
+                let new_rx = client.subscribe();
+                if let Ok(crate::ipc::DaemonResponse::Snapshot(snap)) =
+                    client.request(DaemonRequest::Snapshot).await
+                {
+                    let mut s = state.write().await;
+                    s.daemon = *snap;
+                }
+                rx = new_rx;
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                warn!("Daemon event broadcast closed; pump exiting");
+                break;
+            }
+        }
+    }
+}
+
 async fn apply_event(state: &SharedState, ev: crate::ipc::DaemonEvent) {
     use crate::ipc::DaemonEvent;
     let mut s = state.write().await;

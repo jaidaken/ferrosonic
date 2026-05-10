@@ -48,7 +48,7 @@ pub fn draw(frame: &mut Frame, state: &mut AppState) {
 
     // Compute dual-pane splits for pages that use them
     let (content_left, content_right) = match state.client.page {
-        Page::Artists | Page::Playlists => {
+        Page::Library | Page::Playlists => {
             let panes =
                 Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
                     .split(content_area);
@@ -79,10 +79,10 @@ pub fn draw(frame: &mut Frame, state: &mut AppState) {
 
     // Render current page
     match state.client.page {
-        Page::Songs => {
+        Page::QuickPlay => {
             pages::songs::render(frame, content_area, state);
         }
-        Page::Artists => {
+        Page::Library => {
             pages::artists::render(frame, content_area, state);
         }
         Page::Queue => {

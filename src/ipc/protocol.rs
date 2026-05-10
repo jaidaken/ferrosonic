@@ -27,7 +27,6 @@ use crate::subsonic::models::{Album, Artist, Child, Playlist};
 /// matching `DaemonResponse` and, where state changed, broadcasts a
 /// `DaemonEvent` to all subscribers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
 pub enum DaemonRequest {
     // ── Audio control ───────────────────────────────────────────────────
     /// Pause playback. No-op if not playing.
@@ -128,7 +127,6 @@ pub enum DaemonRequest {
 /// How an `EnqueueSongs` request integrates the new songs with the existing
 /// queue.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
 pub enum EnqueueMode {
     /// Replace the current queue entirely. Optionally start playback at
     /// the given index in the new queue.
@@ -146,7 +144,6 @@ pub enum EnqueueMode {
 /// Reply to a `DaemonRequest`. Most commands return `Ok` with no payload;
 /// queries return typed payloads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
 pub enum DaemonResponse {
     /// Command succeeded with no payload.
     Ok,
@@ -182,7 +179,6 @@ pub enum DaemonResponse {
 /// 500-track queue is ~50KB JSON), but the round-trip count drops
 /// from 2N to N for an N-event burst, which dominates at our scale.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
 pub enum DaemonEvent {
     /// The queue contents or `queue_position` changed. Carries the full
     /// new queue and position so the client mirror replaces in one shot.

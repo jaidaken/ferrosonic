@@ -37,7 +37,6 @@ pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
 /// One wire message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
 pub enum Frame {
     /// Client-to-daemon command. `id` correlates with the matching
     /// `Response`.

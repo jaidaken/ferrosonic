@@ -330,32 +330,45 @@ pub async fn start_mpris_server(
 /// app-side MPRIS pump task on `NowPlayingChanged` / `QueueChanged`
 /// events so D-Bus clients (waybar, GNOME shell) see updates without
 /// polling.
+///
+/// Snapshots every value it needs from `state` under a short read
+/// lock, then releases the lock before any D-Bus `.await`. Holding a
+/// read across `properties_changed` would block the TUI's render
+/// (which takes a write lock each frame) if D-Bus is slow.
 pub async fn update_mpris_properties(
     server: &Server<MprisPlayer>,
     state: &SharedState,
 ) -> Result<()> {
-    let state = state.read().await;
+    let (playback, can_go_next, can_go_prev, current_song, config) = {
+        let s = state.read().await;
+        let pb = match s.daemon.now_playing.state {
+            PlaybackState::Playing => PlaybackStatus::Playing,
+            PlaybackState::Paused => PlaybackStatus::Paused,
+            PlaybackState::Stopped => PlaybackStatus::Stopped,
+        };
+        let cgn = s.daemon
+            .queue_position
+            .map(|p| p + 1 < s.daemon.queue.len())
+            .unwrap_or(false);
+        let cgp = s.daemon.queue_position.map(|p| p > 0).unwrap_or(false);
+        (
+            pb,
+            cgn,
+            cgp,
+            s.current_song().cloned(),
+            s.daemon.config.clone(),
+        )
+    };
 
-    // Emit property changes
     server
         .properties_changed([
-            Property::PlaybackStatus(match state.daemon.now_playing.state {
-                PlaybackState::Playing => PlaybackStatus::Playing,
-                PlaybackState::Paused => PlaybackStatus::Paused,
-                PlaybackState::Stopped => PlaybackStatus::Stopped,
-            }),
-            Property::CanGoNext(
-                state.daemon
-                    .queue_position
-                    .map(|p| p + 1 < state.daemon.queue.len())
-                    .unwrap_or(false),
-            ),
-            Property::CanGoPrevious(state.daemon.queue_position.map(|p| p > 0).unwrap_or(false)),
+            Property::PlaybackStatus(playback),
+            Property::CanGoNext(can_go_next),
+            Property::CanGoPrevious(can_go_prev),
         ])
         .await?;
 
-    // Update metadata if we have a current song
-    if let Some(song) = state.current_song() {
+    if let Some(song) = current_song {
         let mut metadata = Metadata::new();
         metadata.set_trackid(
             Some(TrackId::try_from(format!("/org/mpris/MediaPlayer2/Track/{}", song.id)).ok())
@@ -369,9 +382,8 @@ pub async fn update_mpris_properties(
             metadata.set_length(Some(Time::from_micros(duration as i64 * 1_000_000)));
         }
 
-        // Add cover art URL
         if let Some(ref cover_art_id) = song.cover_art {
-            if let Some(cover_url) = build_cover_art_url(&state.daemon.config, cover_art_id) {
+            if let Some(cover_url) = build_cover_art_url(&config, cover_art_id) {
                 metadata.set_art_url(Some(cover_url));
             }
         }

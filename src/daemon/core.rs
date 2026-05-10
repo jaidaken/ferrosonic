@@ -241,10 +241,7 @@ impl DaemonCore {
 
 impl DaemonCore {
     pub async fn refresh_starred(self: &Arc<Self>) {
-        let client = self.subsonic.read().await;
-        let Some(ref client) = *client else {
-            return;
-        };
+        let Some(client) = self.subsonic.read().await.clone() else { return; };
         match client.get_starred_songs().await {
             Ok(songs) => {
                 let mut state = self.state.write().await;
@@ -263,10 +260,7 @@ impl DaemonCore {
     }
 
     pub async fn refresh_random(self: &Arc<Self>) {
-        let client = self.subsonic.read().await;
-        let Some(ref client) = *client else {
-            return;
-        };
+        let Some(client) = self.subsonic.read().await.clone() else { return; };
         match client.get_random_songs().await {
             Ok(songs) => {
                 let mut state = self.state.write().await;
@@ -285,10 +279,7 @@ impl DaemonCore {
     }
 
     pub async fn refresh_artists(self: &Arc<Self>) {
-        let client = self.subsonic.read().await;
-        let Some(ref client) = *client else {
-            return;
-        };
+        let Some(client) = self.subsonic.read().await.clone() else { return; };
         match client.get_artists().await {
             Ok(artists) => {
                 let mut state = self.state.write().await;
@@ -309,10 +300,7 @@ impl DaemonCore {
     }
 
     pub async fn refresh_playlists(self: &Arc<Self>) {
-        let client = self.subsonic.read().await;
-        let Some(ref client) = *client else {
-            return;
-        };
+        let Some(client) = self.subsonic.read().await.clone() else { return; };
         match client.get_playlists().await {
             Ok(playlists) => {
                 let mut state = self.state.write().await;
@@ -330,10 +318,7 @@ impl DaemonCore {
     }
 
     pub async fn load_artist(self: &Arc<Self>, artist_id: &str) {
-        let client = self.subsonic.read().await;
-        let Some(ref client) = *client else {
-            return;
-        };
+        let Some(client) = self.subsonic.read().await.clone() else { return; };
         match client.get_artist(artist_id).await {
             Ok((_artist, albums)) => {
                 let mut state = self.state.write().await;
@@ -533,10 +518,7 @@ impl DaemonCore {
         };
 
         let stream_url = {
-            let client_lock = self.subsonic.read().await;
-            let Some(ref client) = *client_lock else {
-                return Ok(());
-            };
+            let Some(client) = self.subsonic.read().await.clone() else { return Ok(()); };
             match client.get_stream_url(&song.id) {
                 Ok(url) => url,
                 Err(e) => {
@@ -601,10 +583,7 @@ impl DaemonCore {
         };
 
         let url = {
-            let client_lock = self.subsonic.read().await;
-            let Some(ref client) = *client_lock else {
-                return;
-            };
+            let Some(client) = self.subsonic.read().await.clone() else { return; };
             match client.get_stream_url(&next_song.id) {
                 Ok(u) => u,
                 Err(_) => return,
@@ -964,10 +943,7 @@ impl DaemonCore {
     /// Fetch the songs for an album. Empty `Vec` if not configured or
     /// fetch fails (the error is logged and pushed as a notification).
     pub async fn load_album_songs(self: &Arc<Self>, album_id: &str) -> Vec<crate::subsonic::models::Child> {
-        let client = self.subsonic.read().await;
-        let Some(ref client) = *client else {
-            return Vec::new();
-        };
+        let Some(client) = self.subsonic.read().await.clone() else { return Vec::new(); };
         match client.get_album(album_id).await {
             Ok((_album, songs)) => {
                 let mut state = self.state.write().await;
@@ -997,10 +973,7 @@ impl DaemonCore {
     /// Fetch the songs for a playlist. Empty `Vec` if not configured or
     /// fetch fails (the error is logged and pushed as a notification).
     pub async fn load_playlist_songs(self: &Arc<Self>, playlist_id: &str) -> Vec<crate::subsonic::models::Child> {
-        let client = self.subsonic.read().await;
-        let Some(ref client) = *client else {
-            return Vec::new();
-        };
+        let Some(client) = self.subsonic.read().await.clone() else { return Vec::new(); };
         match client.get_playlist(playlist_id).await {
             Ok((_pl, songs)) => {
                 let mut state = self.state.write().await;

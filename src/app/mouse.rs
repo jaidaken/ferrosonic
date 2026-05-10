@@ -96,16 +96,85 @@ impl App {
         layout: &LayoutAreas,
     ) -> Result<(), Error> {
         match page {
-            Page::Songs => {
-                let mut state = self.state.write().await;
-                state.client.notify("Mouse input not supported for this page yet");
-                Ok(())
-            }
-            Page::Artists => self.handle_artists_click(x, y, layout).await,
+            Page::QuickPlay => self.handle_quick_play_click(x, y, layout).await,
+            Page::Library => self.handle_artists_click(x, y, layout).await,
             Page::Queue => self.handle_queue_click(y, layout).await,
             Page::Playlists => self.handle_playlists_click(x, y, layout).await,
             _ => Ok(()),
         }
+    }
+
+    async fn handle_quick_play_click(
+        &mut self,
+        x: u16,
+        y: u16,
+        layout: &LayoutAreas,
+    ) -> Result<(), Error> {
+        use crate::app::models::SongOption;
+        let content = layout.content;
+        // Page splits content vertically 15% options / 85% songs
+        // (mirrors src/ui/pages/songs.rs::render).
+        let options_height = (content.height * 15) / 100;
+        let options_y_end = content.y + options_height;
+
+        if y < options_y_end {
+            let row_in_pane = y.saturating_sub(content.y + 1) as usize;
+            let option = match row_in_pane {
+                0 => Some(SongOption::Starred),
+                1 => Some(SongOption::Random),
+                _ => None,
+            };
+            if let Some(option) = option {
+                let already;
+                {
+                    let mut state = self.state.write().await;
+                    already = state.client.songs.selected_option.as_ref() == Some(&option);
+                    state.client.songs.selected_option = Some(option.clone());
+                    state.client.songs.focus = 0;
+                }
+                if !already {
+                    let req = match option {
+                        SongOption::Starred => DaemonRequest::RefreshStarred,
+                        SongOption::Random => DaemonRequest::RefreshRandom,
+                    };
+                    let _ = self.client.request(req).await;
+                }
+            }
+            return Ok(());
+        }
+
+        let row_in_pane = y.saturating_sub(options_y_end + 1) as usize;
+        let mut state = self.state.write().await;
+        let item_index = state.client.songs.scroll_offset + row_in_pane;
+        if item_index >= state.songs_list().len() {
+            return Ok(());
+        }
+        state.client.songs.focus = 1;
+        let was_selected = state.client.songs.selected_index == Some(item_index);
+        state.client.songs.selected_index = Some(item_index);
+
+        let is_second_click = was_selected
+            && self
+                .last_click
+                .is_some_and(|(_, ly, t)| ly == y && t.elapsed().as_millis() < 500);
+
+        if is_second_click {
+            let songs = state.songs_list().to_vec();
+            drop(state);
+            self.last_click = Some((x, y, std::time::Instant::now()));
+            return self
+                .client
+                .request(DaemonRequest::EnqueueSongs {
+                    songs,
+                    mode: EnqueueMode::Replace { play_from: Some(item_index) },
+                })
+                .await
+                .map(|_| ())
+                .map_err(Error::from);
+        }
+
+        self.last_click = Some((x, y, std::time::Instant::now()));
+        Ok(())
     }
 
     /// Handle click on queue page
@@ -141,7 +210,7 @@ impl App {
     async fn handle_mouse_scroll_up(&mut self) -> Result<(), Error> {
         let mut state = self.state.write().await;
         match state.client.page {
-            Page::Artists => {
+            Page::Library => {
                 if state.client.artists.focus == 0 {
                     if let Some(sel) = state.client.artists.selected_index {
                         if sel > 0 {
@@ -161,6 +230,17 @@ impl App {
                     }
                 } else if !state.daemon.queue.is_empty() {
                     state.client.queue_state.selected = Some(0);
+                }
+            }
+            Page::QuickPlay => {
+                if state.client.songs.focus == 1 {
+                    if let Some(sel) = state.client.songs.selected_index {
+                        if sel > 0 {
+                            state.client.songs.selected_index = Some(sel - 1);
+                        }
+                    } else if !state.songs_list().is_empty() {
+                        state.client.songs.selected_index = Some(0);
+                    }
                 }
             }
             Page::Playlists => {
@@ -185,7 +265,7 @@ impl App {
     async fn handle_mouse_scroll_down(&mut self) -> Result<(), Error> {
         let mut state = self.state.write().await;
         match state.client.page {
-            Page::Artists => {
+            Page::Library => {
                 if state.client.artists.focus == 0 {
                     let tree_items = crate::ui::pages::artists::build_tree_items(&state);
                     let max = tree_items.len().saturating_sub(1);
@@ -215,6 +295,18 @@ impl App {
                     }
                 } else if !state.daemon.queue.is_empty() {
                     state.client.queue_state.selected = Some(0);
+                }
+            }
+            Page::QuickPlay => {
+                if state.client.songs.focus == 1 {
+                    let max = state.songs_list().len().saturating_sub(1);
+                    if let Some(sel) = state.client.songs.selected_index {
+                        if sel < max {
+                            state.client.songs.selected_index = Some(sel + 1);
+                        }
+                    } else if !state.songs_list().is_empty() {
+                        state.client.songs.selected_index = Some(0);
+                    }
                 }
             }
             Page::Playlists => {

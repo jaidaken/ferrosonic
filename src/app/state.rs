@@ -20,9 +20,9 @@ use crate::ui::theme::{ThemeColors, ThemeData};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Page {
     #[default]
-    Songs,
-    Artists,
+    Library,
     Queue,
+    QuickPlay,
     Playlists,
     Server,
     Settings,
@@ -31,9 +31,9 @@ pub enum Page {
 impl Page {
     pub fn index(&self) -> usize {
         match self {
-            Page::Songs => 0,
-            Page::Artists => 1,
-            Page::Queue => 2,
+            Page::Library => 0,
+            Page::Queue => 1,
+            Page::QuickPlay => 2,
             Page::Playlists => 3,
             Page::Server => 4,
             Page::Settings => 5,
@@ -42,9 +42,9 @@ impl Page {
 
     pub fn label(&self) -> &'static str {
         match self {
-            Page::Songs => "Songs",
-            Page::Artists => "Artists",
+            Page::Library => "Library",
             Page::Queue => "Queue",
+            Page::QuickPlay => "Quick Play",
             Page::Playlists => "Playlists",
             Page::Server => "Server",
             Page::Settings => "Settings",
@@ -53,9 +53,9 @@ impl Page {
 
     pub fn shortcut(&self) -> &'static str {
         match self {
-            Page::Songs => "F1",
-            Page::Artists => "F2",
-            Page::Queue => "F3",
+            Page::Library => "F1",
+            Page::Queue => "F2",
+            Page::QuickPlay => "F3",
             Page::Playlists => "F4",
             Page::Server => "F5",
             Page::Settings => "F6",
@@ -352,6 +352,11 @@ impl AppState {
         state.client.settings_state.cava_size = config.cava_size.clamp(10, 80);
         // Initialize daemon-mode preference from config
         state.client.settings_state.daemon_enabled = config.daemon;
+        // Songs-page default: Starred. The page's input handler treats
+        // a None option as "do nothing" on arrow keys, which would
+        // otherwise dead-lock the page in split mode where
+        // load_initial_data is skipped.
+        state.client.songs.selected_option = Some(SongOption::Starred);
         state
     }
 
