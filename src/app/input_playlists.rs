@@ -106,10 +106,18 @@ impl App {
                     if let Some(idx) = state.client.playlists.selected_song {
                         if idx < state.client.playlists.songs.len() {
                             let songs = state.client.playlists.songs.clone();
-                            state.daemon.queue.clear();
-                            state.daemon.queue.extend(songs);
                             drop(state);
-                            return self.client.request(DaemonRequest::PlayQueueIndex(idx)).await.map(|_| ()).map_err(Error::from);
+                            return self
+                                .client
+                                .request(DaemonRequest::EnqueueSongs {
+                                    songs,
+                                    mode: EnqueueMode::Replace {
+                                        play_from: Some(idx),
+                                    },
+                                })
+                                .await
+                                .map(|_| ())
+                                .map_err(Error::from);
                         }
                     }
                 }
@@ -120,8 +128,15 @@ impl App {
                     if let Some(idx) = state.client.playlists.selected_song {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
                             let title = song.title.clone();
-                            state.daemon.queue.push(song);
                             state.client.notify(format!("Added to queue: {}", title));
+                            drop(state);
+                            let _ = self
+                                .client
+                                .request(DaemonRequest::EnqueueSongs {
+                                    songs: vec![song],
+                                    mode: EnqueueMode::Append,
+                                })
+                                .await;
                         }
                     }
                 } else {
@@ -129,20 +144,38 @@ impl App {
                     if !state.client.playlists.songs.is_empty() {
                         let count = state.client.playlists.songs.len();
                         let songs = state.client.playlists.songs.clone();
-                        state.daemon.queue.extend(songs);
                         state.client.notify(format!("Added {} songs to queue", count));
+                        drop(state);
+                        let _ = self
+                            .client
+                            .request(DaemonRequest::EnqueueSongs {
+                                songs,
+                                mode: EnqueueMode::Append,
+                            })
+                            .await;
                     }
                 }
             }
             KeyCode::Char('n') => {
                 // Add next
-                let insert_pos = state.daemon.queue_position.map(|p| p + 1).unwrap_or(0);
+                let insert_pos = state.daemon.queue_position;
                 if state.client.playlists.focus == 1 {
                     if let Some(idx) = state.client.playlists.selected_song {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
                             let title = song.title.clone();
-                            state.daemon.queue.insert(insert_pos, song);
                             state.client.notify(format!("Playing next: {}", title));
+                            drop(state);
+                            let mode = match insert_pos {
+                                Some(pos) => EnqueueMode::InsertAfter(pos),
+                                None => EnqueueMode::Append,
+                            };
+                            let _ = self
+                                .client
+                                .request(DaemonRequest::EnqueueSongs {
+                                    songs: vec![song],
+                                    mode,
+                                })
+                                .await;
                         }
                     }
                 }
@@ -153,10 +186,16 @@ impl App {
                 if !state.client.playlists.songs.is_empty() {
                     let mut songs = state.client.playlists.songs.clone();
                     songs.shuffle(&mut rand::thread_rng());
-                    state.daemon.queue.clear();
-                    state.daemon.queue.extend(songs);
                     drop(state);
-                    return self.client.request(DaemonRequest::PlayQueueIndex(0)).await.map(|_| ()).map_err(Error::from);
+                    return self
+                        .client
+                        .request(DaemonRequest::EnqueueSongs {
+                            songs,
+                            mode: EnqueueMode::Replace { play_from: Some(0) },
+                        })
+                        .await
+                        .map(|_| ())
+                        .map_err(Error::from);
                 }
             }
             _ => {}

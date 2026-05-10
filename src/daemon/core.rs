@@ -565,20 +565,6 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// One-shot "play this stream URL now": resume if paused, then loadfile.
-    /// Used by single-song click flows (artist-page album song click etc.)
-    /// that want to play a song without rewriting the queue. Note: in
-    /// phase 6 these flows should be rewritten as proper queue ops.
-    pub async fn play_url_now(self: &Arc<Self>, url: &str) {
-        let mut mpv = self.mpv.lock().await;
-        if mpv.is_paused().unwrap_or(false) {
-            let _ = mpv.resume();
-        }
-        if let Err(e) = mpv.loadfile(url) {
-            error!("Failed to play: {}", e);
-        }
-    }
-
     /// Periodic poll: detect track advancement, update position and audio
     /// properties, drive PipeWire sample-rate switching, emit events. Called
     /// every 500ms by `App::event_loop` (phase 2.2c moves this to a
@@ -782,6 +768,52 @@ impl DaemonCore {
     /// after a queue rewrite that touches `state.daemon.queue` directly).
     pub fn broadcast_queue_changed(self: &Arc<Self>) {
         self.emit(DaemonEvent::QueueChanged);
+    }
+
+    /// Move a queue item from `from` to `to`. Adjusts `queue_position`
+    /// so the currently-playing track continues to refer to the same
+    /// song after the reorder. No-op if either index is out of range.
+    pub async fn move_queue_item(self: &Arc<Self>, from: usize, to: usize) {
+        let mut state = self.state.write().await;
+        let len = state.daemon.queue.len();
+        if from >= len || to >= len || from == to {
+            return;
+        }
+        let song = state.daemon.queue.remove(from);
+        state.daemon.queue.insert(to, song);
+        if let Some(cur) = state.daemon.queue_position {
+            let new_cur = if cur == from {
+                to
+            } else if from < cur && to >= cur {
+                cur - 1
+            } else if from > cur && to <= cur {
+                cur + 1
+            } else {
+                cur
+            };
+            state.daemon.queue_position = Some(new_cur);
+        }
+        drop(state);
+        self.emit(DaemonEvent::QueueChanged);
+    }
+
+    /// Drain queue entries [0..queue_position]. Used by the "clear
+    /// history" key in the queue page. After this call, `queue_position`
+    /// becomes 0 (the currently-playing song is at the front).
+    pub async fn clear_queue_history(self: &Arc<Self>) -> usize {
+        let mut state = self.state.write().await;
+        let Some(pos) = state.daemon.queue_position else {
+            return 0;
+        };
+        if pos == 0 {
+            return 0;
+        }
+        let removed = pos;
+        state.daemon.queue.drain(0..pos);
+        state.daemon.queue_position = Some(0);
+        drop(state);
+        self.emit(DaemonEvent::QueueChanged);
+        removed
     }
 
     /// Shuffle the queue, preserving the currently-playing track at its

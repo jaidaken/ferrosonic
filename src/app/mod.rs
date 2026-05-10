@@ -31,7 +31,7 @@ use crate::app::models::SongOption;
 use crate::config::Config;
 use crate::daemon::DaemonCore;
 use crate::error::{Error, UiError};
-use crate::ipc::{DaemonClient, DaemonRequest, InProcessClient};
+use crate::ipc::{DaemonClient, DaemonRequest, EnqueueMode, InProcessClient};
 use crate::mpris::server::{start_mpris_server, MprisPlayer};
 use crate::ui;
 
@@ -207,16 +207,10 @@ impl App {
     /// Cheap snapshot of the daemon's Subsonic client (`reqwest::Client`
     /// is Arc-wrapped internally). Returns `None` when not configured.
     /// Lets input/mouse handlers run direct API calls without holding a
-    /// `RwLockReadGuard` across `.await` points.
+    /// `RwLockReadGuard` across `.await` points. Phase 6 removes the
+    /// remaining direct API call sites that motivate this accessor.
     pub(crate) async fn subsonic_client(&self) -> Option<crate::subsonic::SubsonicClient> {
         self.core.subsonic.read().await.clone()
-    }
-
-    /// Replace the daemon's Subsonic client (e.g., after Server-page
-    /// edit). Phase 2.4 routes this through a `DaemonRequest`; phase 2.2
-    /// uses the in-process write directly.
-    pub(crate) async fn set_subsonic_client(&self, client: Option<crate::subsonic::SubsonicClient>) {
-        *self.core.subsonic.write().await = client;
     }
 
     /// Load initial data from server. Delegates the library fetches to

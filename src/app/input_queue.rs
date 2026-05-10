@@ -34,47 +34,58 @@ impl App {
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx < state.daemon.queue.len() {
                         drop(state);
-                        return self.client.request(DaemonRequest::PlayQueueIndex(idx)).await.map(|_| ()).map_err(Error::from);
+                        return self
+                            .client
+                            .request(DaemonRequest::PlayQueueIndex(idx))
+                            .await
+                            .map(|_| ())
+                            .map_err(Error::from);
                     }
                 }
             }
             KeyCode::Char('d') => {
-                // Remove selected song
+                // Remove selected song. Daemon adjusts queue_position;
+                // client adjusts its own selection (a UI concern).
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx < state.daemon.queue.len() {
-                        let song = state.daemon.queue.remove(idx);
-                        state.client.notify(format!("Removed: {}", song.title));
-                        // Adjust selection
-                        if state.daemon.queue.is_empty() {
+                        let removed_title = state
+                            .daemon
+                            .queue
+                            .get(idx)
+                            .map(|s| s.title.clone())
+                            .unwrap_or_default();
+                        let queue_len = state.daemon.queue.len();
+                        // Adjust client-side selection toward the new
+                        // post-remove position.
+                        if queue_len <= 1 {
                             state.client.queue_state.selected = None;
-                        } else if idx >= state.daemon.queue.len() {
-                            state.client.queue_state.selected = Some(state.daemon.queue.len() - 1);
+                        } else if idx >= queue_len - 1 {
+                            state.client.queue_state.selected = Some(queue_len - 2);
                         }
-                        // Adjust queue position
-                        if let Some(pos) = state.daemon.queue_position {
-                            if idx < pos {
-                                state.daemon.queue_position = Some(pos - 1);
-                            } else if idx == pos {
-                                state.daemon.queue_position = None;
-                            }
-                        }
+                        state.client.notify(format!("Removed: {}", removed_title));
+                        drop(state);
+                        let _ = self
+                            .client
+                            .request(DaemonRequest::RemoveFromQueue(idx))
+                            .await;
+                        return Ok(());
                     }
                 }
             }
             KeyCode::Char('J') => {
                 // Move down
                 if let Some(idx) = state.client.queue_state.selected {
-                    if idx < state.daemon.queue.len() - 1 {
-                        state.daemon.queue.swap(idx, idx + 1);
+                    if idx + 1 < state.daemon.queue.len() {
                         state.client.queue_state.selected = Some(idx + 1);
-                        // Adjust queue position if needed
-                        if let Some(pos) = state.daemon.queue_position {
-                            if pos == idx {
-                                state.daemon.queue_position = Some(idx + 1);
-                            } else if pos == idx + 1 {
-                                state.daemon.queue_position = Some(idx);
-                            }
-                        }
+                        drop(state);
+                        let _ = self
+                            .client
+                            .request(DaemonRequest::MoveQueueItem {
+                                from: idx,
+                                to: idx + 1,
+                            })
+                            .await;
+                        return Ok(());
                     }
                 }
             }
@@ -82,59 +93,53 @@ impl App {
                 // Move up
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx > 0 {
-                        state.daemon.queue.swap(idx, idx - 1);
                         state.client.queue_state.selected = Some(idx - 1);
-                        // Adjust queue position if needed
-                        if let Some(pos) = state.daemon.queue_position {
-                            if pos == idx {
-                                state.daemon.queue_position = Some(idx - 1);
-                            } else if pos == idx - 1 {
-                                state.daemon.queue_position = Some(idx);
-                            }
-                        }
+                        drop(state);
+                        let _ = self
+                            .client
+                            .request(DaemonRequest::MoveQueueItem {
+                                from: idx,
+                                to: idx - 1,
+                            })
+                            .await;
+                        return Ok(());
                     }
                 }
             }
             KeyCode::Char('r') => {
                 // Shuffle queue
-                use rand::seq::SliceRandom;
-                let mut rng = rand::thread_rng();
-
-                if let Some(pos) = state.daemon.queue_position {
-                    // Keep current song in place, shuffle the rest
-                    if pos < state.daemon.queue.len() {
-                        let current = state.daemon.queue.remove(pos);
-                        state.daemon.queue.shuffle(&mut rng);
-                        state.daemon.queue.insert(0, current);
-                        state.daemon.queue_position = Some(0);
-                    }
-                } else {
-                    state.daemon.queue.shuffle(&mut rng);
-                }
                 state.client.notify("Queue shuffled");
+                drop(state);
+                let _ = self.client.request(DaemonRequest::ShuffleQueue).await;
+                return Ok(());
             }
             KeyCode::Char('c') => {
-                // Clear history (remove all songs before current position)
-                if let Some(pos) = state.daemon.queue_position {
-                    if pos > 0 {
-                        let removed = pos;
-                        state.daemon.queue.drain(0..pos);
-                        state.daemon.queue_position = Some(0);
-                        // Adjust selection
-                        if let Some(sel) = state.client.queue_state.selected {
-                            if sel < pos {
-                                state.client.queue_state.selected = Some(0);
-                            } else {
-                                state.client.queue_state.selected = Some(sel - pos);
+                // Clear history (drain entries before queue_position)
+                let pos = state.daemon.queue_position;
+                let sel_before = state.client.queue_state.selected;
+                drop(state);
+                match self
+                    .client
+                    .request(DaemonRequest::ClearQueueHistory)
+                    .await
+                {
+                    Ok(crate::ipc::DaemonResponse::HistoryCleared(removed)) => {
+                        let mut state = self.state.write().await;
+                        if removed == 0 {
+                            state.client.notify("No history to clear");
+                        } else {
+                            state.client.notify(format!("Cleared {} played songs", removed));
+                            // Fix up client selection so it points at
+                            // the same song relative to the trimmed queue.
+                            if let (Some(p), Some(sel)) = (pos, sel_before) {
+                                state.client.queue_state.selected =
+                                    Some(if sel < p { 0 } else { sel - p });
                             }
                         }
-                        state.client.notify(format!("Cleared {} played songs", removed));
-                    } else {
-                        state.client.notify("No history to clear");
                     }
-                } else {
-                    state.client.notify("No history to clear");
+                    Ok(_) | Err(_) => {}
                 }
+                return Ok(());
             }
             _ => {}
         }

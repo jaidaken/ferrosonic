@@ -191,20 +191,25 @@ impl App {
                                                 artists_songs.shuffle(&mut thread_rng());
 
                                                 let song_count = artists_songs.len();
-                                                let mut state = self.state.write().await;
+                                                {
+                                                    let mut state = self.state.write().await;
+                                                    state.client.notify(format!(
+                                                        "Shuffling {} songs by {}",
+                                                        song_count, artist_name
+                                                    ));
+                                                }
 
-                                                state.daemon.queue.clear();
-                                                state.daemon.queue.extend(artists_songs);
-                                                state.daemon.queue_position = Some(0);
-
-                                                state.client.notify(format!(
-                                                    "Shuffling {} songs by {}",
-                                                    song_count, artist_name
-                                                ));
-
-                                                drop(state);
-
-                                                return self.client.request(DaemonRequest::PlayQueueIndex(0)).await.map(|_| ()).map_err(Error::from);
+                                                return self
+                                                    .client
+                                                    .request(DaemonRequest::EnqueueSongs {
+                                                        songs: artists_songs,
+                                                        mode: EnqueueMode::Replace {
+                                                            play_from: Some(0),
+                                                        },
+                                                    })
+                                                    .await
+                                                    .map(|_| ())
+                                                    .map_err(Error::from);
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
@@ -229,20 +234,25 @@ impl App {
                                                     return Ok(());
                                                 }
 
-                                                let mut shuffled_songs: Vec<_> = Vec::from(songs);
+                                                let mut shuffled_songs = songs;
                                                 shuffled_songs.shuffle(&mut thread_rng());
 
-                                                let mut state = self.state.write().await;
+                                                {
+                                                    let mut state = self.state.write().await;
+                                                    state.client.notify(format!("Shuffling {}", album_name));
+                                                }
 
-                                                state.daemon.queue.clear();
-                                                state.daemon.queue.extend(shuffled_songs);
-                                                state.daemon.queue_position = Some(0);
-
-                                                state.client.notify(format!("Shuffling {}", album_name));
-
-                                                drop(state);
-
-                                                return self.client.request(DaemonRequest::PlayQueueIndex(0)).await.map(|_| ()).map_err(Error::from);
+                                                return self
+                                                    .client
+                                                    .request(DaemonRequest::EnqueueSongs {
+                                                        songs: shuffled_songs,
+                                                        mode: EnqueueMode::Replace {
+                                                            play_from: Some(0),
+                                                        },
+                                                    })
+                                                    .await
+                                                    .map(|_| ())
+                                                    .map_err(Error::from);
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
@@ -317,41 +327,26 @@ impl App {
                                                     return Ok(());
                                                 }
 
-                                                let first_song = songs[0].clone();
-                                                let stream_url =
-                                                    client.get_stream_url(&first_song.id);
-
-                                                let mut state = self.state.write().await;
-                                                let count = songs.len();
-                                                state.daemon.queue.clear();
-                                                state.daemon.queue.extend(songs.clone());
-                                                state.daemon.queue_position = Some(0);
-                                                state.client.artists.songs = songs;
-                                                state.client.artists.selected_song = Some(0);
-                                                state.client.artists.focus = 1;
-                                                state.daemon.now_playing.song = Some(first_song.clone());
-                                                state.daemon.now_playing.state = PlaybackState::Playing;
-                                                state.daemon.now_playing.position = 0.0;
-                                                state.daemon.now_playing.duration =
-                                                    first_song.duration.unwrap_or(0) as f64;
-                                                state.daemon.now_playing.sample_rate = None;
-                                                state.daemon.now_playing.bit_depth = None;
-                                                state.daemon.now_playing.format = None;
-                                                state.daemon.now_playing.channels = None;
-                                                state.client.notify(format!(
-                                                    "Playing album: {} ({} songs)",
-                                                    album_name, count
-                                                ));
-                                                drop(state);
-
-                                                match stream_url {
-                                                    Ok(url) => {
-                                                        self.core.play_url_now(&url).await;
-                                                    }
-                                                    Err(e) => {
-                                                        error!("Failed to get stream URL: {}", e);
-                                                    }
+                                                {
+                                                    let mut state = self.state.write().await;
+                                                    let count = songs.len();
+                                                    state.client.artists.songs = songs.clone();
+                                                    state.client.artists.selected_song = Some(0);
+                                                    state.client.artists.focus = 1;
+                                                    state.client.notify(format!(
+                                                        "Playing album: {} ({} songs)",
+                                                        album_name, count
+                                                    ));
                                                 }
+                                                let _ = self
+                                                    .client
+                                                    .request(DaemonRequest::EnqueueSongs {
+                                                        songs,
+                                                        mode: EnqueueMode::Replace {
+                                                            play_from: Some(0),
+                                                        },
+                                                    })
+                                                    .await;
                                             }
                                             Err(e) => {
                                                 let mut state = self.state.write().await;
@@ -371,32 +366,20 @@ impl App {
                     // Play selected song from current position
                     if let Some(idx) = state.client.artists.selected_song {
                         if idx < state.client.artists.songs.len() {
-                            let song = state.client.artists.songs[idx].clone();
                             let songs = state.client.artists.songs.clone();
-                            state.daemon.queue.clear();
-                            state.daemon.queue.extend(songs);
-                            state.daemon.queue_position = Some(idx);
-                            state.daemon.now_playing.song = Some(song.clone());
-                            state.daemon.now_playing.state = PlaybackState::Playing;
-                            state.daemon.now_playing.position = 0.0;
-                            state.daemon.now_playing.duration = song.duration.unwrap_or(0) as f64;
-                            state.daemon.now_playing.sample_rate = None;
-                            state.daemon.now_playing.bit_depth = None;
-                            state.daemon.now_playing.format = None;
-                            state.daemon.now_playing.channels = None;
-                            state.client.notify(format!("Playing: {}", song.title));
-                            drop(state);
-
-                            if let Some(client) = self.subsonic_client().await {
-                                match client.get_stream_url(&song.id) {
-                                    Ok(url) => {
-                                        self.core.play_url_now(&url).await;
-                                    }
-                                    Err(e) => {
-                                        error!("Failed to get stream URL: {}", e);
-                                    }
-                                }
+                            if let Some(song) = songs.get(idx) {
+                                state.client.notify(format!("Playing: {}", song.title));
                             }
+                            drop(state);
+                            let _ = self
+                                .client
+                                .request(DaemonRequest::EnqueueSongs {
+                                    songs,
+                                    mode: EnqueueMode::Replace {
+                                        play_from: Some(idx),
+                                    },
+                                })
+                                .await;
                             return Ok(());
                         }
                     }
@@ -412,34 +395,65 @@ impl App {
                     if let Some(idx) = state.client.artists.selected_song {
                         if let Some(song) = state.client.artists.songs.get(idx).cloned() {
                             let title = song.title.clone();
-                            state.daemon.queue.push(song);
                             state.client.notify(format!("Added to queue: {}", title));
+                            drop(state);
+                            let _ = self
+                                .client
+                                .request(DaemonRequest::EnqueueSongs {
+                                    songs: vec![song],
+                                    mode: EnqueueMode::Append,
+                                })
+                                .await;
                         }
                     }
                 } else if !state.client.artists.songs.is_empty() {
                     let count = state.client.artists.songs.len();
                     let songs = state.client.artists.songs.clone();
-                    state.daemon.queue.extend(songs);
                     state.client.notify(format!("Added {} songs to queue", count));
+                    drop(state);
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::EnqueueSongs {
+                            songs,
+                            mode: EnqueueMode::Append,
+                        })
+                        .await;
                 }
             }
             KeyCode::Char('n') => {
-                let insert_pos = state.daemon.queue_position.map(|p| p + 1).unwrap_or(0);
+                let cur_pos = state.daemon.queue_position;
                 if state.client.artists.focus == 1 {
                     if let Some(idx) = state.client.artists.selected_song {
                         if let Some(song) = state.client.artists.songs.get(idx).cloned() {
                             let title = song.title.clone();
-                            state.daemon.queue.insert(insert_pos, song);
                             state.client.notify(format!("Playing next: {}", title));
+                            drop(state);
+                            let mode = match cur_pos {
+                                Some(pos) => EnqueueMode::InsertAfter(pos),
+                                None => EnqueueMode::Append,
+                            };
+                            let _ = self
+                                .client
+                                .request(DaemonRequest::EnqueueSongs {
+                                    songs: vec![song],
+                                    mode,
+                                })
+                                .await;
                         }
                     }
                 } else if !state.client.artists.songs.is_empty() {
                     let count = state.client.artists.songs.len();
-                    let songs: Vec<_> = state.client.artists.songs.to_vec();
-                    for (i, song) in songs.into_iter().enumerate() {
-                        state.daemon.queue.insert(insert_pos + i, song);
-                    }
+                    let songs = state.client.artists.songs.clone();
                     state.client.notify(format!("Playing {} songs next", count));
+                    drop(state);
+                    let mode = match cur_pos {
+                        Some(pos) => EnqueueMode::InsertAfter(pos),
+                        None => EnqueueMode::Append,
+                    };
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::EnqueueSongs { songs, mode })
+                        .await;
                 }
             }
             _ => {}

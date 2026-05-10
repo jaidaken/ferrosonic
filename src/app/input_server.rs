@@ -2,7 +2,6 @@ use crossterm::event::{self, KeyCode};
 use tracing::info;
 
 use crate::error::Error;
-use crate::subsonic::SubsonicClient;
 
 use super::*;
 
@@ -53,74 +52,76 @@ impl App {
             KeyCode::Enter => {
                 match field {
                     3 => {
-                        // Test connection
-                        let url = state.client.server_state.base_url.clone();
-                        let user = state.client.server_state.username.clone();
-                        let pass = state.client.server_state.password.clone();
+                        // Test connection — daemon does the ping.
+                        let base_url = state.client.server_state.base_url.clone();
+                        let username = state.client.server_state.username.clone();
+                        let password = state.client.server_state.password.clone();
                         state.client.server_state.status = Some("Testing connection...".to_string());
                         drop(state);
 
-                        match SubsonicClient::new(&url, &user, &pass) {
-                            Ok(client) => match client.ping().await {
-                                Ok(_) => {
-                                    let mut state = self.state.write().await;
-                                    state.client.server_state.status =
-                                        Some("Connection successful!".to_string());
-                                }
-                                Err(e) => {
-                                    let mut state = self.state.write().await;
-                                    state.client.server_state.status =
-                                        Some(format!("Connection failed: {}", e));
-                                }
-                            },
+                        match self
+                            .client
+                            .request(DaemonRequest::TestServerConnection {
+                                base_url,
+                                username,
+                                password,
+                            })
+                            .await
+                        {
+                            Ok(crate::ipc::DaemonResponse::ConnectionTestResult { ok, message }) => {
+                                let mut state = self.state.write().await;
+                                state.client.server_state.status = Some(if ok {
+                                    "Connection successful!".to_string()
+                                } else {
+                                    message
+                                });
+                            }
+                            Ok(_) => {
+                                let mut state = self.state.write().await;
+                                state.client.server_state.status =
+                                    Some("Unexpected daemon response".to_string());
+                            }
                             Err(e) => {
                                 let mut state = self.state.write().await;
-                                state.client.server_state.status = Some(format!("Invalid URL: {}", e));
+                                state.client.server_state.status =
+                                    Some(format!("IPC error: {}", e));
                             }
                         }
                         return Ok(());
                     }
                     4 => {
-                        // Save config and reconnect
+                        // Save config and reconnect — daemon persists +
+                        // refetches starred/artists/playlists.
                         info!(
                             "Saving config: url='{}', user='{}'",
                             state.client.server_state.base_url, state.client.server_state.username
                         );
-                        state.daemon.config.base_url = state.client.server_state.base_url.clone();
-                        state.daemon.config.username = state.client.server_state.username.clone();
-                        state.daemon.config.password = state.client.server_state.password.clone();
-
-                        let url = state.daemon.config.base_url.clone();
-                        let user = state.daemon.config.username.clone();
-                        let pass = state.daemon.config.password.clone();
-
-                        match state.daemon.config.save_default() {
-                            Ok(_) => {
-                                info!("Config saved successfully");
-                                state.client.server_state.status =
-                                    Some("Saved! Connecting...".to_string());
-                            }
-                            Err(e) => {
-                                info!("Config save failed: {}", e);
-                                state.client.server_state.status = Some(format!("Save failed: {}", e));
-                                return Ok(());
-                            }
-                        }
+                        let base_url = state.client.server_state.base_url.clone();
+                        let username = state.client.server_state.username.clone();
+                        let password = state.client.server_state.password.clone();
+                        state.client.server_state.status = Some("Saving...".to_string());
                         drop(state);
 
-                        // Create new client and load data
-                        match SubsonicClient::new(&url, &user, &pass) {
-                            Ok(client) => {
-                                self.set_subsonic_client(Some(client)).await;
-                                self.load_initial_data().await;
+                        match self
+                            .client
+                            .request(DaemonRequest::UpdateServerConfig {
+                                base_url,
+                                username,
+                                password,
+                            })
+                            .await
+                        {
+                            Ok(_) => {
+                                info!("Config saved and refetched");
                                 let mut state = self.state.write().await;
                                 state.client.server_state.status =
                                     Some("Connected and loaded data!".to_string());
                             }
                             Err(e) => {
+                                info!("Config save failed: {}", e);
                                 let mut state = self.state.write().await;
                                 state.client.server_state.status =
-                                    Some(format!("Saved but connection failed: {}", e));
+                                    Some(format!("Save failed: {}", e));
                             }
                         }
                         return Ok(());

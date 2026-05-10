@@ -66,13 +66,20 @@ impl App {
                     return Ok(());
                 };
 
-                state.daemon.queue.clear();
                 let songs = state.songs_list().to_vec();
-                state.daemon.queue.extend(songs);
-
                 drop(state);
 
-                return self.client.request(DaemonRequest::PlayQueueIndex(selected_song)).await.map(|_| ()).map_err(Error::from);
+                return self
+                    .client
+                    .request(DaemonRequest::EnqueueSongs {
+                        songs,
+                        mode: EnqueueMode::Replace {
+                            play_from: Some(selected_song),
+                        },
+                    })
+                    .await
+                    .map(|_| ())
+                    .map_err(Error::from);
             }
             KeyCode::Tab => state.client.songs.focus = if state.client.songs.focus == 1 { 0 } else { 1 },
             _ => {}

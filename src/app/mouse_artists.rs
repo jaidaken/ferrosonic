@@ -81,31 +81,23 @@ impl App {
                                             return Ok(());
                                         }
 
-                                        let first_song = songs[0].clone();
-                                        let stream_url = client.get_stream_url(&first_song.id);
-
-                                        let mut state = self.state.write().await;
-                                        let count = songs.len();
-                                        state.daemon.queue.clear();
-                                        state.daemon.queue.extend(songs.clone());
-                                        state.daemon.queue_position = Some(0);
-                                        state.client.artists.songs = songs;
-                                        state.client.artists.selected_song = Some(0);
-                                        state.client.artists.focus = 1;
-                                        state.daemon.now_playing.song = Some(first_song.clone());
-                                        state.daemon.now_playing.state = PlaybackState::Playing;
-                                        state.daemon.now_playing.position = 0.0;
-                                        state.daemon.now_playing.duration = first_song.duration.unwrap_or(0) as f64;
-                                        state.daemon.now_playing.sample_rate = None;
-                                        state.daemon.now_playing.bit_depth = None;
-                                        state.daemon.now_playing.format = None;
-                                        state.daemon.now_playing.channels = None;
-                                        state.client.notify(format!("Playing album: {} ({} songs)", album_name, count));
-                                        drop(state);
-
-                                        if let Ok(url) = stream_url {
-                                            self.core.play_url_now(&url).await;
+                                        {
+                                            let mut state = self.state.write().await;
+                                            let count = songs.len();
+                                            state.client.artists.songs = songs.clone();
+                                            state.client.artists.selected_song = Some(0);
+                                            state.client.artists.focus = 1;
+                                            state.client.notify(format!("Playing album: {} ({} songs)", album_name, count));
                                         }
+                                        let _ = self
+                                            .client
+                                            .request(DaemonRequest::EnqueueSongs {
+                                                songs,
+                                                mode: EnqueueMode::Replace {
+                                                    play_from: Some(0),
+                                                },
+                                            })
+                                            .await;
                                     }
                                     Err(e) => {
                                         let mut state = self.state.write().await;
@@ -150,28 +142,21 @@ impl App {
                     });
 
                 if is_second_click {
-                    // Play selected song
-                    let song = state.client.artists.songs[item_index].clone();
+                    // Play selected song from album-songs pane
                     let songs = state.client.artists.songs.clone();
-                    state.daemon.queue.clear();
-                    state.daemon.queue.extend(songs);
-                    state.daemon.queue_position = Some(item_index);
-                    state.daemon.now_playing.song = Some(song.clone());
-                    state.daemon.now_playing.state = PlaybackState::Playing;
-                    state.daemon.now_playing.position = 0.0;
-                    state.daemon.now_playing.duration = song.duration.unwrap_or(0) as f64;
-                    state.daemon.now_playing.sample_rate = None;
-                    state.daemon.now_playing.bit_depth = None;
-                    state.daemon.now_playing.format = None;
-                    state.daemon.now_playing.channels = None;
-                    state.client.notify(format!("Playing: {}", song.title));
-                    drop(state);
-
-                    if let Some(client) = self.subsonic_client().await {
-                        if let Ok(url) = client.get_stream_url(&song.id) {
-                            self.core.play_url_now(&url).await;
-                        }
+                    if let Some(song) = songs.get(item_index) {
+                        state.client.notify(format!("Playing: {}", song.title));
                     }
+                    drop(state);
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::EnqueueSongs {
+                            songs,
+                            mode: EnqueueMode::Replace {
+                                play_from: Some(item_index),
+                            },
+                        })
+                        .await;
                     self.last_click = Some((x, y, std::time::Instant::now()));
                     return Ok(());
                 }

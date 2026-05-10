@@ -62,6 +62,13 @@ pub enum DaemonRequest {
     ClearQueue,
     /// Shuffle the current queue (preserving the currently-playing track).
     ShuffleQueue,
+    /// Reorder a queue item from one index to another. The
+    /// `queue_position` is fixed up so the currently-playing track
+    /// continues to point at the same song.
+    MoveQueueItem { from: usize, to: usize },
+    /// Drain the queue entries before `queue_position` (the "history"
+    /// half). No-op if `queue_position` is `None` or 0.
+    ClearQueueHistory,
 
     // ── Library operations ──────────────────────────────────────────────
     /// Refetch starred songs from the Subsonic server.
@@ -146,6 +153,8 @@ pub enum DaemonResponse {
     /// Reply to `TestServerConnection`: whether the connection succeeded
     /// and a human-readable message.
     ConnectionTestResult { ok: bool, message: String },
+    /// Reply to `ClearQueueHistory`: the number of entries removed.
+    HistoryCleared(usize),
     /// Reply to `Ping`.
     Pong,
 }

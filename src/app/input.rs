@@ -109,16 +109,18 @@ impl App {
             // Cycle theme (global)
             (KeyCode::Char('t'), KeyModifiers::NONE) => {
                 state.client.settings_state.next_theme();
-                state.daemon.config.theme = state.client.settings_state.theme_name().to_string();
-                let label = state.client.settings_state.theme_name().to_string();
-                state.client.notify(format!("Theme: {}", label));
-                let _ = state.daemon.config.save_default();
+                let theme_name = state.client.settings_state.theme_name().to_string();
+                state.client.notify(format!("Theme: {}", theme_name));
                 let cava_enabled = state.client.settings_state.cava_enabled;
                 let td = state.client.settings_state.current_theme();
                 let g = td.cava_gradient.clone();
                 let h = td.cava_horizontal_gradient.clone();
                 let cs = state.client.settings_state.cava_size as u32;
                 drop(state);
+                let _ = self
+                    .client
+                    .request(DaemonRequest::SetTheme(theme_name))
+                    .await;
                 if cava_enabled {
                     self.start_cava(&g, &h, cs);
                 }

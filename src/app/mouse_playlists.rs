@@ -74,11 +74,19 @@ impl App {
                 if is_second_click {
                     // Play selected song from playlist
                     let songs = state.client.playlists.songs.clone();
-                    state.daemon.queue.clear();
-                    state.daemon.queue.extend(songs);
                     drop(state);
                     self.last_click = Some((x, y, std::time::Instant::now()));
-                    return self.client.request(DaemonRequest::PlayQueueIndex(item_index)).await.map(|_| ()).map_err(Error::from);
+                    return self
+                        .client
+                        .request(DaemonRequest::EnqueueSongs {
+                            songs,
+                            mode: EnqueueMode::Replace {
+                                play_from: Some(item_index),
+                            },
+                        })
+                        .await
+                        .map(|_| ())
+                        .map_err(Error::from);
                 }
             }
         }

@@ -142,6 +142,14 @@ impl DaemonClient for InProcessClient {
                 self.core.shuffle_queue().await;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::MoveQueueItem { from, to } => {
+                self.core.move_queue_item(from, to).await;
+                Ok(DaemonResponse::Ok)
+            }
+            DaemonRequest::ClearQueueHistory => {
+                let removed = self.core.clear_queue_history().await;
+                Ok(DaemonResponse::HistoryCleared(removed))
+            }
 
             // ── Library operations ──────────────────────────────────
             DaemonRequest::RefreshStarred => {
