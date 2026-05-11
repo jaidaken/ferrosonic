@@ -1,0 +1,10 @@
+[profile.default]
+slow-timeout = { period = "30s", terminate-after = 3 }
+fail-fast = false
+retries = 0
+
+[profile.ci]
+slow-timeout = { period = "60s", terminate-after = 3 }
+fail-fast = false
+retries = { backoff = "exponential", count = 2, delay = "1s", jitter = true }
+final-status-level = "skip"

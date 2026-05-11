@@ -86,6 +86,21 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # bundled chafa wrapper doesn't expose dither / work-factor knobs).
 libloading = "0.8"
 
+[dev-dependencies]
+# Async HTTP fakes for Subsonic API. Records request bodies for
+# assertions; mounts on a local port.
+wiremock = "0.6"
+# Property-based testing with proper shrinking.
+proptest = "1"
+# Readable diffs on assertion failures.
+pretty_assertions = "1"
+# Pattern-match assertions for enums.
+assert_matches = "1"
+# Time and IO mocking utilities (`tokio::time::pause`, `block_on`).
+tokio-test = "0.4"
+# Trait-level mocks where a dyn-Trait boundary already exists.
+mockall = "0.13"
+
 [profile.release]
 lto = true
 codegen-units = 1

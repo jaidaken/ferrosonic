@@ -1,0 +1,73 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build static musl binaries and create release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: musl-release
+
+      - name: Install zig (cargo-zigbuild backend)
+        uses: korandoru/setup-zig@v1
+        with:
+          zig-version: 0.13.0
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Build release binaries
+        run: |
+          cargo zigbuild \
+            --release \
+            --target x86_64-unknown-linux-musl \
+            --bin ferrosonic \
+            --bin ferrosonicd
+
+      - name: Stage versioned artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp target/x86_64-unknown-linux-musl/release/ferrosonic \
+             "ferrosonic-${VERSION}-linux-x86_64"
+          cp target/x86_64-unknown-linux-musl/release/ferrosonicd \
+             "ferrosonicd-${VERSION}-linux-x86_64"
+
+      - name: Extract release notes for this tag
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No release notes for $VERSION found in CHANGELOG.md"
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            "ferrosonic-${GITHUB_REF_NAME#v}-linux-x86_64" \
+            "ferrosonicd-${GITHUB_REF_NAME#v}-linux-x86_64"

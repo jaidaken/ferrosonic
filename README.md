@@ -273,6 +273,29 @@ Ferrosonic works with any server implementing the Subsonic API, including:
 - [Gonic](https://github.com/sentriz/gonic)
 - [Supysonic](https://github.com/spl0k/supysonic)
 
+## Testing
+
+The full test suite uses `cargo-nextest` for parallel execution and
+`wiremock` / a fake-mpv harness for integration tests against the daemon,
+audio stack, and Subsonic client without spawning real services. One
+optional smoke test runs against real `mpv` to catch protocol drift.
+
+```bash
+# Run everything (fast).
+cargo nextest run --all-targets
+
+# Or vanilla cargo if you don't have nextest installed.
+cargo test --all-targets
+
+# Coverage report (HTML + summary).
+cargo install cargo-llvm-cov
+cargo llvm-cov --all-features --workspace --html
+```
+
+CI runs fmt, clippy, the full test suite (with real `mpv` installed),
+and a coverage report on every push and pull request. Coverage is
+reported as a warning, not a hard gate.
+
 ## Acknowledgements
 
 Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about/) by SixFoisNeuf, a terminal Subsonic client written in Go. Ferrosonic builds on that concept with a Rust implementation, bit-perfect audio via PipeWire, and additional features.
