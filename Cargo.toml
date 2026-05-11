@@ -105,6 +105,8 @@ serial_test = "3"
 # Subprocess-based binary tests (asserts on exit code, stdout, stderr).
 assert_cmd = "2"
 predicates = "3"
+# Snapshot testing for ratatui frame output.
+insta = "1"
 
 [profile.release]
 lto = true
