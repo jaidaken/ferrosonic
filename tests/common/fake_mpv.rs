@@ -25,6 +25,7 @@ struct FakeMpvState {
     position: f64,
     duration: f64,
     volume: f64,
+    playlist_pos: i64,
     properties: HashMap<String, Value>,
     playlist: Vec<String>,
     commands: Vec<Vec<Value>>,
@@ -111,6 +112,18 @@ impl FakeMpv {
         let mut s = self.state.lock().await;
         s.loaded_file = Some(path.to_string());
         s.playlist = vec![path.to_string()];
+    }
+
+    pub async fn set_position(&self, secs: f64) {
+        self.state.lock().await.position = secs;
+    }
+
+    pub async fn set_playlist_pos(&self, pos: i64) {
+        self.state.lock().await.playlist_pos = pos;
+    }
+
+    pub async fn set_playlist(&self, items: Vec<String>) {
+        self.state.lock().await.playlist = items;
     }
 }
 
@@ -215,6 +228,7 @@ async fn process_command(
                 "duration" => json!(s.duration),
                 "volume" => json!(s.volume),
                 "playlist-count" => json!(s.playlist.len()),
+                "playlist-pos" => json!(s.playlist_pos),
                 "idle-active" => Value::Bool(s.loaded_file.is_none()),
                 "eof-reached" => Value::Bool(false),
                 other => s.properties.get(other).cloned().unwrap_or(Value::Null),
