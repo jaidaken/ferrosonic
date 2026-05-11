@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
-use tracing::{info, warn};
+use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use ferrosonic::app::App;
@@ -133,8 +133,20 @@ async fn main() -> anyhow::Result<()> {
                 App::with_remote_client(client, config)
             }
             None => {
-                warn!("ferrosonicd unreachable; running in-process this session");
-                App::new(config)
+                let daemon_log = config_dir()
+                    .unwrap_or_else(|| PathBuf::from("/tmp"))
+                    .join("ferrosonicd.log");
+                eprintln!("ferrosonic: could not reach ferrosonicd.");
+                eprintln!();
+                eprintln!("  Socket path : {}", path.display());
+                eprintln!("  Daemon log  : {}", daemon_log.display());
+                eprintln!();
+                eprintln!("Try one of:");
+                eprintln!("  - Inspect the daemon log for spawn errors.");
+                eprintln!("  - Remove a stale socket: rm {}", path.display());
+                eprintln!("  - Run with --standalone to skip the daemon this session.");
+                eprintln!("  - Set Daemon=false in your config to disable persistent playback.");
+                anyhow::bail!("ferrosonicd unreachable; see message above");
             }
         }
     };

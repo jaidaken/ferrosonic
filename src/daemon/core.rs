@@ -336,11 +336,16 @@ impl DaemonCore {
 impl DaemonCore {
     pub async fn toggle_pause(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
-        let snapshot = {
+        let (playback_state, queue_pos) = {
             let state = self.state.read().await;
-            (state.now_playing.state,)
+            (state.now_playing.state, state.queue_position)
         };
-        let (playback_state,) = snapshot;
+        if playback_state == PlaybackState::Stopped {
+            if let Some(pos) = queue_pos {
+                return self.play_queue_position(pos, PlayMode::Direct).await;
+            }
+            return Ok(());
+        }
         if playback_state != PlaybackState::Playing && playback_state != PlaybackState::Paused {
             return Ok(());
         }
@@ -390,11 +395,18 @@ impl DaemonCore {
 
     pub async fn resume_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
-        {
+        let (playback_state, queue_pos) = {
             let state = self.state.read().await;
-            if state.now_playing.state != PlaybackState::Paused {
-                return Ok(());
+            (state.now_playing.state, state.queue_position)
+        };
+        if playback_state == PlaybackState::Stopped {
+            if let Some(pos) = queue_pos {
+                return self.play_queue_position(pos, PlayMode::Direct).await;
             }
+            return Ok(());
+        }
+        if playback_state != PlaybackState::Paused {
+            return Ok(());
         }
         let mut mpv = self.mpv.lock().await;
         match mpv.resume().await {
@@ -923,6 +935,25 @@ impl DaemonCore {
         drop(state);
         self.emit_now_playing().await;
         self.emit_queue().await;
+        Ok(())
+    }
+
+    /// MPRIS / Stop-button semantics: halt playback but keep the queue
+    /// and current selection intact so Play can resume the same track.
+    pub async fn stop_keep_queue(self: &Arc<Self>) -> Result<(), Error> {
+        use crate::app::state::PlaybackState;
+        {
+            let mut mpv = self.mpv.lock().await;
+            if let Err(e) = mpv.stop().await {
+                error!("Failed to stop: {}", e);
+            }
+        }
+        {
+            let mut state = self.state.write().await;
+            state.now_playing.state = PlaybackState::Stopped;
+            state.now_playing.position = 0.0;
+        }
+        self.emit_now_playing().await;
         Ok(())
     }
 

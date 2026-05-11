@@ -53,7 +53,7 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::Stop => {
-                self.core.stop_playback().await.map_err(err)?;
+                self.core.stop_keep_queue().await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::Seek(pos) => {

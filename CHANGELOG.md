@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.4.1] - 2026-05-11
+
+Two robustness fixes on top of 0.4.0: Stop no longer wipes the queue,
+and ferrosonic surfaces a clear error instead of silently degrading
+when the daemon is unreachable.
+
+### Changed
+
+- **Stop keeps the queue.** Pressing the header Stop button, sending
+  MPRIS Stop (headset stop button, waybar, KDE / GNOME / Plasma media
+  controllers), or any other Stop invocation now halts playback while
+  leaving the queue and current selection intact. Pressing Play
+  (`Space`, MPRIS Play, mouse Play) resumes the same track from the
+  beginning. Previous behavior cleared the queue and reset
+  now-playing; if a user picked up bluetooth headphones and pressed
+  Stop, their queue vanished. Use the Queue page's Clear action
+  (or pick a new album / playlist / search result) to actually
+  empty the queue.
+
+### Fixed
+
+- **No more silent in-process fallback.** If `ferrosonicd` can't be
+  spawned or connected to, ferrosonic now exits with a clear error
+  message pointing at the daemon log path and offering remediation
+  steps (remove a stale socket, run with `--standalone`, or set
+  `Daemon=false`). Previously the TUI silently fell back to
+  single-process mode, hiding daemon panics and leaving the user
+  without persistent playback / MPRIS / queue-survives-close with
+  no indication of why. The explicit `--standalone` flag still works
+  as before for users who want single-process mode on purpose.
+
 ## [0.4.0] - 2026-05-11
 
 Album art, library-wide search, repeat modes, and seamless album
