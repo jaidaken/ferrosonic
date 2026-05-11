@@ -16,10 +16,7 @@ fn ferrosonicd_starts_with_verbose_and_writes_log() {
     let mut child = Command::new(ferrosonicd())
         .arg("-v")
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
-        .env(
-            "XDG_RUNTIME_DIR",
-            tempfile::tempdir().unwrap().keep().to_path_buf(),
-        )
+        .env("XDG_RUNTIME_DIR", tempfile::tempdir().unwrap().keep())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -60,10 +57,7 @@ Password = "p"
         .arg("-c")
         .arg(&cfg_path)
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
-        .env(
-            "XDG_RUNTIME_DIR",
-            tempfile::tempdir().unwrap().keep().to_path_buf(),
-        )
+        .env("XDG_RUNTIME_DIR", tempfile::tempdir().unwrap().keep())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -97,10 +91,7 @@ fn ferrosonicd_handles_sigint() {
     let tmp = tempfile::tempdir().unwrap();
     let mut child = Command::new(ferrosonicd())
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
-        .env(
-            "XDG_RUNTIME_DIR",
-            tempfile::tempdir().unwrap().keep().to_path_buf(),
-        )
+        .env("XDG_RUNTIME_DIR", tempfile::tempdir().unwrap().keep())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
