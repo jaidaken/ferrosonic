@@ -366,7 +366,13 @@ Password = "testpass"
             (RepeatMode::All, "\"All\""),
         ] {
             let s = toml::Value::try_from(mode).unwrap();
-            assert_eq!(s.to_string(), expected, "{:?} serializes as {}", mode, expected);
+            assert_eq!(
+                s.to_string(),
+                expected,
+                "{:?} serializes as {}",
+                mode,
+                expected
+            );
         }
     }
 
