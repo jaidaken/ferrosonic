@@ -1,4 +1,3 @@
-use std::io::Read as _;
 use std::os::unix::io::FromRawFd;
 
 use tracing::{error, info};
@@ -124,28 +123,53 @@ impl App {
             return;
         };
 
-        let mut buf = [0u8; 16384];
-        let mut got_data = false;
-        loop {
-            match master.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    parser.process(&buf[..n]);
-                    got_data = true;
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(_) => return,
+        let outcome = drain_into_parser(master, parser);
+        match outcome {
+            DrainOutcome::Bytes => {
+                let cava_screen = screen_to_cava_rows(parser.screen());
+                let mut cs = self.client_state.write().await;
+                cs.cava_screen = cava_screen;
+            }
+            DrainOutcome::NoData => {}
+            DrainOutcome::HardError => {
+                self.cava_pty_master = None;
+                self.cava_parser = None;
             }
         }
+    }
+}
 
-        if !got_data {
-            return;
+#[derive(Debug, PartialEq, Eq)]
+pub enum DrainOutcome {
+    Bytes,
+    NoData,
+    HardError,
+}
+
+/// Pure logic: drain `reader` into `parser`. Returns whether bytes
+/// arrived, none arrived (WouldBlock / EOF), or the read errored
+/// permanently. Caller resets cava state on HardError.
+pub fn drain_into_parser<R: std::io::Read>(
+    reader: &mut R,
+    parser: &mut vt100::Parser,
+) -> DrainOutcome {
+    let mut buf = [0u8; 16384];
+    let mut got_data = false;
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                parser.process(&buf[..n]);
+                got_data = true;
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(_) => return DrainOutcome::HardError,
         }
-
-        let cava_screen = screen_to_cava_rows(parser.screen());
-
-        let mut cs = self.client_state.write().await;
-        cs.cava_screen = cava_screen;
+    }
+    if got_data {
+        DrainOutcome::Bytes
+    } else {
+        DrainOutcome::NoData
     }
 }
 
