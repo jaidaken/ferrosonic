@@ -38,7 +38,7 @@ async fn t_on_artist_node_loads_albums_and_shuffles_play() {
         .expect_get_album("alb-0", "Album One", &["s0", "s1", "s2"])
         .await;
     {
-        let mut s = td.state.write().await;
+        let mut s = app.daemon_state.write().await;
         s.library.artists = vec![ferrosonic::subsonic::models::Artist {
             id: "artist-0".into(),
             name: "ArtistName".into(),
