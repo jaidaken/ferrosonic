@@ -12,7 +12,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::daemon::DaemonCore;
 use crate::ipc::client::InProcessClient;
-use crate::ipc::frame::{read_frame, write_frame, Frame, FrameError};
+use crate::ipc::frame::{read_frame_lenient, write_frame, Frame, FrameError, FrameRead};
 use crate::ipc::path::ensure_parent_dir;
 use crate::ipc::protocol::DaemonEvent;
 use crate::ipc::DaemonClient;
@@ -110,8 +110,8 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
     });
 
     loop {
-        let frame = match read_frame(&mut reader).await {
-            Ok(f) => f,
+        let read = match read_frame_lenient(&mut reader).await {
+            Ok(r) => r,
             Err(FrameError::Closed) => {
                 debug!("Client closed connection");
                 break;
@@ -122,8 +122,8 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
             }
         };
 
-        match frame {
-            Frame::Request { id, req } => {
+        match read {
+            FrameRead::Ok(Frame::Request { id, req }) => {
                 let dispatcher = dispatcher.clone();
                 let writer_tx = writer_tx.clone();
                 tokio::spawn(async move {
@@ -133,10 +133,24 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
                     let _ = writer_tx.send(resp).await;
                 });
             }
-            Frame::Response { id, .. } => {
+            FrameRead::Ok(Frame::Response { id, .. }) => {
                 warn!("Client sent a Response frame (id={}), ignoring", id);
             }
-            Frame::Event(_) => {
+            FrameRead::Ok(Frame::Event(_)) => {
+                warn!("Client sent an Event frame, ignoring");
+            }
+            FrameRead::UnknownRequest { id, body } => {
+                warn!("Unknown request variant from client (id={}); replying with Err: {}", id, body);
+                let resp = Frame::Response {
+                    id,
+                    payload: Err(format!("unknown request variant: {}", body)),
+                };
+                let _ = writer_tx.send(resp).await;
+            }
+            FrameRead::UnknownResponse { id, .. } => {
+                warn!("Client sent a Response frame (id={}), ignoring", id);
+            }
+            FrameRead::UnknownEvent { .. } => {
                 warn!("Client sent an Event frame, ignoring");
             }
         }

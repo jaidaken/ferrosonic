@@ -25,6 +25,24 @@ pub enum Frame {
     Event(DaemonEvent),
 }
 
+/// Result of a tolerant frame parse. Splits "couldn't parse the
+/// envelope" (fatal) from "envelope OK, payload type unknown" so the
+/// reader can recover from forward/back protocol mismatches without
+/// severing the connection.
+#[derive(Debug)]
+pub enum FrameRead {
+    /// Fully parsed; payload variant was known.
+    Ok(Frame),
+    /// Envelope parsed but the request body was an unknown variant.
+    /// Daemon should reply with `Response { id, payload: Err(...) }`.
+    UnknownRequest { id: u64, body: String },
+    /// Envelope parsed but the response body was an unknown variant.
+    /// Client should resolve pending request `id` with an error.
+    UnknownResponse { id: u64, body: String },
+    /// Envelope parsed but the event was an unknown variant. Receiver
+    /// should log and continue.
+    UnknownEvent { body: String },
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum FrameError {
@@ -44,6 +62,58 @@ pub async fn read_frame<R>(reader: &mut R) -> Result<Frame, FrameError>
 where
     R: AsyncReadExt + Unpin,
 {
+    let body = read_frame_body(reader).await?;
+    let frame: Frame = serde_json::from_slice(&body)?;
+    Ok(frame)
+}
+
+/// Reads the next frame and attempts a typed parse; on unknown
+/// variants returns the envelope metadata so the caller can keep the
+/// connection alive.
+pub async fn read_frame_lenient<R>(reader: &mut R) -> Result<FrameRead, FrameError>
+where
+    R: AsyncReadExt + Unpin,
+{
+    let body = read_frame_body(reader).await?;
+
+    if let Ok(frame) = serde_json::from_slice::<Frame>(&body) {
+        return Ok(FrameRead::Ok(frame));
+    }
+
+    let raw: serde_json::Value = serde_json::from_slice(&body)?;
+
+    if let Some(req) = raw.get("Request") {
+        if let Some(id) = req.get("id").and_then(|v| v.as_u64()) {
+            let inner = req
+                .get("req")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "<missing>".into());
+            return Ok(FrameRead::UnknownRequest { id, body: inner });
+        }
+    }
+    if let Some(resp) = raw.get("Response") {
+        if let Some(id) = resp.get("id").and_then(|v| v.as_u64()) {
+            let inner = resp
+                .get("payload")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "<missing>".into());
+            return Ok(FrameRead::UnknownResponse { id, body: inner });
+        }
+    }
+    if let Some(ev) = raw.get("Event") {
+        return Ok(FrameRead::UnknownEvent {
+            body: ev.to_string(),
+        });
+    }
+
+    // Doesn't even look like a Frame envelope — fatal.
+    Err(FrameError::Serialize(serde_json::from_slice::<Frame>(&body).unwrap_err()))
+}
+
+async fn read_frame_body<R>(reader: &mut R) -> Result<Vec<u8>, FrameError>
+where
+    R: AsyncReadExt + Unpin,
+{
     let mut len_buf = [0u8; 4];
     match reader.read_exact(&mut len_buf).await {
         Ok(_) => {}
@@ -58,8 +128,7 @@ where
     }
     let mut body = vec![0u8; len];
     reader.read_exact(&mut body).await?;
-    let frame: Frame = serde_json::from_slice(&body)?;
-    Ok(frame)
+    Ok(body)
 }
 
 /// Single combined write so partial frames never reach the wire.
@@ -152,5 +221,25 @@ mod tests {
         let mut reader = buf.as_slice();
         let err = read_frame(&mut reader).await.unwrap_err();
         assert!(matches!(err, FrameError::TooLarge(_)));
+    }
+
+    #[tokio::test]
+    async fn lenient_unknown_request_returns_id() {
+        let body = serde_json::json!({
+            "Request": {
+                "id": 99,
+                "req": { "TotallyNewCommand": "hello" }
+            }
+        })
+        .to_string();
+        let len = (body.len() as u32).to_le_bytes();
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&len);
+        buf.extend_from_slice(body.as_bytes());
+        let mut reader = buf.as_slice();
+        match read_frame_lenient(&mut reader).await.unwrap() {
+            FrameRead::UnknownRequest { id, .. } => assert_eq!(id, 99),
+            other => panic!("expected UnknownRequest, got {:?}", other),
+        }
     }
 }

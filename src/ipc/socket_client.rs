@@ -14,7 +14,7 @@ use tokio::net::UnixStream;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tracing::{debug, error, warn};
 
-use crate::ipc::frame::{read_frame, write_frame, Frame, FrameError};
+use crate::ipc::frame::{read_frame_lenient, write_frame, Frame, FrameError, FrameRead};
 use crate::ipc::protocol::{DaemonEvent, DaemonRequest, DaemonResponse, IpcError};
 use crate::ipc::DaemonClient;
 
@@ -61,8 +61,8 @@ impl SocketClient {
         tokio::spawn(async move {
             let mut reader = read_half;
             loop {
-                match read_frame(&mut reader).await {
-                    Ok(Frame::Response { id, payload }) => {
+                match read_frame_lenient(&mut reader).await {
+                    Ok(FrameRead::Ok(Frame::Response { id, payload })) => {
                         let mut map = reader_pending.lock().await;
                         if let Some(tx) = map.remove(&id) {
                             let result = payload.map_err(IpcError::Daemon);
@@ -71,11 +71,27 @@ impl SocketClient {
                             warn!("Got response for unknown request id {}", id);
                         }
                     }
-                    Ok(Frame::Event(ev)) => {
+                    Ok(FrameRead::Ok(Frame::Event(ev))) => {
                         let _ = reader_events.send(ev);
                     }
-                    Ok(Frame::Request { .. }) => {
+                    Ok(FrameRead::Ok(Frame::Request { .. })) => {
                         warn!("Daemon sent a Request frame, ignoring");
+                    }
+                    Ok(FrameRead::UnknownResponse { id, body }) => {
+                        warn!("Unknown response variant from daemon (id={}); resolving pending with Err: {}", id, body);
+                        let mut map = reader_pending.lock().await;
+                        if let Some(tx) = map.remove(&id) {
+                            let _ = tx.send(Err(IpcError::Daemon(format!(
+                                "unknown response variant: {}",
+                                body
+                            ))));
+                        }
+                    }
+                    Ok(FrameRead::UnknownEvent { body }) => {
+                        warn!("Unknown event variant from daemon, ignoring: {}", body);
+                    }
+                    Ok(FrameRead::UnknownRequest { id, .. }) => {
+                        warn!("Daemon sent a Request frame (id={}), ignoring", id);
                     }
                     Err(FrameError::Closed) => {
                         debug!("Daemon socket closed cleanly");
