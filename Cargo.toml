@@ -27,8 +27,9 @@ ratatui = "0.29"
 crossterm = "0.28"
 tui-tree-widget = "0.22"
 
-# HTTP client for Subsonic API
-reqwest = { version = "0.12", features = ["json"] }
+# HTTP client for Subsonic API. rustls (not openssl) so the release
+# binary can be statically linked against musl and run on any distro.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
