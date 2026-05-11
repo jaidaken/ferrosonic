@@ -61,6 +61,50 @@ pub async fn handle_signal_received(client_state: SharedClientState) {
     s.should_quit = true;
 }
 
+/// Spawn a task that resolves `signal_fut` then sets should_quit.
+/// Tests pass any Future; production passes `wait_for_unix_quit_signal()`.
+pub fn spawn_quit_listener<F>(client_state: SharedClientState, signal_fut: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(async move {
+        signal_fut.await;
+        handle_signal_received(client_state).await;
+    });
+}
+
+/// Resolves when any of SIGTERM / SIGINT / SIGHUP fires, or returns
+/// pending forever if signal registration fails.
+pub async fn wait_for_unix_quit_signal() {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut term = match signal(SignalKind::terminate()) {
+        Ok(s) => s,
+        Err(_) => {
+            std::future::pending::<()>().await;
+            return;
+        }
+    };
+    let mut int = match signal(SignalKind::interrupt()) {
+        Ok(s) => s,
+        Err(_) => {
+            std::future::pending::<()>().await;
+            return;
+        }
+    };
+    let mut hup = match signal(SignalKind::hangup()) {
+        Ok(s) => s,
+        Err(_) => {
+            std::future::pending::<()>().await;
+            return;
+        }
+    };
+    tokio::select! {
+        _ = term.recv() => {}
+        _ = int.recv() => {}
+        _ = hup.recv() => {}
+    }
+}
+
 impl App {
     pub fn new(config: Config) -> Self {
         let daemon_state = new_shared_daemon_state(config.clone());
@@ -122,35 +166,43 @@ impl App {
     }
 
     fn spawn_signal_quit(&self) {
-        let client_state = self.client_state.clone();
-        tokio::spawn(async move {
-            use tokio::signal::unix::{signal, SignalKind};
-            let mut term = match signal(SignalKind::terminate()) {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            let mut int = match signal(SignalKind::interrupt()) {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            let mut hup = match signal(SignalKind::hangup()) {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            tokio::select! {
-                _ = term.recv() => {}
-                _ = int.recv() => {}
-                _ = hup.recv() => {}
-            }
-            handle_signal_received(client_state).await;
-        });
+        spawn_quit_listener(self.client_state.clone(), wait_for_unix_quit_signal());
     }
 
-    pub async fn run(&mut self) -> Result<(), Error> {
-        self.spawn_signal_quit();
-        let _term_guard = TerminalGuard;
-        let _poll_task = self.core.as_ref().map(|c| c.spawn_polling_task());
+    /// Test seam: load themes and set the active one from daemon config.
+    pub async fn load_and_apply_themes(&self) {
+        use crate::ui::theme::{load_themes, seed_default_themes};
+        if let Some(themes_dir) = crate::config::paths::themes_dir() {
+            seed_default_themes(&themes_dir);
+        }
+        let themes = load_themes();
+        let theme_name = {
+            let ds = self.daemon_state.read().await;
+            ds.config.theme.clone()
+        };
+        let mut cs = self.client_state.write().await;
+        cs.settings_state.themes = themes;
+        cs.settings_state.set_theme_by_name(&theme_name);
+    }
 
+    /// Test seam: check if cava binary is on PATH, update client_state.
+    pub async fn probe_cava_available(&self) {
+        let cava_available = std::process::Command::new("which")
+            .arg("cava")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        let mut cs = self.client_state.write().await;
+        cs.cava_available = cava_available;
+        if !cava_available {
+            cs.settings_state.cava_enabled = false;
+        }
+    }
+
+    /// Test seam: start mpv inside the daemon core, notify on error.
+    pub async fn start_mpv_with_notification(&self) {
         if let Some(ref core) = self.core {
             if let Err(e) = core.start_mpv().await {
                 warn!("Failed to start MPV: {} - audio playback won't work", e);
@@ -160,6 +212,14 @@ impl App {
                 info!("MPV started successfully, ready for playback");
             }
         }
+    }
+
+    pub async fn run(&mut self) -> Result<(), Error> {
+        self.spawn_signal_quit();
+        let _term_guard = TerminalGuard::new_crossterm();
+        let _poll_task = self.core.as_ref().map(|c| c.spawn_polling_task());
+
+        self.start_mpv_with_notification().await;
 
         if self.core.is_none() {
             self.bootstrap_and_pump().await;
@@ -184,36 +244,9 @@ impl App {
             }
         }
 
-        {
-            use crate::ui::theme::{load_themes, seed_default_themes};
-            if let Some(themes_dir) = crate::config::paths::themes_dir() {
-                seed_default_themes(&themes_dir);
-            }
-            let themes = load_themes();
-            let theme_name = {
-                let ds = self.daemon_state.read().await;
-                ds.config.theme.clone()
-            };
-            let mut cs = self.client_state.write().await;
-            cs.settings_state.themes = themes;
-            cs.settings_state.set_theme_by_name(&theme_name);
-        }
-
-        let cava_available = std::process::Command::new("which")
-            .arg("cava")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-
-        {
-            let mut cs = self.client_state.write().await;
-            cs.cava_available = cava_available;
-            if !cava_available {
-                cs.settings_state.cava_enabled = false;
-            }
-        }
+        self.load_and_apply_themes().await;
+        self.probe_cava_available().await;
+        let cava_available = self.client_state.read().await.cava_available;
 
         {
             let cs = self.client_state.read().await;
@@ -394,7 +427,7 @@ impl App {
         });
     }
 
-    pub(crate) async fn load_initial_data(&mut self) {
+    pub async fn load_initial_data(&mut self) {
         {
             let mut cs = self.client_state.write().await;
             cs.songs.selected_option = Some(SongOption::Starred);
@@ -476,16 +509,40 @@ impl App {
     }
 }
 
-struct TerminalGuard;
+pub struct TerminalGuard {
+    cleanup: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl TerminalGuard {
+    pub fn new_crossterm() -> Self {
+        Self {
+            cleanup: Some(Box::new(|| {
+                let _ = crossterm::terminal::disable_raw_mode();
+                let _ = crossterm::execute!(
+                    std::io::stdout(),
+                    crossterm::terminal::LeaveAlternateScreen,
+                    crossterm::event::DisableMouseCapture
+                );
+            })),
+        }
+    }
+
+    /// Test seam: cleanup closure runs when this guard is dropped.
+    pub fn with_cleanup<F>(cleanup: F) -> Self
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        Self {
+            cleanup: Some(Box::new(cleanup)),
+        }
+    }
+}
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = crossterm::terminal::disable_raw_mode();
-        let _ = crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::LeaveAlternateScreen,
-            crossterm::event::DisableMouseCapture
-        );
+        if let Some(c) = self.cleanup.take() {
+            c();
+        }
     }
 }
 
@@ -519,7 +576,7 @@ async fn run_event_pump(
 }
 
 /// Lock order: daemon, then client. Same everywhere — avoids deadlock.
-async fn apply_event(
+pub async fn apply_event(
     daemon_state: &SharedDaemonState,
     client_state: &SharedClientState,
     client: &Arc<dyn DaemonClient>,

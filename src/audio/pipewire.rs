@@ -38,25 +38,8 @@ impl PipeWireController {
             .arg("clock.force-rate")
             .output()
             .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))?;
-
         let stdout = String::from_utf8_lossy(&output.stdout);
-
-        // Format: "update: id:0 key:'clock.force-rate' value:'48000' type:''"
-        for line in stdout.lines() {
-            if line.contains("clock.force-rate") && line.contains("value:") {
-                if let Some(start) = line.find("value:'") {
-                    let rest = &line[start + 7..];
-                    if let Some(end) = rest.find('\'') {
-                        let rate_str = &rest[..end];
-                        if let Ok(rate) = rate_str.parse::<u32>() {
-                            return Ok(rate);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(0)
+        Ok(parse_force_rate_from_output(&stdout))
     }
 
     pub fn get_current_rate(&self) -> Option<u32> {
@@ -138,6 +121,23 @@ impl PipeWireController {
         self.current_rate = None;
         Ok(())
     }
+}
+
+/// Parses `value:'<rate>'` from pw-metadata output. Returns 0 if absent.
+pub fn parse_force_rate_from_output(stdout: &str) -> u32 {
+    for line in stdout.lines() {
+        if line.contains("clock.force-rate") && line.contains("value:") {
+            if let Some(start) = line.find("value:'") {
+                let rest = &line[start + 7..];
+                if let Some(end) = rest.find('\'') {
+                    if let Ok(rate) = rest[..end].parse::<u32>() {
+                        return rate;
+                    }
+                }
+            }
+        }
+    }
+    0
 }
 
 impl Default for PipeWireController {
