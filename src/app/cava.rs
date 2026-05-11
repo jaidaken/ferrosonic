@@ -142,55 +142,61 @@ impl App {
             return;
         }
 
-        let screen = parser.screen();
-        let (rows, cols) = screen.size();
-        let mut cava_screen = Vec::with_capacity(rows as usize);
-
-        for row in 0..rows {
-            let mut spans: Vec<CavaSpan> = Vec::new();
-            let mut cur_text = String::new();
-            let mut cur_fg = CavaColor::Default;
-            let mut cur_bg = CavaColor::Default;
-
-            for col in 0..cols {
-                let Some(cell) = screen.cell(row, col) else {
-                    continue;
-                };
-                let fg = vt100_color_to_cava(cell.fgcolor());
-                let bg = vt100_color_to_cava(cell.bgcolor());
-
-                if fg != cur_fg || bg != cur_bg {
-                    if !cur_text.is_empty() {
-                        spans.push(CavaSpan {
-                            text: std::mem::take(&mut cur_text),
-                            fg: cur_fg,
-                            bg: cur_bg,
-                        });
-                    }
-                    cur_fg = fg;
-                    cur_bg = bg;
-                }
-
-                let contents = cell.contents();
-                if contents.is_empty() {
-                    cur_text.push(' ');
-                } else {
-                    cur_text.push_str(&contents);
-                }
-            }
-            if !cur_text.is_empty() {
-                spans.push(CavaSpan {
-                    text: cur_text,
-                    fg: cur_fg,
-                    bg: cur_bg,
-                });
-            }
-            cava_screen.push(CavaRow { spans });
-        }
+        let cava_screen = screen_to_cava_rows(parser.screen());
 
         let mut cs = self.client_state.write().await;
         cs.cava_screen = cava_screen;
     }
+}
+
+/// Pure logic: vt100 screen to CavaRow vec. Tests feed bytes into a
+/// vt100::Parser then call this directly.
+pub fn screen_to_cava_rows(screen: &vt100::Screen) -> Vec<CavaRow> {
+    let (rows, cols) = screen.size();
+    let mut cava_screen = Vec::with_capacity(rows as usize);
+
+    for row in 0..rows {
+        let mut spans: Vec<CavaSpan> = Vec::new();
+        let mut cur_text = String::new();
+        let mut cur_fg = CavaColor::Default;
+        let mut cur_bg = CavaColor::Default;
+
+        for col in 0..cols {
+            let Some(cell) = screen.cell(row, col) else {
+                continue;
+            };
+            let fg = vt100_color_to_cava(cell.fgcolor());
+            let bg = vt100_color_to_cava(cell.bgcolor());
+
+            if fg != cur_fg || bg != cur_bg {
+                if !cur_text.is_empty() {
+                    spans.push(CavaSpan {
+                        text: std::mem::take(&mut cur_text),
+                        fg: cur_fg,
+                        bg: cur_bg,
+                    });
+                }
+                cur_fg = fg;
+                cur_bg = bg;
+            }
+
+            let contents = cell.contents();
+            if contents.is_empty() {
+                cur_text.push(' ');
+            } else {
+                cur_text.push_str(&contents);
+            }
+        }
+        if !cur_text.is_empty() {
+            spans.push(CavaSpan {
+                text: cur_text,
+                fg: cur_fg,
+                bg: cur_bg,
+            });
+        }
+        cava_screen.push(CavaRow { spans });
+    }
+    cava_screen
 }
 
 fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
