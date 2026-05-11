@@ -11,7 +11,7 @@ pub mod test_daemon;
 
 pub use fake_mpv::FakeMpv;
 pub use fake_subsonic::FakeSubsonic;
-pub use fixtures::{song, songs};
+pub use fixtures::{song, song_starred, songs};
 pub use recording_client::RecordingClient;
 pub use render::render;
 pub use test_daemon::TestDaemon;
