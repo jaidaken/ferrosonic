@@ -191,6 +191,113 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_get_artist(&self, id: &str, name: &str, albums: &[&str]) {
+        let album_list: Vec<Value> = albums
+            .iter()
+            .enumerate()
+            .map(|(i, n)| json!({"id": format!("alb-{}", i), "name": n, "artist": name, "artistId": id}))
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getArtist"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(ok_body(json!({
+                "artist": {"id": id, "name": name, "album": album_list}
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_get_album(&self, id: &str, name: &str, songs: &[&str]) {
+        let song_list: Vec<Value> = songs
+            .iter()
+            .enumerate()
+            .map(|(i, title)| {
+                json!({
+                    "id": format!("song-{}", i),
+                    "title": title,
+                    "artist": "Test Artist",
+                    "album": name,
+                    "duration": 180,
+                    "isDir": false
+                })
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbum"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(ok_body(json!({
+                "album": {
+                    "id": id,
+                    "name": name,
+                    "song": song_list
+                }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_get_playlist(&self, id: &str, name: &str, songs: &[&str]) {
+        let song_list: Vec<Value> = songs
+            .iter()
+            .enumerate()
+            .map(|(i, title)| {
+                json!({
+                    "id": format!("song-{}", i),
+                    "title": title,
+                    "artist": "X",
+                    "album": "Y",
+                    "duration": 180
+                })
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getPlaylist"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(ok_body(json!({
+                "playlist": {
+                    "id": id,
+                    "name": name,
+                    "entry": song_list
+                }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_get_cover_art(&self, id: &str, body: Vec<u8>) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getCoverArt"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(body)
+                    .insert_header("content-type", "image/png"),
+            )
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_get_playlists_with(&self, playlists: &[(&str, &str)]) {
+        let pl_list: Vec<Value> = playlists
+            .iter()
+            .map(|(id, name)| {
+                json!({
+                    "id": id,
+                    "name": name,
+                    "songCount": 5,
+                    "duration": 900
+                })
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getPlaylists"))
+            .respond_with(ok_body(json!({
+                "playlists": { "playlist": pl_list }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_stream_for(&self, song_id: &str, body: Vec<u8>) {
         Mock::given(method("GET"))
             .and(path("/rest/stream"))
