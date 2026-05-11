@@ -41,8 +41,8 @@ pub struct App {
     /// `Some` in-process, `None` when talking to a remote daemon.
     pub(crate) core: Option<Arc<DaemonCore>>,
     pub(crate) client: Arc<dyn DaemonClient>,
-    pub(crate) daemon_state: SharedDaemonState,
-    pub(crate) client_state: SharedClientState,
+    pub daemon_state: SharedDaemonState,
+    pub client_state: SharedClientState,
     pub(crate) cava_process: Option<std::process::Child>,
     pub(crate) cava_pty_master: Option<std::fs::File>,
     pub(crate) cava_parser: Option<vt100::Parser>,

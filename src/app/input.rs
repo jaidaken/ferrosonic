@@ -5,8 +5,9 @@ use crate::error::Error;
 use super::*;
 
 impl App {
-    /// Handle terminal events
-    pub(super) async fn handle_event(&mut self, event: Event) -> Result<(), Error> {
+    /// Handle terminal events. Pub for integration tests; production
+    /// callers use `App::run`.
+    pub async fn handle_event(&mut self, event: Event) -> Result<(), Error> {
         match event {
             Event::Key(key) => {
                 // Only handle key press events, ignore release and repeat
@@ -38,7 +39,7 @@ impl App {
         }
     }
 
-    pub(super) async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+    pub async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState {
