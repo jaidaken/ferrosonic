@@ -102,6 +102,9 @@ tokio-test = "0.4"
 mockall = "0.13"
 # Serialize tests that share global state (env vars, working dir).
 serial_test = "3"
+# Subprocess-based binary tests (asserts on exit code, stdout, stderr).
+assert_cmd = "2"
+predicates = "3"
 
 [profile.release]
 lto = true
