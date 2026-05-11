@@ -1,10 +1,9 @@
 name: test
 
+# Manual trigger only. Run from the Actions tab or via
+# `gh workflow run test`. The release workflow still fires on tag push.
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
