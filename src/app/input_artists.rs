@@ -152,7 +152,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('s') => {
+            KeyCode::Char('r') => {
                 if state.client.artists.focus == 0 {
                     let tree_items = build_tree_items(&state);
                     if let Some(idx) = state.client.artists.selected_index {

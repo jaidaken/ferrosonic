@@ -132,6 +132,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 | `l` | Next track |
 | `h` | Previous track |
 | `n` | Star/unstar currently-playing song |
+| `Shift+R` | Shuffle the entire library and play |
 | `t` | Cycle to next theme |
 | `Ctrl+R` | Refresh data from server |
 | `F1` | Library page |
@@ -154,7 +155,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 | `Backspace` | Return to tree from song list |
 | `e` | Add selected item to end of queue |
 | `i` | Add selected item as next in queue |
-| `s` | Shuffle play all songs by the selected artist or album |
+| `r` | Shuffle play all songs by the selected artist or album |
 | `m` | Star/unstar highlighted song (songs pane focus only) |
 
 ### Queue Page (F2)

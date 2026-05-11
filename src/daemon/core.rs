@@ -955,6 +955,36 @@ impl DaemonCore {
         removed
     }
 
+    /// Fetch a fresh random-songs roll from the server and replace the
+    /// queue with it, starting playback at index 0. No-op when not
+    /// configured or the fetch fails.
+    pub async fn shuffle_library(self: &Arc<Self>) -> Result<(), Error> {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Ok(());
+        };
+        let songs = match client.get_random_songs().await {
+            Ok(s) if !s.is_empty() => s,
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                error!("Failed to load random songs: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to shuffle library: {}", e),
+                    is_error: true,
+                });
+                return Ok(());
+            }
+        };
+        {
+            let mut state = self.state.write().await;
+            state.library.random_songs = songs.clone();
+            state.queue = songs.clone();
+            state.queue_position = None;
+        }
+        self.emit(DaemonEvent::RandomChanged(songs));
+        self.emit_queue().await;
+        self.play_queue_position(0).await
+    }
+
     /// Shuffle the queue, preserving the currently-playing track at its
     /// position. No-op on an empty queue.
     pub async fn shuffle_queue(self: &Arc<Self>) {

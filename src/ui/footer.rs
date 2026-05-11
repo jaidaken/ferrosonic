@@ -39,65 +39,73 @@ impl<'a> Footer<'a> {
         self
     }
 
-    fn keybinds(&self) -> Vec<(&'static str, &'static str)> {
-        let mut binds = vec![
+    fn global_keybinds(&self) -> Vec<(&'static str, &'static str)> {
+        vec![
             ("q", "Quit"),
             ("p/Space", "Pause"),
-            ("s", "Shuffle"),
             ("h", "Prev"),
             ("l", "Next"),
-            ("t", "Theme"),
             ("n", "Star playing"),
-        ];
-
-        match self.page {
-            Page::QuickPlay => {
-                binds.extend([("m", "Star selected"), ("Enter", "Play")]);
-            }
-            Page::Library => {
-                binds.extend([
-                    ("m", "Star selected"),
-                    ("/", "Filter"),
-                    ("←/→", "Focus"),
-                    ("e", "Add"),
-                    ("i", "Add next"),
-                    ("Enter", "Play"),
-                ]);
-            }
-            Page::Queue => {
-                binds.extend([
-                    ("m", "Star selected"),
-                    ("d", "Remove"),
-                    ("J/K", "Move"),
-                    ("r", "Shuffle"),
-                    ("c", "Clear history"),
-                    ("Enter", "Play"),
-                ]);
-            }
-            Page::Playlists => {
-                binds.extend([
-                    ("m", "Star selected"),
-                    ("←/→", "Focus"),
-                    ("e", "Add"),
-                    ("i", "Add next"),
-                    ("r", "Shuffle play"),
-                    ("Enter", "Play"),
-                ]);
-            }
-            Page::Server => {
-                binds.extend([
-                    ("Tab", "Next field"),
-                    ("Enter", "Test/Save"),
-                    ("Ctrl+R", "Refresh"),
-                ]);
-            }
-            Page::Settings => {
-                binds.extend([("←/→/Enter", "Change theme")]);
-            }
-        }
-
-        binds
+            ("R", "Shuffle library"),
+            ("t", "Theme"),
+        ]
     }
+
+    fn page_keybinds(&self) -> Vec<(&'static str, &'static str)> {
+        match self.page {
+            Page::QuickPlay => vec![
+                ("m", "Star selected"),
+                ("Enter", "Play"),
+            ],
+            Page::Library => vec![
+                ("m", "Star selected"),
+                ("/", "Filter"),
+                ("←/→", "Focus"),
+                ("e", "Add"),
+                ("i", "Add next"),
+                ("r", "Shuffle"),
+                ("Enter", "Play"),
+            ],
+            Page::Queue => vec![
+                ("m", "Star selected"),
+                ("d", "Remove"),
+                ("J/K", "Move"),
+                ("r", "Shuffle"),
+                ("c", "Clear history"),
+                ("Enter", "Play"),
+            ],
+            Page::Playlists => vec![
+                ("m", "Star selected"),
+                ("←/→", "Focus"),
+                ("e", "Add"),
+                ("i", "Add next"),
+                ("r", "Shuffle play"),
+                ("Enter", "Play"),
+            ],
+            Page::Server => vec![
+                ("Tab", "Next field"),
+                ("Enter", "Test/Save"),
+                ("Ctrl+R", "Refresh"),
+            ],
+            Page::Settings => vec![("←/→/Enter", "Change")],
+        }
+    }
+}
+
+fn render_binds<'a>(
+    binds: &[(&'static str, &'static str)],
+    colors: &ThemeColors,
+) -> Line<'a> {
+    let mut spans = Vec::new();
+    for (i, (key, desc)) in binds.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" │ ", Style::default().fg(colors.secondary)));
+        }
+        spans.push(Span::styled(*key, Style::default().fg(colors.accent)));
+        spans.push(Span::raw(":"));
+        spans.push(Span::styled(*desc, Style::default().fg(colors.muted)));
+    }
+    Line::from(spans)
 }
 
 impl Widget for Footer<'_> {
@@ -106,38 +114,31 @@ impl Widget for Footer<'_> {
             return;
         }
 
+        // Split horizontally: left for binds/notification, right for sample rate.
         let chunks = Layout::horizontal([Constraint::Min(40), Constraint::Length(30)]).split(area);
+        let left = chunks[0];
+        let right = chunks[1];
 
-        // Left side: keybinds or notification
+        // Notification (when present) takes the whole left block and replaces
+        // the keybind hints temporarily.
         if let Some(notif) = self.notification {
             let style = if notif.is_error {
                 Style::default().fg(self.colors.error)
             } else {
                 Style::default().fg(self.colors.success)
             };
-            buf.set_string(chunks[0].x, chunks[0].y, &notif.message, style);
+            buf.set_string(left.x, left.y, &notif.message, style);
         } else {
-            // Keybind hints
-            let binds = self.keybinds();
-            let mut spans = Vec::new();
-
-            for (i, (key, desc)) in binds.iter().enumerate() {
-                if i > 0 {
-                    spans.push(Span::styled(
-                        " │ ",
-                        Style::default().fg(self.colors.secondary),
-                    ));
-                }
-                spans.push(Span::styled(*key, Style::default().fg(self.colors.accent)));
-                spans.push(Span::raw(":"));
-                spans.push(Span::styled(*desc, Style::default().fg(self.colors.muted)));
+            // Row 0: global binds. Row 1: page-specific binds.
+            let global_line = render_binds(&self.global_keybinds(), &self.colors);
+            buf.set_line(left.x, left.y, &global_line, left.width);
+            if area.height >= 2 {
+                let page_line = render_binds(&self.page_keybinds(), &self.colors);
+                buf.set_line(left.x, left.y + 1, &page_line, left.width);
             }
-
-            let line = Line::from(spans);
-            buf.set_line(chunks[0].x, chunks[0].y, &line, chunks[0].width);
         }
 
-        // Right side: sample rate / status
+        // Sample rate, top-right corner.
         if let Some(rate) = self.sample_rate {
             let khz = rate as f64 / 1000.0;
             let rate_str = if khz == khz.floor() {
@@ -145,10 +146,10 @@ impl Widget for Footer<'_> {
             } else {
                 format!("{:.1}kHz", khz)
             };
-            let x = chunks[1].x + chunks[1].width.saturating_sub(rate_str.len() as u16);
+            let x = right.x + right.width.saturating_sub(rate_str.len() as u16);
             buf.set_string(
                 x,
-                chunks[1].y,
+                right.y,
                 &rate_str,
                 Style::default().fg(self.colors.success),
             );

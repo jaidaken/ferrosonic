@@ -160,6 +160,10 @@ impl DaemonClient for InProcessClient {
                 self.core.shuffle_queue().await;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::ShuffleLibrary => {
+                self.core.shuffle_library().await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
             DaemonRequest::MoveQueueItem { from, to } => {
                 self.core.move_queue_item(from, to).await;
                 Ok(DaemonResponse::Ok)

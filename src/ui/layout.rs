@@ -31,7 +31,7 @@ pub fn draw(frame: &mut Frame, state: &mut AppState<'_>) {
             Constraint::Percentage(state.client.settings_state.cava_size as u16), // Cava visualizer
             Constraint::Min(10),                                           // Page content
             Constraint::Length(7),                                         // Now playing
-            Constraint::Length(1),                                         // Footer
+            Constraint::Length(2),                                         // Footer
         ])
         .split(area);
         (chunks[0], Some(chunks[1]), chunks[2], chunks[3], chunks[4])
@@ -40,7 +40,7 @@ pub fn draw(frame: &mut Frame, state: &mut AppState<'_>) {
             Constraint::Length(1), // Header
             Constraint::Min(10),   // Page content
             Constraint::Length(7), // Now playing
-            Constraint::Length(1), // Footer
+            Constraint::Length(2), // Footer
         ])
         .split(area);
         (chunks[0], None, chunks[1], chunks[2], chunks[3])

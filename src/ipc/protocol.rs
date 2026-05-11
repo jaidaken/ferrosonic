@@ -63,6 +63,10 @@ pub enum DaemonRequest {
     ClearQueue,
     /// Shuffle the current queue (preserving the currently-playing track).
     ShuffleQueue,
+    /// Fetch a fresh roll of random songs from the server and replace
+    /// the queue with them, starting playback at index 0. Atomic from
+    /// the client's perspective.
+    ShuffleLibrary,
     /// Reorder a queue item from one index to another. The
     /// `queue_position` is fixed up so the currently-playing track
     /// continues to point at the same song.

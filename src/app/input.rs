@@ -159,6 +159,13 @@ impl App {
                 }
                 return Ok(());
             }
+            // Shift+R: shuffle the entire library and play.
+            (KeyCode::Char('R'), _) => {
+                state.client.notify("Shuffling library...");
+                drop(state); drop(cs); drop(ds);
+                let _ = self.client.request(DaemonRequest::ShuffleLibrary).await;
+                return Ok(());
+            }
             // Ctrl+R to refresh data from server
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 state.client.notify("Refreshing...");
