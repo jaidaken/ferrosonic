@@ -1085,6 +1085,32 @@ impl DaemonCore {
         }
     }
 
+    /// Server-side search across artists, albums, and songs via the
+    /// Subsonic `search3` endpoint. Returns an empty result on error
+    /// or when unconfigured (logged, no notification — the TUI shows
+    /// "no matches" naturally).
+    pub async fn search(
+        self: &Arc<Self>,
+        query: &str,
+        artist_count: u32,
+        album_count: u32,
+        song_count: u32,
+    ) -> crate::subsonic::models::SearchResult3 {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Default::default();
+        };
+        match client
+            .search3(query, artist_count, album_count, song_count)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                error!("search3 failed: {}", e);
+                Default::default()
+            }
+        }
+    }
+
     /// Fetch the songs for a playlist. Empty `Vec` if not configured or
     /// fetch fails (the error is logged and pushed as a notification).
     pub async fn load_playlist_songs(self: &Arc<Self>, playlist_id: &str) -> Vec<crate::subsonic::models::Child> {

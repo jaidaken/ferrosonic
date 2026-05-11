@@ -116,6 +116,26 @@ impl App {
                             self.last_click = Some((x, y, std::time::Instant::now()));
                             return Ok(());
                         }
+                        TreeItem::Song { song } => {
+                            let song = song.clone();
+                            let title = song.title.clone();
+                            drop(state); drop(cs); drop(ds);
+                            {
+                                let ds = self.daemon_state.read().await;
+                                let mut cs = self.client_state.write().await;
+                                let state = AppState { daemon: &*ds, client: &mut *cs };
+                                state.client.notify(format!("Playing: {}", title));
+                            }
+                            let _ = self
+                                .client
+                                .request(DaemonRequest::EnqueueSongs {
+                                    songs: vec![song],
+                                    mode: EnqueueMode::Replace { play_from: Some(0) },
+                                })
+                                .await;
+                            self.last_click = Some((x, y, std::time::Instant::now()));
+                            return Ok(());
+                        }
                     }
                 } else {
                     // First click on album: preview songs in right pane

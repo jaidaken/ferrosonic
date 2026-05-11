@@ -79,6 +79,27 @@ impl SubsonicClient {
         Ok(())
     }
 
+    /// Server-side search across artists, albums, and songs via the
+    /// `search3` endpoint. Each count caps how many results of that
+    /// kind the server returns.
+    pub async fn search3(
+        &self,
+        query: &str,
+        artist_count: u32,
+        album_count: u32,
+        song_count: u32,
+    ) -> Result<SearchResult3, SubsonicError> {
+        let endpoint = format!(
+            "search3?query={}&artistCount={}&albumCount={}&songCount={}",
+            urlencoding::encode(query),
+            artist_count,
+            album_count,
+            song_count,
+        );
+        let data: Search3Data = self.request(&endpoint).await?;
+        Ok(data.result)
+    }
+
     pub async fn star_song(&self, id: &str) -> Result<(), SubsonicError> {
         self.request_action(&format!("star?id={}", urlencoding::encode(id))).await
     }

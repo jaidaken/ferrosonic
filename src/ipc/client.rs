@@ -213,6 +213,18 @@ impl DaemonClient for InProcessClient {
                 let songs = self.core.load_playlist_songs(&id).await;
                 Ok(DaemonResponse::PlaylistSongs(songs))
             }
+            DaemonRequest::Search {
+                query,
+                artist_count,
+                album_count,
+                song_count,
+            } => {
+                let results = self
+                    .core
+                    .search(&query, artist_count, album_count, song_count)
+                    .await;
+                Ok(DaemonResponse::SearchResults(results))
+            }
 
             // ── Config operations ───────────────────────────────────
             DaemonRequest::UpdateServerConfig {

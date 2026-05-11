@@ -7,26 +7,60 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::state::AppState;
-use crate::subsonic::models::{Album, Artist};
+use crate::app::state::{AppState, FilterScope};
+use crate::subsonic::models::{Album, Artist, Child};
 use crate::ui::styled_lines::get_song_without_artist_line;
 use crate::ui::theme::ThemeColors;
 
-/// A tree item - either an artist or an album
+/// One row in the left-hand tree. Artist and Album come from the
+/// library cache; Song appears only when the filter scope is
+/// Songs and the daemon's search3 reply is in.
 #[derive(Clone)]
 pub enum TreeItem {
     Artist { artist: Artist, expanded: bool },
     Album { album: Album },
+    Song { song: Child },
 }
 
-/// Build flattened tree items from state
+/// Build flattened tree items from state.
+///
+/// Two modes:
+/// 1. No filter (or filter set but search reply hasn't landed yet):
+///    walk the library tree and substring-filter artist names.
+/// 2. Filter typed and search results present: render the slice of
+///    the search3 reply matching the current FilterScope.
 pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
     let ui = &state.client.artists;
-    let library_artists = &state.daemon.library.artists;
     let albums_cache = &state.daemon.library.albums_cache;
-    let mut items = Vec::new();
 
-    // Filter artists by name
+    if !ui.filter.is_empty() {
+        if let Some(results) = &ui.search_results {
+            return match ui.filter_scope {
+                FilterScope::Artists => results
+                    .artist
+                    .iter()
+                    .map(|a| TreeItem::Artist {
+                        artist: a.clone(),
+                        expanded: ui.expanded.contains(&a.id),
+                    })
+                    .collect(),
+                FilterScope::Albums => results
+                    .album
+                    .iter()
+                    .map(|a| TreeItem::Album { album: a.clone() })
+                    .collect(),
+                FilterScope::Songs => results
+                    .song
+                    .iter()
+                    .map(|s| TreeItem::Song { song: s.clone() })
+                    .collect(),
+            };
+        }
+        // Fall through to local artist-name filter while the
+        // server query is in flight.
+    }
+
+    let library_artists = &state.daemon.library.artists;
     let filtered_artists: Vec<_> = if ui.filter.is_empty() {
         library_artists.iter().collect()
     } else {
@@ -37,6 +71,7 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
             .collect()
     };
 
+    let mut items = Vec::new();
     for artist in filtered_artists {
         let is_expanded = ui.expanded.contains(&artist.id);
         items.push(TreeItem::Artist {
@@ -44,18 +79,14 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
             expanded: is_expanded,
         });
 
-        // If expanded, add albums sorted by year (oldest first)
         if is_expanded {
             if let Some(albums) = albums_cache.get(&artist.id) {
                 let mut sorted_albums: Vec<Album> = albums.to_vec();
-                sorted_albums.sort_by(|a, b| {
-                    // Albums with no year go last
-                    match (a.year, b.year) {
-                        (None, None) => std::cmp::Ordering::Equal,
-                        (None, Some(_)) => std::cmp::Ordering::Greater,
-                        (Some(_), None) => std::cmp::Ordering::Less,
-                        (Some(y1), Some(y2)) => std::cmp::Ord::cmp(&y1, &y2),
-                    }
+                sorted_albums.sort_by(|a, b| match (a.year, b.year) {
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (Some(y1), Some(y2)) => std::cmp::Ord::cmp(&y1, &y2),
                 });
                 for album in sorted_albums {
                     items.push(TreeItem::Album { album });
@@ -90,10 +121,11 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
         Style::default().fg(colors.border_unfocused)
     };
 
+    let scope_label = artists.filter_scope.label();
     let title = if artists.filter_active {
-        format!(" Artists (/{}) ", artists.filter)
+        format!(" {} (/{}) ", capitalize(scope_label), artists.filter)
     } else if !artists.filter.is_empty() {
-        format!(" Artists [{}] ", artists.filter)
+        format!(" {} [{}] ", capitalize(scope_label), artists.filter)
     } else {
         " Artists ".to_string()
     };
@@ -136,10 +168,40 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
                         Style::default().fg(colors.album)
                     };
 
-                    // Indent albums with tree-style connector, show year in brackets
+                    // Albums get a tree connector when we're inside an
+                    // expanded artist; in album-scope search results
+                    // the artist is shown inline instead.
                     let year_str = album.year.map(|y| format!(" [{}]", y)).unwrap_or_default();
-                    let text = format!("  └─ {}{}", album.name, year_str);
+                    let text = if !artists.filter.is_empty()
+                        && artists.search_results.is_some()
+                        && artists.filter_scope == FilterScope::Albums
+                    {
+                        let artist = album.artist.as_deref().unwrap_or("");
+                        if artist.is_empty() {
+                            format!("{}{}", album.name, year_str)
+                        } else {
+                            format!("{} — {}{}", artist, album.name, year_str)
+                        }
+                    } else {
+                        format!("  └─ {}{}", album.name, year_str)
+                    };
 
+                    ListItem::new(text).style(style)
+                }
+                TreeItem::Song { song } => {
+                    let style = if is_selected {
+                        Style::default()
+                            .fg(colors.song)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(colors.song)
+                    };
+                    let artist = song.artist.as_deref().unwrap_or("");
+                    let text = if artist.is_empty() {
+                        song.title.clone()
+                    } else {
+                        format!("{} — {}", artist, song.title)
+                    };
                     ListItem::new(text).style(style)
                 }
             }
@@ -245,4 +307,12 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
 
     frame.render_stateful_widget(list, area, &mut list_state);
     state.client.artists.song_scroll_offset = list_state.offset();
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(first) => first.to_uppercase().chain(c).collect(),
+        None => String::new(),
+    }
 }

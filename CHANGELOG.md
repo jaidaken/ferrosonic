@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Library search across the whole server. `/` still filters the artist
+  tree by name, but pressing `/` again on an empty filter cycles the
+  scope to albums, then songs. Whatever you type after that goes
+  through the Subsonic `search3` endpoint, so you find tracks even
+  when the artist isn't expanded. Stale replies from fast typing are
+  dropped via a generation counter.
+- Auto-continue. When the queue empties at the end of the last track,
+  the daemon fetches a fresh roll of random songs and keeps playing.
+  Off by default, toggled on F6 (Settings).
+- Two-line footer so all of the keyboard shortcuts actually fit.
+- `Shift+R` shuffles the whole library (server fetches a fresh random
+  roll and starts playing). `r` on the Library page now shuffles the
+  highlighted artist or album. The old per-page `s` shuffle is gone.
+
 ## [0.3.0] - 2026-05-11
 
 The big one. Ferrosonic is now two binaries instead of one, so music keeps

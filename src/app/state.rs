@@ -150,16 +150,52 @@ pub struct ArtistsState {
     pub songs: Vec<Child>,
     /// Currently selected song index
     pub selected_song: Option<usize>,
-    /// Artist filter text
+    /// Filter query text (used in all three filter scopes).
     pub filter: String,
-    /// Whether filter input is active
+    /// Whether filter input is active (capturing keystrokes).
     pub filter_active: bool,
+    /// Which kind of items the filter searches across.
+    pub filter_scope: FilterScope,
+    /// Latest server-side search results when filtering. Cleared on
+    /// filter exit. Server returns up to N each of artists/albums/songs.
+    pub search_results: Option<crate::subsonic::models::SearchResult3>,
+    /// Monotonic counter bumped on every keystroke that changes the
+    /// query/scope. A spawned search task captures the value at send
+    /// time and only commits its reply if the value still matches —
+    /// stale replies from fast typing are silently dropped.
+    pub search_gen: u64,
     /// Focus: 0 = tree, 1 = songs
     pub focus: usize,
     /// Scroll offset for the tree list (set after render)
     pub tree_scroll_offset: usize,
     /// Scroll offset for the songs list (set after render)
     pub song_scroll_offset: usize,
+}
+
+/// What kind of item the Library-page filter is matching against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FilterScope {
+    #[default]
+    Artists,
+    Albums,
+    Songs,
+}
+
+impl FilterScope {
+    pub fn label(self) -> &'static str {
+        match self {
+            FilterScope::Artists => "artists",
+            FilterScope::Albums => "albums",
+            FilterScope::Songs => "songs",
+        }
+    }
+    pub fn cycle(self) -> Self {
+        match self {
+            FilterScope::Artists => FilterScope::Albums,
+            FilterScope::Albums => FilterScope::Songs,
+            FilterScope::Songs => FilterScope::Artists,
+        }
+    }
 }
 
 /// Queue page state

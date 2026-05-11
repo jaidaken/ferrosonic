@@ -244,3 +244,22 @@ pub struct PlaylistDetail {
 /// Ping response (for testing connection)
 #[derive(Debug, Deserialize)]
 pub struct PingData {}
+
+/// Subsonic `search3` response wrapper.
+#[derive(Debug, Deserialize)]
+pub struct Search3Data {
+    #[serde(rename = "searchResult3", default)]
+    pub result: SearchResult3,
+}
+
+/// Search results across all three Subsonic categories. Any list may
+/// be empty depending on what matched.
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct SearchResult3 {
+    #[serde(default)]
+    pub artist: Vec<Artist>,
+    #[serde(default)]
+    pub album: Vec<Album>,
+    #[serde(default)]
+    pub song: Vec<Child>,
+}

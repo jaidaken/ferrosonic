@@ -21,22 +21,79 @@ impl App {
 
         // Handle filter input mode
         if state.client.artists.filter_active {
+            let mut scope_or_query_changed = false;
             match key.code {
                 KeyCode::Esc => {
                     state.client.artists.filter_active = false;
                     state.client.artists.filter.clear();
+                    state.client.artists.search_results = None;
+                    state.client.artists.filter_scope = Default::default();
+                    drop(state); drop(cs); drop(ds);
+                    return Ok(());
                 }
                 KeyCode::Enter => {
                     state.client.artists.filter_active = false;
+                    drop(state); drop(cs); drop(ds);
+                    return Ok(());
                 }
                 KeyCode::Backspace => {
                     state.client.artists.filter.pop();
+                    scope_or_query_changed = true;
+                }
+                KeyCode::Char('/') => {
+                    // Successive slashes cycle the scope when the
+                    // query is empty. Once the user has typed any
+                    // other character, '/' is appended literally.
+                    if state.client.artists.filter.is_empty() {
+                        let new_scope = state.client.artists.filter_scope.cycle();
+                        state.client.artists.filter_scope = new_scope;
+                        state.client.artists.search_results = None;
+                        let label = new_scope.label();
+                        state.client.notify(format!("Filter: {}", label));
+                    } else {
+                        state.client.artists.filter.push('/');
+                        scope_or_query_changed = true;
+                    }
                 }
                 KeyCode::Char(c) => {
                     state.client.artists.filter.push(c);
+                    scope_or_query_changed = true;
                 }
                 _ => {}
             }
+            if !scope_or_query_changed {
+                drop(state); drop(cs); drop(ds);
+                return Ok(());
+            }
+            state.client.artists.search_gen = state.client.artists.search_gen.wrapping_add(1);
+            let gen = state.client.artists.search_gen;
+            let query = state.client.artists.filter.clone();
+            drop(state); drop(cs); drop(ds);
+            if query.is_empty() {
+                let mut cs = self.client_state.write().await;
+                cs.artists.search_results = None;
+                return Ok(());
+            }
+            let client = self.client.clone();
+            let client_state = self.client_state.clone();
+            tokio::spawn(async move {
+                let resp = client
+                    .request(DaemonRequest::Search {
+                        query,
+                        artist_count: 100,
+                        album_count: 100,
+                        song_count: 200,
+                    })
+                    .await;
+                if let Ok(crate::ipc::DaemonResponse::SearchResults(r)) = resp {
+                    let mut cs = client_state.write().await;
+                    // Discard stale replies — only commit if the user
+                    // hasn't typed since this request was issued.
+                    if cs.artists.search_gen == gen {
+                        cs.artists.search_results = Some(r);
+                    }
+                }
+            });
             return Ok(());
         }
 
@@ -46,6 +103,8 @@ impl App {
             }
             KeyCode::Esc => {
                 state.client.artists.filter.clear();
+                state.client.artists.search_results = None;
+                state.client.artists.filter_scope = Default::default();
                 state.client.artists.expanded.clear();
                 state.client.artists.selected_index = Some(0);
             }
@@ -256,6 +315,27 @@ impl App {
                                         .map(|_| ())
                                         .map_err(Error::from);
                                 }
+                                TreeItem::Song { song } => {
+                                    // Single-song "shuffle" just plays the song.
+                                    let song = song.clone();
+                                    let title = song.title.clone();
+                                    drop(state); drop(cs); drop(ds);
+                                    {
+                                        let ds = self.daemon_state.read().await;
+                                        let mut cs = self.client_state.write().await;
+                                        let state = AppState { daemon: &*ds, client: &mut *cs };
+                                        state.client.notify(format!("Playing: {}", title));
+                                    }
+                                    return self
+                                        .client
+                                        .request(DaemonRequest::EnqueueSongs {
+                                            songs: vec![song],
+                                            mode: EnqueueMode::Replace { play_from: Some(0) },
+                                        })
+                                        .await
+                                        .map(|_| ())
+                                        .map_err(Error::from);
+                                }
                             }
                         }
                     }
@@ -342,6 +422,25 @@ impl App {
                                         .await;
                                     return Ok(());
                                 }
+                                TreeItem::Song { song } => {
+                                    let song = song.clone();
+                                    let title = song.title.clone();
+                                    drop(state); drop(cs); drop(ds);
+                                    {
+                                        let ds = self.daemon_state.read().await;
+                                        let mut cs = self.client_state.write().await;
+                                        let state = AppState { daemon: &*ds, client: &mut *cs };
+                                        state.client.notify(format!("Playing: {}", title));
+                                    }
+                                    let _ = self
+                                        .client
+                                        .request(DaemonRequest::EnqueueSongs {
+                                            songs: vec![song],
+                                            mode: EnqueueMode::Replace { play_from: Some(0) },
+                                        })
+                                        .await;
+                                    return Ok(());
+                                }
                             }
                         }
                     }
@@ -389,6 +488,36 @@ impl App {
                                 .await;
                         }
                     }
+                } else if state.client.artists.focus == 0
+                    && !state.client.artists.filter.is_empty()
+                    && state.client.artists.search_results.is_some()
+                {
+                    // In search-results mode, 'e' appends whatever's
+                    // selected (artist's all songs / album / single song).
+                    let tree_items = build_tree_items(&state);
+                    if let Some(idx) = state.client.artists.selected_index {
+                        if let Some(item) = tree_items.get(idx).cloned() {
+                            drop(state); drop(cs); drop(ds);
+                            let songs = self.collect_songs_for(&item).await;
+                            if !songs.is_empty() {
+                                let count = songs.len();
+                                {
+                                    let ds = self.daemon_state.read().await;
+                                    let mut cs = self.client_state.write().await;
+                                    let state = AppState { daemon: &*ds, client: &mut *cs };
+                                    state.client.notify(format!("Added {} songs to queue", count));
+                                }
+                                let _ = self
+                                    .client
+                                    .request(DaemonRequest::EnqueueSongs {
+                                        songs,
+                                        mode: EnqueueMode::Append,
+                                    })
+                                    .await;
+                            }
+                            return Ok(());
+                        }
+                    }
                 } else if !state.client.artists.songs.is_empty() {
                     let count = state.client.artists.songs.len();
                     let songs = state.client.artists.songs.clone();
@@ -424,6 +553,35 @@ impl App {
                                 .await;
                         }
                     }
+                } else if state.client.artists.focus == 0
+                    && !state.client.artists.filter.is_empty()
+                    && state.client.artists.search_results.is_some()
+                {
+                    let tree_items = build_tree_items(&state);
+                    if let Some(idx) = state.client.artists.selected_index {
+                        if let Some(item) = tree_items.get(idx).cloned() {
+                            drop(state); drop(cs); drop(ds);
+                            let songs = self.collect_songs_for(&item).await;
+                            if !songs.is_empty() {
+                                let count = songs.len();
+                                {
+                                    let ds = self.daemon_state.read().await;
+                                    let mut cs = self.client_state.write().await;
+                                    let state = AppState { daemon: &*ds, client: &mut *cs };
+                                    state.client.notify(format!("Playing {} songs next", count));
+                                }
+                                let mode = match cur_pos {
+                                    Some(pos) => EnqueueMode::InsertAfter(pos),
+                                    None => EnqueueMode::Append,
+                                };
+                                let _ = self
+                                    .client
+                                    .request(DaemonRequest::EnqueueSongs { songs, mode })
+                                    .await;
+                            }
+                            return Ok(());
+                        }
+                    }
                 } else if !state.client.artists.songs.is_empty() {
                     let count = state.client.artists.songs.len();
                     let songs = state.client.artists.songs.clone();
@@ -454,9 +612,62 @@ impl App {
                 }
                 return Ok(());
             }
+            KeyCode::Char('m')
+                if state.client.artists.focus == 0
+                    && !state.client.artists.filter.is_empty()
+                    && state.client.artists.search_results.is_some() =>
+            {
+                let tree_items = build_tree_items(&state);
+                let song_id = state
+                    .client
+                    .artists
+                    .selected_index
+                    .and_then(|idx| tree_items.get(idx))
+                    .and_then(|item| match item {
+                        TreeItem::Song { song } => Some(song.id.clone()),
+                        _ => None,
+                    });
+                drop(state); drop(cs); drop(ds);
+                if let Some(id) = song_id {
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::ToggleStarSong(id))
+                        .await;
+                }
+                return Ok(());
+            }
             _ => {}
         }
 
         Ok(())
+    }
+
+    /// Resolve a left-tree selection (Artist / Album / Song) into the
+    /// list of songs it represents. Used by 'e' (append) and 'i'
+    /// (play next) when operating on search results.
+    async fn collect_songs_for(
+        &mut self,
+        item: &crate::ui::pages::artists::TreeItem,
+    ) -> Vec<crate::subsonic::models::Child> {
+        use crate::ui::pages::artists::TreeItem;
+        match item {
+            TreeItem::Song { song } => vec![song.clone()],
+            TreeItem::Album { album } => self.load_album(&album.id).await,
+            TreeItem::Artist { artist, .. } => {
+                let albums_resp = self
+                    .client
+                    .request(DaemonRequest::LoadArtist(artist.id.clone()))
+                    .await;
+                let albums = match albums_resp {
+                    Ok(crate::ipc::DaemonResponse::ArtistAlbums(a)) => a,
+                    _ => Vec::new(),
+                };
+                let mut all = Vec::new();
+                for album in albums {
+                    all.extend(self.load_album(&album.id).await);
+                }
+                all
+            }
+        }
     }
 }

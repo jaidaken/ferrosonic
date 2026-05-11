@@ -21,7 +21,7 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **13 built-in themes** - Default, Monokai, Dracula, Nord, Gruvbox, Catppuccin, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, One Dark, and Ayu Dark
 - **Custom themes** - Create your own themes as TOML files in `~/.config/ferrosonic/themes/`
 - **Mouse support** - Clickable buttons, tabs, lists, and progress bar seeking
-- **Artist filtering** - Real-time search/filter on the artist list
+- **Library search** - `/` filters artists locally, `//` / `///` cycle scope to albums or songs and run a server-side `search3`
 - **Multi-disc album support** - Proper disc and track number display
 - **Keyboard-driven** - Vim-style navigation (j/k) alongside arrow keys
 
@@ -146,8 +146,10 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 
 | Key | Action |
 |---|---|
-| `/` | Filter artists by name |
-| `Esc` | Clear filter |
+| `/` | Filter / search (typing fires a server-side `search3`) |
+| `//` / `///` | Cycle scope: artists → albums → songs (press `/` again on empty filter) |
+| `Enter` | Lock the filter in (keeps results, exits input mode) |
+| `Esc` | Clear filter and search results |
 | `Up` / `k` | Move selection up |
 | `Down` / `j` | Move selection down |
 | `Left` / `Right` | Switch focus between tree and song list |

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::state::NowPlaying;
 use crate::config::Config;
 use crate::daemon::state::DaemonState;
-use crate::subsonic::models::{Album, Artist, Child, Playlist};
+use crate::subsonic::models::{Album, Artist, Child, Playlist, SearchResult3};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Requests: commands client sends to daemon
@@ -93,6 +93,14 @@ pub enum DaemonRequest {
     LoadAlbum(String),
     /// Lazily load songs for a playlist into the cache.
     LoadPlaylist(String),
+    /// Server-side search via `search3`. Returns matching artists,
+    /// albums, and songs in one round-trip.
+    Search {
+        query: String,
+        artist_count: u32,
+        album_count: u32,
+        song_count: u32,
+    },
 
     // ── Config operations ───────────────────────────────────────────────
     /// Update the Subsonic server configuration and persist it. Daemon
@@ -174,6 +182,8 @@ pub enum DaemonResponse {
     /// queue, now_playing, library cache, and config so the TUI can
     /// populate its mirror in one round-trip.
     Snapshot(Box<DaemonState>),
+    /// Reply to `Search`: matched artists, albums, songs.
+    SearchResults(SearchResult3),
     /// Reply to `Ping`.
     Pong,
 }
