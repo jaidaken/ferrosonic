@@ -36,8 +36,10 @@ fn build_state() -> (DaemonState, ClientState) {
     let config = Config::new();
     let mut daemon = DaemonState::new(config);
     daemon.config.theme = "default".into();
-    let mut client = ClientState::default();
-    client.page = Page::Queue;
+    let client = ClientState {
+        page: Page::Queue,
+        ..ClientState::default()
+    };
     (daemon, client)
 }
 
