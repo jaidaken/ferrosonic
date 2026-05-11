@@ -141,7 +141,7 @@ async fn metadata_includes_art_url_when_cover_art_present() {
     }
     let snap = build_property_snapshot(&ds).await;
     let md = snap.metadata.unwrap();
-    let art = md.art_url().map(String::from);
+    let art = md.art_url();
     assert!(
         art.is_some(),
         "art_url should be set when cover_art id present"
