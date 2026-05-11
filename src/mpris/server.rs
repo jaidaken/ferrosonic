@@ -10,7 +10,7 @@ use mpris_server::{
 use tracing::info;
 use url::Url;
 
-use crate::app::state::{NowPlaying, PlaybackState, SharedDaemonState, SharedClientState};
+use crate::app::state::{NowPlaying, PlaybackState, SharedClientState, SharedDaemonState};
 use crate::config::Config;
 use crate::ipc::{DaemonClient, DaemonRequest};
 use crate::subsonic::auth::generate_auth_params;
@@ -278,7 +278,8 @@ impl PlayerInterface for MprisPlayer {
 
     async fn can_go_next(&self) -> fdo::Result<bool> {
         let ds = self.daemon_state.read().await;
-        Ok(ds.queue_position
+        Ok(ds
+            .queue_position
             .map(|p| p + 1 < ds.queue.len())
             .unwrap_or(false))
     }

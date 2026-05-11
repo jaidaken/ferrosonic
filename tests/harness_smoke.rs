@@ -30,7 +30,10 @@ async fn fake_mpv_responds_to_basic_commands() {
         "fake mpv did not see the pause command; saw {:?}",
         recorded
     );
-    assert!(td.fake_mpv.is_paused().await, "fake mpv state should be paused");
+    assert!(
+        td.fake_mpv.is_paused().await,
+        "fake mpv state should be paused"
+    );
 }
 
 #[tokio::test]

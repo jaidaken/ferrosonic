@@ -89,11 +89,13 @@ impl SubsonicClient {
     }
 
     pub async fn star_song(&self, id: &str) -> Result<(), SubsonicError> {
-        self.request_action(&format!("star?id={}", urlencoding::encode(id))).await
+        self.request_action(&format!("star?id={}", urlencoding::encode(id)))
+            .await
     }
 
     pub async fn unstar_song(&self, id: &str) -> Result<(), SubsonicError> {
-        self.request_action(&format!("unstar?id={}", urlencoding::encode(id))).await
+        self.request_action(&format!("unstar?id={}", urlencoding::encode(id)))
+            .await
     }
 
     async fn request<T>(&self, endpoint: &str) -> Result<T, SubsonicError>

@@ -208,7 +208,9 @@ impl DaemonCore {
 
 impl DaemonCore {
     pub async fn refresh_starred(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else { return; };
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
         match client.get_starred_songs().await {
             Ok(songs) => {
                 let mut state = self.state.write().await;
@@ -227,7 +229,9 @@ impl DaemonCore {
     }
 
     pub async fn refresh_random(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else { return; };
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
         match client.get_random_songs().await {
             Ok(songs) => {
                 let mut state = self.state.write().await;
@@ -246,7 +250,9 @@ impl DaemonCore {
     }
 
     pub async fn refresh_artists(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else { return; };
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
         match client.get_artists().await {
             Ok(artists) => {
                 let mut state = self.state.write().await;
@@ -267,7 +273,9 @@ impl DaemonCore {
     }
 
     pub async fn refresh_playlists(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else { return; };
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
         match client.get_playlists().await {
             Ok(playlists) => {
                 let mut state = self.state.write().await;
@@ -286,7 +294,7 @@ impl DaemonCore {
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
         let currently_starred = {
             let state = self.state.read().await;
-            song_is_starred(&*state, song_id)
+            song_is_starred(&state, song_id)
         };
 
         let Some(client) = self.subsonic.read().await.clone() else {
@@ -305,7 +313,7 @@ impl DaemonCore {
         let new_starred = !currently_starred;
         {
             let mut state = self.state.write().await;
-            apply_star_to_cached(&mut *state, song_id, new_starred);
+            apply_star_to_cached(&mut state, song_id, new_starred);
         }
         self.emit(DaemonEvent::SongStarChanged {
             id: song_id.to_string(),
@@ -316,7 +324,9 @@ impl DaemonCore {
     }
 
     pub async fn load_artist(self: &Arc<Self>, artist_id: &str) {
-        let Some(client) = self.subsonic.read().await.clone() else { return; };
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
         match client.get_artist(artist_id).await {
             Ok((_artist, albums)) => {
                 let mut state = self.state.write().await;
@@ -468,7 +478,9 @@ impl DaemonCore {
                             state.queue.extend(songs);
                         }
                         self.emit_queue().await;
-                        return self.play_queue_position(start_pos, PlayMode::Buffered).await;
+                        return self
+                            .play_queue_position(start_pos, PlayMode::Buffered)
+                            .await;
                     }
                     Ok(_) => {
                         self.emit(DaemonEvent::Notification {
@@ -532,7 +544,9 @@ impl DaemonCore {
                             state.queue.extend(songs);
                         }
                         self.emit_queue().await;
-                        return self.play_queue_position(start_pos, PlayMode::Buffered).await;
+                        return self
+                            .play_queue_position(start_pos, PlayMode::Buffered)
+                            .await;
                     }
                     Ok(_) => {
                         self.emit(DaemonEvent::Notification {
@@ -606,7 +620,11 @@ impl DaemonCore {
         Ok(())
     }
 
-    pub async fn play_queue_position(self: &Arc<Self>, pos: usize, mode: PlayMode) -> Result<(), Error> {
+    pub async fn play_queue_position(
+        self: &Arc<Self>,
+        pos: usize,
+        mode: PlayMode,
+    ) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let song = {
             let state = self.state.read().await;
@@ -617,7 +635,9 @@ impl DaemonCore {
         };
 
         let stream_url = {
-            let Some(client) = self.subsonic.read().await.clone() else { return Ok(()); };
+            let Some(client) = self.subsonic.read().await.clone() else {
+                return Ok(());
+            };
             match client.get_stream_url(&song.id) {
                 Ok(url) => url,
                 Err(e) => {
@@ -644,7 +664,10 @@ impl DaemonCore {
             state.now_playing.channels = None;
         }
 
-        info!("Playing: {} (queue pos {}) mode={:?}", song.title, pos, mode);
+        info!(
+            "Playing: {} (queue pos {}) mode={:?}",
+            song.title, pos, mode
+        );
 
         match mode {
             PlayMode::Direct => {
@@ -747,7 +770,10 @@ impl DaemonCore {
         {
             Ok(t) => StdArc::new(t),
             Err(e) => {
-                error!("Pre-buffer: temp file create failed ({}); falling back to direct loadfile", e);
+                error!(
+                    "Pre-buffer: temp file create failed ({}); falling back to direct loadfile",
+                    e
+                );
                 let mut mpv = self.mpv.lock().await;
                 let _ = mpv.loadfile(&url).await;
                 return;
@@ -894,10 +920,7 @@ impl DaemonCore {
         let next_song = {
             let state = self.state.read().await;
             let queue_len = state.queue.len();
-            let target = state
-                .config
-                .repeat_mode
-                .next_auto(current_pos, queue_len);
+            let target = state.config.repeat_mode.next_auto(current_pos, queue_len);
             match target.and_then(|p| state.queue.get(p)) {
                 Some(s) => s.clone(),
                 None => return,
@@ -905,7 +928,9 @@ impl DaemonCore {
         };
 
         let url = {
-            let Some(client) = self.subsonic.read().await.clone() else { return; };
+            let Some(client) = self.subsonic.read().await.clone() else {
+                return;
+            };
             match client.get_stream_url(&next_song.id) {
                 Ok(u) => u,
                 Err(_) => return,
@@ -918,7 +943,10 @@ impl DaemonCore {
             debug!("Failed to pre-load next track: {}", e);
         } else if let Ok(count) = mpv.get_playlist_count().await {
             if count < 2 {
-                warn!("Preload may have failed: playlist count is {} (expected 2)", count);
+                warn!(
+                    "Preload may have failed: playlist count is {} (expected 2)",
+                    count
+                );
             } else {
                 debug!("Preload confirmed: playlist count is {}", count);
             }
@@ -1306,8 +1334,13 @@ impl DaemonCore {
 }
 
 impl DaemonCore {
-    pub async fn load_album_songs(self: &Arc<Self>, album_id: &str) -> Vec<crate::subsonic::models::Child> {
-        let Some(client) = self.subsonic.read().await.clone() else { return Vec::new(); };
+    pub async fn load_album_songs(
+        self: &Arc<Self>,
+        album_id: &str,
+    ) -> Vec<crate::subsonic::models::Child> {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Vec::new();
+        };
         match client.get_album(album_id).await {
             Ok((_album, songs)) => {
                 {
@@ -1358,8 +1391,13 @@ impl DaemonCore {
         }
     }
 
-    pub async fn load_playlist_songs(self: &Arc<Self>, playlist_id: &str) -> Vec<crate::subsonic::models::Child> {
-        let Some(client) = self.subsonic.read().await.clone() else { return Vec::new(); };
+    pub async fn load_playlist_songs(
+        self: &Arc<Self>,
+        playlist_id: &str,
+    ) -> Vec<crate::subsonic::models::Child> {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Vec::new();
+        };
         match client.get_playlist(playlist_id).await {
             Ok((_pl, songs)) => {
                 {
@@ -1404,8 +1442,8 @@ impl DaemonCore {
             state.config.save_default().map_err(Error::Config)?;
         }
 
-        let new_client = SubsonicClient::new(base_url, username, password)
-            .map_err(Error::Subsonic)?;
+        let new_client =
+            SubsonicClient::new(base_url, username, password).map_err(Error::Subsonic)?;
         *self.subsonic.write().await = Some(new_client);
 
         self.refresh_starred().await;
@@ -1435,10 +1473,7 @@ impl DaemonCore {
         {
             let mut state = self.state.write().await;
             state.config.theme = name.to_string();
-            state
-                .config
-                .save_default()
-                .map_err(Error::Config)?;
+            state.config.save_default().map_err(Error::Config)?;
         }
         self.emit_config_changed().await;
         Ok(())
@@ -1448,10 +1483,7 @@ impl DaemonCore {
         {
             let mut state = self.state.write().await;
             state.config.cava = on;
-            state
-                .config
-                .save_default()
-                .map_err(Error::Config)?;
+            state.config.save_default().map_err(Error::Config)?;
         }
         self.emit_config_changed().await;
         Ok(())
@@ -1462,10 +1494,7 @@ impl DaemonCore {
         {
             let mut state = self.state.write().await;
             state.config.daemon = on;
-            state
-                .config
-                .save_default()
-                .map_err(Error::Config)?;
+            state.config.save_default().map_err(Error::Config)?;
         }
         self.emit_config_changed().await;
         Ok(())
@@ -1483,7 +1512,10 @@ impl DaemonCore {
 
     /// Re-preloads the new auto-advance target so gapless picks up
     /// the mode change at the next track boundary.
-    pub async fn set_repeat_mode(self: &Arc<Self>, mode: crate::config::RepeatMode) -> Result<(), Error> {
+    pub async fn set_repeat_mode(
+        self: &Arc<Self>,
+        mode: crate::config::RepeatMode,
+    ) -> Result<(), Error> {
         let cur_pos = {
             let mut state = self.state.write().await;
             state.config.repeat_mode = mode;
@@ -1561,10 +1593,7 @@ impl DaemonCore {
         {
             let mut state = self.state.write().await;
             state.config.cava_size = clamped;
-            state
-                .config
-                .save_default()
-                .map_err(Error::Config)?;
+            state.config.save_default().map_err(Error::Config)?;
         }
         self.emit_config_changed().await;
         Ok(())
@@ -1572,7 +1601,12 @@ impl DaemonCore {
 }
 
 fn song_is_starred(daemon: &DaemonState, song_id: &str) -> bool {
-    if let Some(s) = daemon.library.starred_songs.iter().find(|s| s.id == song_id) {
+    if let Some(s) = daemon
+        .library
+        .starred_songs
+        .iter()
+        .find(|s| s.id == song_id)
+    {
         return s.starred.is_some();
     }
     let all_cached = daemon
@@ -1591,10 +1625,8 @@ fn song_is_starred(daemon: &DaemonState, song_id: &str) -> bool {
 
 fn apply_star_to_cached(daemon: &mut DaemonState, song_id: &str, starred: bool) {
     let marker = if starred { Some("1".to_string()) } else { None };
-    let lists: [&mut Vec<crate::subsonic::models::Child>; 2] = [
-        &mut daemon.queue,
-        &mut daemon.library.random_songs,
-    ];
+    let lists: [&mut Vec<crate::subsonic::models::Child>; 2] =
+        [&mut daemon.queue, &mut daemon.library.random_songs];
     for list in lists {
         for song in list.iter_mut() {
             if song.id == song_id {

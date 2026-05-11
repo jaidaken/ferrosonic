@@ -36,11 +36,7 @@ fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerG
         return None;
     }
     let log_file = log_dir.join("ferrosonicd.log");
-    let file = match OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_file)
-    {
+    let file = match OpenOptions::new().create(true).append(true).open(&log_file) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Warning: Could not open log file: {}", e);

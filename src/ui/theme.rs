@@ -92,8 +92,8 @@ fn parse_gradient(values: &[String], fallback: &[&str; 8]) -> [String; 8] {
 
 impl ThemeData {
     fn from_file_content(name: &str, content: &str) -> Result<Self, String> {
-        let file: ThemeFile =
-            toml::from_str(content).map_err(|e| format!("Failed to parse theme '{}': {}", name, e))?;
+        let file: ThemeFile = toml::from_str(content)
+            .map_err(|e| format!("Failed to parse theme '{}': {}", name, e))?;
 
         let c = &file.colors;
         let colors = ThemeColors {
@@ -115,12 +115,10 @@ impl ThemeData {
         };
 
         let default_g: [&str; 8] = [
-            "#59cc33", "#cccc33", "#cc8033", "#cc5533",
-            "#cc3333", "#bb1111", "#990000", "#990000",
+            "#59cc33", "#cccc33", "#cc8033", "#cc5533", "#cc3333", "#bb1111", "#990000", "#990000",
         ];
         let default_h: [&str; 8] = [
-            "#c45161", "#e094a0", "#f2b6c0", "#f2dde1",
-            "#cbc7d8", "#8db7d2", "#5e62a9", "#434279",
+            "#c45161", "#e094a0", "#f2b6c0", "#f2dde1", "#cbc7d8", "#8db7d2", "#5e62a9", "#434279",
         ];
 
         let cava = file.cava.as_ref();
@@ -162,12 +160,24 @@ impl ThemeData {
                 border_unfocused: Color::DarkGray,
             },
             cava_gradient: [
-                "#59cc33".into(), "#cccc33".into(), "#cc8033".into(), "#cc5533".into(),
-                "#cc3333".into(), "#bb1111".into(), "#990000".into(), "#990000".into(),
+                "#59cc33".into(),
+                "#cccc33".into(),
+                "#cc8033".into(),
+                "#cc5533".into(),
+                "#cc3333".into(),
+                "#bb1111".into(),
+                "#990000".into(),
+                "#990000".into(),
             ],
             cava_horizontal_gradient: [
-                "#c45161".into(), "#e094a0".into(), "#f2b6c0".into(), "#f2dde1".into(),
-                "#cbc7d8".into(), "#8db7d2".into(), "#5e62a9".into(), "#434279".into(),
+                "#c45161".into(),
+                "#e094a0".into(),
+                "#f2b6c0".into(),
+                "#f2dde1".into(),
+                "#cbc7d8".into(),
+                "#8db7d2".into(),
+                "#5e62a9".into(),
+                "#434279".into(),
             ],
         }
     }
@@ -182,11 +192,7 @@ pub fn load_themes() -> Vec<ThemeData> {
                 .into_iter()
                 .flatten()
                 .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .is_some_and(|ext| ext == "toml")
-                })
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
                 .collect();
             entries.sort_by_key(|e| e.file_name());
 

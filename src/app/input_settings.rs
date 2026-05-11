@@ -75,7 +75,10 @@ impl App {
         ) = {
             let ds = self.daemon_state.read().await;
             let mut cs = self.client_state.write().await;
-            let state = AppState { daemon: &*ds, client: &mut *cs };
+            let state = AppState {
+                daemon: &ds,
+                client: &mut cs,
+            };
             let s = &state.client.settings_state;
             (
                 s.theme_name().to_string(),
@@ -103,7 +106,10 @@ impl App {
         if let Err(e) = self.client.request(req).await {
             let ds = self.daemon_state.read().await;
             let mut cs = self.client_state.write().await;
-            let state = AppState { daemon: &*ds, client: &mut *cs };
+            let state = AppState {
+                daemon: &ds,
+                client: &mut cs,
+            };
             state.client.notify_error(format!("Failed to save: {}", e));
             return Ok(());
         }
@@ -119,7 +125,10 @@ impl App {
                     self.stop_cava();
                     let ds = self.daemon_state.read().await;
                     let mut cs = self.client_state.write().await;
-                    let state = AppState { daemon: &*ds, client: &mut *cs };
+                    let state = AppState {
+                        daemon: &ds,
+                        client: &mut cs,
+                    };
                     state.client.cava_screen.clear();
                 }
             }

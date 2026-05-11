@@ -26,14 +26,19 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
         return;
     }
 
-    let items: Vec<ListItem> = state.daemon
+    let items: Vec<ListItem> = state
+        .daemon
         .queue
         .iter()
         .enumerate()
         .map(|(i, song)| {
             let is_current = state.daemon.queue_position == Some(i);
             let is_selected = state.client.queue_state.selected == Some(i);
-            let is_played = state.daemon.queue_position.map(|pos| i < pos).unwrap_or(false);
+            let is_played = state
+                .daemon
+                .queue_position
+                .map(|pos| i < pos)
+                .unwrap_or(false);
             let is_starred = song.starred.is_some();
 
             let indicator = if is_current { "▶ " } else { "  " };

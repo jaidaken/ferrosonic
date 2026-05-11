@@ -9,9 +9,7 @@ use tokio::sync::broadcast;
 use tracing::warn;
 
 use crate::daemon::DaemonCore;
-use crate::ipc::protocol::{
-    DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError,
-};
+use crate::ipc::protocol::{DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError};
 
 /// TUI's view of the daemon: every command via `request`, every state
 /// subscription via `subscribe`.
@@ -77,9 +75,7 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Ok)
             }
 
-            DaemonRequest::EnqueueSongs { songs, mode } => {
-                self.enqueue_songs(songs, mode).await
-            }
+            DaemonRequest::EnqueueSongs { songs, mode } => self.enqueue_songs(songs, mode).await,
             DaemonRequest::PlayQueueIndex(pos) => {
                 self.core
                     .play_queue_position(pos, crate::daemon::core::PlayMode::Direct)

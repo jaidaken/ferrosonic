@@ -1,6 +1,10 @@
 //! IPC protocol: length-prefixed JSON over a Unix socket.
 
 #![allow(dead_code)]
+// Events carry heterogeneous payloads, from a single bool to a full
+// snapshot. Boxing the big ones would mask the wire shape without
+// fixing the underlying variance.
+#![allow(clippy::large_enum_variant)]
 
 use serde::{Deserialize, Serialize};
 
@@ -30,7 +34,10 @@ pub enum DaemonRequest {
     ClearQueue,
     ShuffleQueue,
     ShuffleLibrary,
-    MoveQueueItem { from: usize, to: usize },
+    MoveQueueItem {
+        from: usize,
+        to: usize,
+    },
     /// Drain entries before `queue_position` (the played-history half).
     ClearQueueHistory,
 
@@ -68,7 +75,10 @@ pub enum DaemonRequest {
     SetRepeatMode(RepeatMode),
     SetCoverArtEnabled(bool),
     SetCoverArtSize(u8),
-    FetchCoverArt { id: String, size: u32 },
+    FetchCoverArt {
+        id: String,
+        size: u32,
+    },
 
     Subscribe,
     Snapshot,
@@ -111,7 +121,10 @@ pub enum DaemonEvent {
     NowPlayingChanged(NowPlaying),
     PositionTick(f64),
     StarredChanged(Vec<Child>),
-    SongStarChanged { id: String, starred: bool },
+    SongStarChanged {
+        id: String,
+        starred: bool,
+    },
     RandomChanged(Vec<Child>),
     ArtistsChanged(Vec<Artist>),
     AlbumsChanged {

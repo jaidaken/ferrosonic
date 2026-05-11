@@ -41,7 +41,10 @@ impl App {
     pub(super) async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
 
         state.client.clear_notification();
 
@@ -66,7 +69,9 @@ impl App {
 
             if is_server_text_field || is_filtering {
                 let page = state.client.page;
-                drop(state); drop(cs); drop(ds);
+                drop(state);
+                drop(cs);
+                drop(ds);
                 return match page {
                     Page::Server => self.handle_server_key(key).await,
                     Page::Library => self.handle_library_key(key).await,
@@ -105,31 +110,53 @@ impl App {
                 return Ok(());
             }
             (KeyCode::Char('p'), KeyModifiers::NONE) | (KeyCode::Char(' '), KeyModifiers::NONE) => {
-                drop(state); drop(cs); drop(ds);
-                return self.client.request(DaemonRequest::TogglePause).await.map(|_| ()).map_err(Error::from);
+                drop(state);
+                drop(cs);
+                drop(ds);
+                return self
+                    .client
+                    .request(DaemonRequest::TogglePause)
+                    .await
+                    .map(|_| ())
+                    .map_err(Error::from);
             }
             (KeyCode::Char('l'), KeyModifiers::NONE) => {
-                drop(state); drop(cs); drop(ds);
-                return self.client.request(DaemonRequest::Next).await.map(|_| ()).map_err(Error::from);
+                drop(state);
+                drop(cs);
+                drop(ds);
+                return self
+                    .client
+                    .request(DaemonRequest::Next)
+                    .await
+                    .map(|_| ())
+                    .map_err(Error::from);
             }
             (KeyCode::Char('h'), KeyModifiers::NONE) => {
-                drop(state); drop(cs); drop(ds);
-                return self.client.request(DaemonRequest::Previous).await.map(|_| ()).map_err(Error::from);
+                drop(state);
+                drop(cs);
+                drop(ds);
+                return self
+                    .client
+                    .request(DaemonRequest::Previous)
+                    .await
+                    .map(|_| ())
+                    .map_err(Error::from);
             }
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 let song_id = state.daemon.now_playing.song.as_ref().map(|s| s.id.clone());
-                drop(state); drop(cs); drop(ds);
+                drop(state);
+                drop(cs);
+                drop(ds);
                 if let Some(id) = song_id {
-                    let _ = self
-                        .client
-                        .request(DaemonRequest::ToggleStarSong(id))
-                        .await;
+                    let _ = self.client.request(DaemonRequest::ToggleStarSong(id)).await;
                 }
                 return Ok(());
             }
             (KeyCode::Char('T'), _) => {
                 state.client.notify("Shuffling library...");
-                drop(state); drop(cs); drop(ds);
+                drop(state);
+                drop(cs);
+                drop(ds);
                 let _ = self.client.request(DaemonRequest::ShuffleLibrary).await;
                 return Ok(());
             }
@@ -137,7 +164,9 @@ impl App {
                 let new_mode = state.client.settings_state.repeat_mode.cycle();
                 state.client.settings_state.repeat_mode = new_mode;
                 state.client.notify(format!("Repeat: {}", new_mode.label()));
-                drop(state); drop(cs); drop(ds);
+                drop(state);
+                drop(cs);
+                drop(ds);
                 let _ = self
                     .client
                     .request(DaemonRequest::SetRepeatMode(new_mode))
@@ -146,11 +175,16 @@ impl App {
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 state.client.notify("Refreshing...");
-                drop(state); drop(cs); drop(ds);
+                drop(state);
+                drop(cs);
+                drop(ds);
                 self.load_initial_data().await;
                 let ds = self.daemon_state.read().await;
                 let mut cs = self.client_state.write().await;
-                let state = AppState { daemon: &*ds, client: &mut *cs };
+                let state = AppState {
+                    daemon: &ds,
+                    client: &mut cs,
+                };
                 state.client.notify("Data refreshed");
                 return Ok(());
             }
@@ -158,7 +192,9 @@ impl App {
         }
 
         let page = state.client.page;
-        drop(state); drop(cs); drop(ds);
+        drop(state);
+        drop(cs);
+        drop(ds);
         match page {
             Page::QuickPlay => self.handle_songs_key(key).await,
             Page::Library => self.handle_library_key(key).await,

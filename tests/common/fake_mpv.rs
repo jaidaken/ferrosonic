@@ -47,14 +47,9 @@ impl FakeMpv {
         }));
         let state_for_task = state.clone();
         let accept_task = tokio::spawn(async move {
-            loop {
-                match listener.accept().await {
-                    Ok((stream, _)) => {
-                        let state = state_for_task.clone();
-                        tokio::spawn(handle_connection(stream, state));
-                    }
-                    Err(_) => break,
-                }
+            while let Ok((stream, _)) = listener.accept().await {
+                let state = state_for_task.clone();
+                tokio::spawn(handle_connection(stream, state));
             }
         });
         Self {
@@ -111,7 +106,11 @@ impl FakeMpv {
     }
 
     pub async fn set_property(&self, name: &str, value: Value) {
-        self.state.lock().await.properties.insert(name.to_string(), value);
+        self.state
+            .lock()
+            .await
+            .properties
+            .insert(name.to_string(), value);
     }
 }
 

@@ -21,12 +21,8 @@ impl QueueSnapshot {
 
     /// Atomic write via temp-file + rename. Returns the path written.
     pub fn save(&self) -> std::io::Result<PathBuf> {
-        let path = crate::config::paths::queue_file().ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no config dir",
-            )
-        })?;
+        let path = crate::config::paths::queue_file()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no config dir"))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }

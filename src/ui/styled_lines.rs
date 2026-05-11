@@ -17,7 +17,7 @@ pub fn get_song_with_artist_line<'a>(
     let star_indicator = if is_starred { "★ " } else { "  " };
     let indicator = if is_playing { "▶ " } else { "  " };
 
-    let (title_color, artist_color, duration_color) = get_colors(is_selected, is_playing, &colors);
+    let (title_color, artist_color, duration_color) = get_colors(is_selected, is_playing, colors);
     let artist = match &song.artist {
         Some(value) => value,
         None => "n/a",
@@ -37,7 +37,7 @@ pub fn get_song_with_artist_line<'a>(
         ),
     ]);
 
-    return line;
+    line
 }
 
 pub fn get_song_without_artist_line<'a>(
@@ -52,7 +52,7 @@ pub fn get_song_without_artist_line<'a>(
     let star_indicator = if is_starred { "★ " } else { "  " };
     let indicator = if is_playing { "▶ " } else { "  " };
 
-    let (title_color, track_color, duration_color) = get_colors(is_selected, is_playing, &colors);
+    let (title_color, track_color, duration_color) = get_colors(is_selected, is_playing, colors);
 
     let track = if has_multiple_discs {
         match (song.disc_number, song.track) {
@@ -82,11 +82,11 @@ pub fn get_song_without_artist_line<'a>(
             Style::default().fg(duration_color),
         ),
     ]);
-    return line;
+    line
 }
 
 fn get_colors(is_selected: bool, is_playing: bool, colors: &ThemeColors) -> (Color, Color, Color) {
-    return if is_selected {
+    if is_selected {
         (
             colors.highlight_fg,
             colors.highlight_fg,
@@ -96,5 +96,5 @@ fn get_colors(is_selected: bool, is_playing: bool, colors: &ThemeColors) -> (Col
         (colors.playing, colors.muted, colors.muted)
     } else {
         (colors.song, colors.muted, colors.muted)
-    };
+    }
 }

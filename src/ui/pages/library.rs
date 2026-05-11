@@ -128,9 +128,7 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
     let title = if searching {
         format!(
             " Search {} ({}{}) ",
-            scope_label,
-            scope_slashes,
-            artists.filter
+            scope_label, scope_slashes, artists.filter
         )
     } else {
         " Artists ".to_string()
@@ -279,11 +277,11 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
                 .unwrap_or(false);
 
             let line = get_song_without_artist_line(
-                &song,
+                song,
                 is_selected,
                 is_playing,
                 has_multiple_discs,
-                &colors,
+                colors,
             );
             ListItem::new(line)
         })

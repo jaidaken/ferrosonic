@@ -63,30 +63,86 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
 
     section_heading(buf, Rect::new(x, y, w, 1), "Display", &colors);
     y += 1;
-    setting_row(buf, Rect::new(x, y, w, 1), "Theme", &theme_val, sel == 0, &colors);
+    setting_row(
+        buf,
+        Rect::new(x, y, w, 1),
+        "Theme",
+        &theme_val,
+        sel == 0,
+        &colors,
+    );
     y += 2;
 
     section_heading(buf, Rect::new(x, y, w, 1), "Now Playing", &colors);
     y += 1;
-    setting_row(buf, Rect::new(x, y, w, 1), "Cava Visualizer", &cava_val, sel == 1, &colors);
+    setting_row(
+        buf,
+        Rect::new(x, y, w, 1),
+        "Cava Visualizer",
+        &cava_val,
+        sel == 1,
+        &colors,
+    );
     y += 1;
-    setting_row(buf, Rect::new(x, y, w, 1), "Cava Size", &cava_size_val, sel == 2, &colors);
+    setting_row(
+        buf,
+        Rect::new(x, y, w, 1),
+        "Cava Size",
+        &cava_size_val,
+        sel == 2,
+        &colors,
+    );
     y += 1;
-    setting_row(buf, Rect::new(x, y, w, 1), "Cover Art", &cover_val, sel == 3, &colors);
+    setting_row(
+        buf,
+        Rect::new(x, y, w, 1),
+        "Cover Art",
+        &cover_val,
+        sel == 3,
+        &colors,
+    );
     y += 1;
-    setting_row(buf, Rect::new(x, y, w, 1), "Cover Art Size", &cover_size_val, sel == 4, &colors);
+    setting_row(
+        buf,
+        Rect::new(x, y, w, 1),
+        "Cover Art Size",
+        &cover_size_val,
+        sel == 4,
+        &colors,
+    );
     y += 2;
 
     section_heading(buf, Rect::new(x, y, w, 1), "Playback", &colors);
     y += 1;
-    setting_row(buf, Rect::new(x, y, w, 1), "Repeat", &repeat_val, sel == 5, &colors);
+    setting_row(
+        buf,
+        Rect::new(x, y, w, 1),
+        "Repeat",
+        &repeat_val,
+        sel == 5,
+        &colors,
+    );
     y += 1;
-    setting_row(buf, Rect::new(x, y, w, 1), "Auto-continue", &auto_val, sel == 6, &colors);
+    setting_row(
+        buf,
+        Rect::new(x, y, w, 1),
+        "Auto-continue",
+        &auto_val,
+        sel == 6,
+        &colors,
+    );
     y += 2;
 
     section_heading(buf, Rect::new(x, y, w, 1), "System", &colors);
     y += 1;
-    setting_row(buf, Rect::new(x, y, w, 1), "Daemon", &daemon_val, sel == 7, &colors);
+    setting_row(
+        buf,
+        Rect::new(x, y, w, 1),
+        "Daemon",
+        &daemon_val,
+        sel == 7,
+        &colors,
+    );
 
     let help_text = match sel {
         0 => "← → or Enter to change theme (auto-saves)",
@@ -103,7 +159,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
     };
     let help_y = inner.y + inner.height.saturating_sub(1);
     let help = Paragraph::new(help_text).style(Style::default().fg(colors.muted));
-    help.render(Rect::new(inner.x, help_y, inner.width, 1), frame.buffer_mut());
+    help.render(
+        Rect::new(inner.x, help_y, inner.width, 1),
+        frame.buffer_mut(),
+    );
 }
 
 fn section_heading(buf: &mut Buffer, area: Rect, label: &str, colors: &ThemeColors) {

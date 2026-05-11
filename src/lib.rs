@@ -1,4 +1,9 @@
-//! Ferrosonic — terminal-based Subsonic music client.
+//! Ferrosonic, terminal-based Subsonic music client.
+
+// `drop(guard)` on a MutexGuard / RwLockWriteGuard releases the lock
+// before the next .await. Clippy doesn't see that as the load-bearing
+// effect it is.
+#![allow(clippy::drop_non_drop)]
 
 pub mod app;
 pub mod audio;

@@ -21,7 +21,11 @@ async fn stop_preserves_queue_and_position() {
     // mutation against the daemon state.
     {
         let mut s = td.state.write().await;
-        s.queue = vec![song("a", "Track A"), song("b", "Track B"), song("c", "Track C")];
+        s.queue = vec![
+            song("a", "Track A"),
+            song("b", "Track B"),
+            song("c", "Track C"),
+        ];
         s.queue_position = Some(1);
         s.now_playing.song = Some(s.queue[1].clone());
         s.now_playing.state = PlaybackState::Playing;
@@ -44,7 +48,10 @@ async fn stop_preserves_queue_and_position() {
         "Stop must keep the same selected track"
     );
     assert_eq!(s.now_playing.state, PlaybackState::Stopped);
-    assert_eq!(s.now_playing.position, 0.0, "Stop must rewind position to 0");
+    assert_eq!(
+        s.now_playing.position, 0.0,
+        "Stop must rewind position to 0"
+    );
 }
 
 #[tokio::test]
@@ -110,7 +117,8 @@ async fn toggle_pause_from_stopped_also_resumes() {
     let saw_loadfile = td
         .fake_mpv
         .wait_for(2000, |cmds| {
-            cmds.iter().any(|c| c.first().and_then(Value::as_str) == Some("loadfile"))
+            cmds.iter()
+                .any(|c| c.first().and_then(Value::as_str) == Some("loadfile"))
         })
         .await;
 

@@ -9,7 +9,10 @@ impl App {
     pub(super) async fn handle_songs_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => match state.client.songs.focus {
                 0 => {
@@ -17,7 +20,9 @@ impl App {
                         Some(SongOption::Starred) => {}
                         Some(SongOption::Random) => {
                             state.client.songs.selected_option = Some(SongOption::Starred);
-                            drop(state); drop(cs); drop(ds);
+                            drop(state);
+                            drop(cs);
+                            drop(ds);
                             let _ = self.client.request(DaemonRequest::RefreshStarred).await;
                         }
                         None => {}
@@ -39,7 +44,9 @@ impl App {
                     match state.client.songs.selected_option {
                         Some(SongOption::Starred) => {
                             state.client.songs.selected_option = Some(SongOption::Random);
-                            drop(state); drop(cs); drop(ds);
+                            drop(state);
+                            drop(cs);
+                            drop(ds);
                             let _ = self.client.request(DaemonRequest::RefreshRandom).await;
                         }
                         Some(SongOption::Random) => {}
@@ -59,7 +66,8 @@ impl App {
                 _ => {}
             },
             KeyCode::Enter => {
-                let selected_song = state.client
+                let selected_song = state
+                    .client
                     .songs
                     .selected_index
                     .filter(|&idx| idx < state.songs_list().len());
@@ -69,7 +77,9 @@ impl App {
                 };
 
                 let songs = state.songs_list().to_vec();
-                drop(state); drop(cs); drop(ds);
+                drop(state);
+                drop(cs);
+                drop(ds);
 
                 return self
                     .client
@@ -83,7 +93,9 @@ impl App {
                     .map(|_| ())
                     .map_err(Error::from);
             }
-            KeyCode::Tab => state.client.songs.focus = if state.client.songs.focus == 1 { 0 } else { 1 },
+            KeyCode::Tab => {
+                state.client.songs.focus = if state.client.songs.focus == 1 { 0 } else { 1 }
+            }
             KeyCode::Left => {
                 state.client.songs.focus = 0;
             }
@@ -101,18 +113,17 @@ impl App {
                     .songs
                     .selected_index
                     .and_then(|idx| state.songs_list().get(idx).map(|s| s.id.clone()));
-                drop(state); drop(cs); drop(ds);
+                drop(state);
+                drop(cs);
+                drop(ds);
                 if let Some(id) = song_id {
-                    let _ = self
-                        .client
-                        .request(DaemonRequest::ToggleStarSong(id))
-                        .await;
+                    let _ = self.client.request(DaemonRequest::ToggleStarSong(id)).await;
                 }
                 return Ok(());
             }
             _ => {}
         }
 
-        return Ok(());
+        Ok(())
     }
 }

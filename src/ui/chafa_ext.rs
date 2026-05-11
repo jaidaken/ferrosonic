@@ -46,11 +46,9 @@ type ChafaCanvasConfigSetDitherMode = unsafe extern "C" fn(ChafaCanvasConfig, u3
 type ChafaCanvasConfigSetWorkFactor = unsafe extern "C" fn(ChafaCanvasConfig, f32);
 type ChafaCanvasConfigUnref = unsafe extern "C" fn(ChafaCanvasConfig);
 type ChafaCanvasNew = unsafe extern "C" fn(ChafaCanvasConfig) -> ChafaCanvas;
-type ChafaCanvasDrawAllPixels =
-    unsafe extern "C" fn(ChafaCanvas, u32, *const u8, i32, i32, i32);
+type ChafaCanvasDrawAllPixels = unsafe extern "C" fn(ChafaCanvas, u32, *const u8, i32, i32, i32);
 type ChafaCanvasGetCharAt = unsafe extern "C" fn(ChafaCanvas, i32, i32) -> u32;
-type ChafaCanvasGetColorsAt =
-    unsafe extern "C" fn(ChafaCanvas, i32, i32, *mut i32, *mut i32);
+type ChafaCanvasGetColorsAt = unsafe extern "C" fn(ChafaCanvas, i32, i32, *mut i32, *mut i32);
 type ChafaCanvasUnref = unsafe extern "C" fn(ChafaCanvas);
 
 struct ChafaLib {
@@ -87,7 +85,12 @@ static CHAFA: OnceLock<Option<ChafaLib>> = OnceLock::new();
 
 fn load() -> Option<ChafaLib> {
     unsafe {
-        let names = ["libchafa.so.0", "libchafa.so", "libchafa.dylib", "chafa.dll"];
+        let names = [
+            "libchafa.so.0",
+            "libchafa.so",
+            "libchafa.dylib",
+            "chafa.dll",
+        ];
         let mut lib_opt: Option<Library> = None;
         for n in names {
             if let Ok(l) = Library::new(n) {
@@ -124,9 +127,7 @@ fn load() -> Option<ChafaLib> {
             .ok()
             .map(|s| *s);
         let canvas_config_set_color_extractor: Option<ChafaCanvasConfigSetColorExtractor> = lib
-            .get::<ChafaCanvasConfigSetColorExtractor>(
-                b"chafa_canvas_config_set_color_extractor",
-            )
+            .get::<ChafaCanvasConfigSetColorExtractor>(b"chafa_canvas_config_set_color_extractor")
             .ok()
             .map(|s| *s);
         let canvas_config_set_dither_mode: Option<ChafaCanvasConfigSetDitherMode> = lib

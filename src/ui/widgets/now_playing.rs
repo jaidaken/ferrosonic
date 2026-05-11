@@ -114,7 +114,15 @@ impl Widget for NowPlayingWidget<'_> {
         let title = song.title.clone();
         let quality = build_quality_string(self.now_playing);
 
-        render_info(info_area, buf, &artist, &album, &title, &quality, &self.colors);
+        render_info(
+            info_area,
+            buf,
+            &artist,
+            &album,
+            &title,
+            &quality,
+            &self.colors,
+        );
 
         render_progress_bar(
             progress_area,
@@ -178,7 +186,11 @@ fn render_info(
         )
     } else if area.height >= 3 {
         (
-            vec![format!("{} — {}", title, artist), album.into(), quality.into()],
+            vec![
+                format!("{} — {}", title, artist),
+                album.into(),
+                quality.into(),
+            ],
             vec![
                 Style::default()
                     .fg(colors.highlight_fg)

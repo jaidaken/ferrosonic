@@ -19,7 +19,11 @@ pub struct Config {
     #[serde(rename = "Password", default)]
     pub password: String,
 
-    #[serde(rename = "PasswordFile", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "PasswordFile",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub password_file: Option<String>,
 
     #[serde(rename = "Theme", default)]
@@ -210,11 +214,15 @@ impl Config {
             match std::fs::read_to_string(&expanded) {
                 Ok(contents) => {
                     debug!("Using password from {}", expanded);
-                    self.password = contents.trim_end_matches(['\n', '\r', ' ', '\t']).to_string();
-                    return;
+                    self.password = contents
+                        .trim_end_matches(['\n', '\r', ' ', '\t'])
+                        .to_string();
                 }
                 Err(e) => {
-                    warn!("PasswordFile {} unreadable: {}; falling back to inline password", expanded, e);
+                    warn!(
+                        "PasswordFile {} unreadable: {}; falling back to inline password",
+                        expanded, e
+                    );
                 }
             }
         }

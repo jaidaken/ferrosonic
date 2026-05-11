@@ -67,12 +67,13 @@ pub fn spawn_daemon() -> std::io::Result<u32> {
     Ok(pid)
 }
 
-pub async fn spawn_and_wait(
-    socket: &Path,
-    timeout: std::time::Duration,
-) -> std::io::Result<()> {
+pub async fn spawn_and_wait(socket: &Path, timeout: std::time::Duration) -> std::io::Result<()> {
     let pid = spawn_daemon()?;
-    info!("Daemon spawned (pid {}); waiting for socket {}", pid, socket.display());
+    info!(
+        "Daemon spawned (pid {}); waiting for socket {}",
+        pid,
+        socket.display()
+    );
     match crate::ipc::path::wait_for_socket(socket, timeout).await {
         Ok(()) => {
             info!("Daemon socket ready");

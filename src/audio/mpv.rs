@@ -260,23 +260,15 @@ impl MpvController {
 
     pub async fn pause(&mut self) -> Result<(), AudioError> {
         debug!("Pausing playback");
-        self.send_command(vec![
-            json!("set_property"),
-            json!("pause"),
-            json!(true),
-        ])
-        .await?;
+        self.send_command(vec![json!("set_property"), json!("pause"), json!(true)])
+            .await?;
         Ok(())
     }
 
     pub async fn resume(&mut self) -> Result<(), AudioError> {
         debug!("Resuming playback");
-        self.send_command(vec![
-            json!("set_property"),
-            json!("pause"),
-            json!(false),
-        ])
-        .await?;
+        self.send_command(vec![json!("set_property"), json!("pause"), json!(false)])
+            .await?;
         Ok(())
     }
 

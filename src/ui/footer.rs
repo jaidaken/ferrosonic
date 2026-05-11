@@ -116,9 +116,15 @@ fn render_binds<'a>(binds: &[(String, String)], colors: &ThemeColors) -> Line<'a
         if i > 0 {
             spans.push(Span::styled(" │ ", Style::default().fg(colors.secondary)));
         }
-        spans.push(Span::styled(key.clone(), Style::default().fg(colors.accent)));
+        spans.push(Span::styled(
+            key.clone(),
+            Style::default().fg(colors.accent),
+        ));
         spans.push(Span::raw(":"));
-        spans.push(Span::styled(desc.clone(), Style::default().fg(colors.muted)));
+        spans.push(Span::styled(
+            desc.clone(),
+            Style::default().fg(colors.muted),
+        ));
     }
     Line::from(spans)
 }
@@ -169,11 +175,7 @@ impl Widget for Footer<'_> {
                 } else {
                     Style::default().fg(self.colors.success)
                 };
-                let msg: String = notif
-                    .message
-                    .chars()
-                    .take(right.width as usize)
-                    .collect();
+                let msg: String = notif.message.chars().take(right.width as usize).collect();
                 let msg_len = msg.chars().count() as u16;
                 let x = right.x + right.width.saturating_sub(msg_len);
                 buf.set_string(x, right.y + 1, &msg, style);

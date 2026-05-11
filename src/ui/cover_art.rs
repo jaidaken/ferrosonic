@@ -147,12 +147,8 @@ impl CoverArtState {
             }
         };
 
-        let cell_size = queried_cell.unwrap_or_else(|| {
-            picker
-                .as_ref()
-                .map(|p| p.font_size())
-                .unwrap_or((10, 20))
-        });
+        let cell_size = queried_cell
+            .unwrap_or_else(|| picker.as_ref().map(|p| p.font_size()).unwrap_or((10, 20)));
 
         Self {
             picker,
@@ -242,15 +238,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &Mutex<CoverArtState>) {
         && chafa_ext::is_available()
         && guard.image.is_some();
 
-    if use_chafa {
-        if guard.ensure_chafa(area.width, area.height) {
-            let cache = guard
-                .chafa_cache
-                .as_ref()
-                .expect("ensure_chafa returned true but cache is empty");
-            blit_cells(frame.buffer_mut(), area, cache);
-            return;
-        }
+    if use_chafa && guard.ensure_chafa(area.width, area.height) {
+        let cache = guard
+            .chafa_cache
+            .as_ref()
+            .expect("ensure_chafa returned true but cache is empty");
+        blit_cells(frame.buffer_mut(), area, cache);
+        return;
     }
 
     // Fallback: ratatui-image's StatefulImage (handles sixel / kitty /

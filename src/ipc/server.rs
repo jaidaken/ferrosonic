@@ -140,7 +140,10 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
                 warn!("Client sent an Event frame, ignoring");
             }
             FrameRead::UnknownRequest { id, body } => {
-                warn!("Unknown request variant from client (id={}); replying with Err: {}", id, body);
+                warn!(
+                    "Unknown request variant from client (id={}); replying with Err: {}",
+                    id, body
+                );
                 let resp = Frame::Response {
                     id,
                     payload: Err(format!("unknown request variant: {}", body)),

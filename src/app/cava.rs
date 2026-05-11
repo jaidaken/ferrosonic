@@ -6,7 +6,12 @@ use tracing::{error, info};
 use super::*;
 
 impl App {
-    pub(super) fn start_cava(&mut self, cava_gradient: &[String; 8], cava_horizontal_gradient: &[String; 8], cava_size: u32) {
+    pub(super) fn start_cava(
+        &mut self,
+        cava_gradient: &[String; 8],
+        cava_horizontal_gradient: &[String; 8],
+        cava_size: u32,
+    ) {
         self.stop_cava();
 
         let (term_w, term_h) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -53,14 +58,18 @@ impl App {
                 use std::io::Write as _;
                 if let Err(e) = f.write_all(cfg_body.as_bytes()) {
                     error!("Failed to write cava config: {}", e);
-                    unsafe { libc::close(master); }
+                    unsafe {
+                        libc::close(master);
+                    }
                     return;
                 }
                 f
             }
             Err(e) => {
                 error!("Failed to create cava temp file: {}", e);
-                unsafe { libc::close(master); }
+                unsafe {
+                    libc::close(master);
+                }
                 return;
             }
         };
@@ -111,74 +120,76 @@ impl App {
     pub(super) async fn read_cava_output(&mut self) {
         let (Some(ref mut master), Some(ref mut parser)) =
             (&mut self.cava_pty_master, &mut self.cava_parser)
-            else {
-                return;
-            };
+        else {
+            return;
+        };
 
-            let mut buf = [0u8; 16384];
-            let mut got_data = false;
-            loop {
-                match master.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        parser.process(&buf[..n]);
-                        got_data = true;
+        let mut buf = [0u8; 16384];
+        let mut got_data = false;
+        loop {
+            match master.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    parser.process(&buf[..n]);
+                    got_data = true;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(_) => return,
+            }
+        }
+
+        if !got_data {
+            return;
+        }
+
+        let screen = parser.screen();
+        let (rows, cols) = screen.size();
+        let mut cava_screen = Vec::with_capacity(rows as usize);
+
+        for row in 0..rows {
+            let mut spans: Vec<CavaSpan> = Vec::new();
+            let mut cur_text = String::new();
+            let mut cur_fg = CavaColor::Default;
+            let mut cur_bg = CavaColor::Default;
+
+            for col in 0..cols {
+                let Some(cell) = screen.cell(row, col) else {
+                    continue;
+                };
+                let fg = vt100_color_to_cava(cell.fgcolor());
+                let bg = vt100_color_to_cava(cell.bgcolor());
+
+                if fg != cur_fg || bg != cur_bg {
+                    if !cur_text.is_empty() {
+                        spans.push(CavaSpan {
+                            text: std::mem::take(&mut cur_text),
+                            fg: cur_fg,
+                            bg: cur_bg,
+                        });
                     }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                    Err(_) => return,
+                    cur_fg = fg;
+                    cur_bg = bg;
+                }
+
+                let contents = cell.contents();
+                if contents.is_empty() {
+                    cur_text.push(' ');
+                } else {
+                    cur_text.push_str(&contents);
                 }
             }
-
-            if !got_data {
-                return;
+            if !cur_text.is_empty() {
+                spans.push(CavaSpan {
+                    text: cur_text,
+                    fg: cur_fg,
+                    bg: cur_bg,
+                });
             }
+            cava_screen.push(CavaRow { spans });
+        }
 
-            let screen = parser.screen();
-            let (rows, cols) = screen.size();
-            let mut cava_screen = Vec::with_capacity(rows as usize);
-
-            for row in 0..rows {
-                let mut spans: Vec<CavaSpan> = Vec::new();
-                let mut cur_text = String::new();
-                let mut cur_fg = CavaColor::Default;
-                let mut cur_bg = CavaColor::Default;
-
-                for col in 0..cols {
-                    let Some(cell) = screen.cell(row, col) else { continue };
-                    let fg = vt100_color_to_cava(cell.fgcolor());
-                    let bg = vt100_color_to_cava(cell.bgcolor());
-
-                    if fg != cur_fg || bg != cur_bg {
-                        if !cur_text.is_empty() {
-                            spans.push(CavaSpan {
-                                text: std::mem::take(&mut cur_text),
-                                fg: cur_fg,
-                                bg: cur_bg,
-                            });
-                        }
-                        cur_fg = fg;
-                        cur_bg = bg;
-                    }
-
-                    let contents = cell.contents();
-                    if contents.is_empty() {
-                        cur_text.push(' ');
-                    } else {
-                        cur_text.push_str(&contents);
-                    }
-                }
-                if !cur_text.is_empty() {
-                    spans.push(CavaSpan {
-                        text: cur_text,
-                        fg: cur_fg,
-                        bg: cur_bg,
-                    });
-                }
-                cava_screen.push(CavaRow { spans });
-            }
-
-            let mut cs = self.client_state.write().await;
-            cs.cava_screen = cava_screen;
+        let mut cs = self.client_state.write().await;
+        cs.cava_screen = cava_screen;
     }
 }
 
@@ -191,7 +202,6 @@ fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
 }
 
 pub(super) fn generate_cava_config(g: &[String; 8], h: &[String; 8]) -> String {
-
     format!(
         "\
 [general]
@@ -242,9 +252,21 @@ monstercat = 0
 waves = 0
 noise_reduction = 11
 ",
-        g0 = g[0], g1 = g[1], g2 = g[2], g3 = g[3],
-        g4 = g[4], g5 = g[5], g6 = g[6], g7 = g[7],
-        h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3],
-        h4 = h[4], h5 = h[5], h6 = h[6], h7 = h[7],
+        g0 = g[0],
+        g1 = g[1],
+        g2 = g[2],
+        g3 = g[3],
+        g4 = g[4],
+        g5 = g[5],
+        g6 = g[6],
+        g7 = g[7],
+        h0 = h[0],
+        h1 = h[1],
+        h2 = h[2],
+        h3 = h[3],
+        h4 = h[4],
+        h5 = h[5],
+        h6 = h[6],
+        h7 = h[7],
     )
 }

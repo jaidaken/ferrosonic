@@ -24,11 +24,16 @@ impl App {
 
         let mut cs = self.client_state.write().await;
 
-        let state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
         let layout = state.client.layout.clone();
         let page = state.client.page;
         let duration = state.daemon.now_playing.duration;
-        drop(state); drop(cs); drop(ds);
+        drop(state);
+        drop(cs);
+        drop(ds);
 
         if y >= layout.header.y && y < layout.header.y + layout.header.height {
             if let Some(region) = Header::region_at(layout.header, x, y) {
@@ -36,23 +41,51 @@ impl App {
                     HeaderRegion::Tab(tab_page) => {
                         let ds = self.daemon_state.read().await;
                         let mut cs = self.client_state.write().await;
-                        let state = AppState { daemon: &*ds, client: &mut *cs };
+                        let state = AppState {
+                            daemon: &ds,
+                            client: &mut cs,
+                        };
                         state.client.page = tab_page;
                     }
                     HeaderRegion::PrevButton => {
-                        return self.client.request(DaemonRequest::Previous).await.map(|_| ()).map_err(Error::from);
+                        return self
+                            .client
+                            .request(DaemonRequest::Previous)
+                            .await
+                            .map(|_| ())
+                            .map_err(Error::from);
                     }
                     HeaderRegion::PlayButton => {
-                        return self.client.request(DaemonRequest::TogglePause).await.map(|_| ()).map_err(Error::from);
+                        return self
+                            .client
+                            .request(DaemonRequest::TogglePause)
+                            .await
+                            .map(|_| ())
+                            .map_err(Error::from);
                     }
                     HeaderRegion::PauseButton => {
-                        return self.client.request(DaemonRequest::TogglePause).await.map(|_| ()).map_err(Error::from);
+                        return self
+                            .client
+                            .request(DaemonRequest::TogglePause)
+                            .await
+                            .map(|_| ())
+                            .map_err(Error::from);
                     }
                     HeaderRegion::StopButton => {
-                        return self.client.request(DaemonRequest::Stop).await.map(|_| ()).map_err(Error::from);
+                        return self
+                            .client
+                            .request(DaemonRequest::Stop)
+                            .await
+                            .map(|_| ())
+                            .map_err(Error::from);
                     }
                     HeaderRegion::NextButton => {
-                        return self.client.request(DaemonRequest::Next).await.map(|_| ()).map_err(Error::from);
+                        return self
+                            .client
+                            .request(DaemonRequest::Next)
+                            .await
+                            .map(|_| ())
+                            .map_err(Error::from);
                     }
                 }
             }
@@ -74,7 +107,12 @@ impl App {
                     if bar_width > 0 && rel_x >= bar_start && rel_x < bar_start + bar_width {
                         let fraction = (rel_x - bar_start) as f64 / bar_width as f64;
                         let seek_pos = fraction * duration;
-                        let _ = self.client.request(DaemonRequest::Seek(seek_pos)).await.map(|_| ()).map_err(Error::from);
+                        let _ = self
+                            .client
+                            .request(DaemonRequest::Seek(seek_pos))
+                            .await
+                            .map(|_| ())
+                            .map_err(Error::from);
                     }
                 }
             }
@@ -132,7 +170,10 @@ impl App {
                 {
                     let ds = self.daemon_state.read().await;
                     let mut cs = self.client_state.write().await;
-                    let state = AppState { daemon: &*ds, client: &mut *cs };
+                    let state = AppState {
+                        daemon: &ds,
+                        client: &mut cs,
+                    };
                     already = state.client.songs.selected_option.as_ref() == Some(&option);
                     state.client.songs.selected_option = Some(option.clone());
                     state.client.songs.focus = 0;
@@ -155,7 +196,10 @@ impl App {
         let row_in_pane = y.saturating_sub(right.y + 1) as usize;
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
         let item_index = state.client.songs.scroll_offset + row_in_pane;
         if item_index >= state.songs_list().len() {
             return Ok(());
@@ -171,13 +215,17 @@ impl App {
 
         if is_second_click {
             let songs = state.songs_list().to_vec();
-            drop(state); drop(cs); drop(ds);
+            drop(state);
+            drop(cs);
+            drop(ds);
             self.last_click = Some((x, y, std::time::Instant::now()));
             return self
                 .client
                 .request(DaemonRequest::EnqueueSongs {
                     songs,
-                    mode: EnqueueMode::Replace { play_from: Some(item_index) },
+                    mode: EnqueueMode::Replace {
+                        play_from: Some(item_index),
+                    },
                 })
                 .await
                 .map(|_| ())
@@ -191,7 +239,10 @@ impl App {
     async fn handle_queue_click(&mut self, y: u16, layout: &LayoutAreas) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
         let content = layout.content;
 
         let row_in_viewport = y.saturating_sub(content.y + 1) as usize;
@@ -207,9 +258,16 @@ impl App {
                     .is_some_and(|(_, ly, t)| ly == y && t.elapsed().as_millis() < 500);
 
             if is_second_click {
-                drop(state); drop(cs); drop(ds);
+                drop(state);
+                drop(cs);
+                drop(ds);
                 self.last_click = Some((0, y, std::time::Instant::now()));
-                return self.client.request(DaemonRequest::PlayQueueIndex(item_index)).await.map(|_| ()).map_err(Error::from);
+                return self
+                    .client
+                    .request(DaemonRequest::PlayQueueIndex(item_index))
+                    .await
+                    .map(|_| ())
+                    .map_err(Error::from);
             }
         }
 
@@ -220,7 +278,10 @@ impl App {
     async fn handle_mouse_scroll_up(&mut self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
         match state.client.page {
             Page::Library => {
                 if state.client.artists.focus == 0 {
@@ -276,7 +337,10 @@ impl App {
     async fn handle_mouse_scroll_down(&mut self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let state = AppState { daemon: &*ds, client: &mut *cs };
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
         match state.client.page {
             Page::Library => {
                 if state.client.artists.focus == 0 {

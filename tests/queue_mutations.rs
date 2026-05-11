@@ -23,7 +23,11 @@ async fn move_item_before_current_decrements_position() {
         s.queue.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
         vec!["t-0", "t-2", "t-3", "t-4", "t-1"]
     );
-    assert_eq!(s.queue_position, Some(2), "current shifts left when an earlier item moves past it");
+    assert_eq!(
+        s.queue_position,
+        Some(2),
+        "current shifts left when an earlier item moves past it"
+    );
 }
 
 #[tokio::test]
@@ -43,7 +47,11 @@ async fn move_item_after_current_increments_position() {
         s.queue.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
         vec!["t-4", "t-0", "t-1", "t-2", "t-3"]
     );
-    assert_eq!(s.queue_position, Some(3), "current shifts right when a later item moves past it");
+    assert_eq!(
+        s.queue_position,
+        Some(3),
+        "current shifts right when a later item moves past it"
+    );
 }
 
 #[tokio::test]
@@ -63,7 +71,11 @@ async fn move_current_follows_to_new_index() {
         s.queue.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
         vec!["t-0", "t-1", "t-3", "t-4", "t-2"]
     );
-    assert_eq!(s.queue_position, Some(4), "current follows itself when moved");
+    assert_eq!(
+        s.queue_position,
+        Some(4),
+        "current follows itself when moved"
+    );
 }
 
 #[tokio::test]

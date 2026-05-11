@@ -15,8 +15,7 @@ use strum::IntoEnumIterator;
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
-    let chunks =
-        Layout::horizontal([Constraint::Length(22), Constraint::Min(0)]).split(area);
+    let chunks = Layout::horizontal([Constraint::Length(22), Constraint::Min(0)]).split(area);
 
     render_options(frame, chunks[0], state, &colors);
     render_songs(frame, chunks[1], state, &colors);
@@ -24,7 +23,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
 
 fn render_options(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let focus = state.client.songs.focus;
-    let selected_option = state.client
+    let selected_option = state
+        .client
         .songs
         .selected_option
         .clone()
@@ -100,7 +100,7 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
                 .map(|s| s.id == song.id)
                 .unwrap_or(false);
 
-            let line = get_song_with_artist_line(&song, is_selected, is_playing, &colors);
+            let line = get_song_with_artist_line(song, is_selected, is_playing, colors);
             ListItem::new(line)
         })
         .collect();

@@ -95,7 +95,9 @@ impl PipeWireController {
                 let output = Command::new("pw-metadata")
                     .args(["-n", "settings", "0", "clock.force-rate", &rate_str])
                     .output()
-                    .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))?;
+                    .map_err(|e| {
+                        AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e))
+                    })?;
                 if !output.status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     return Err(AudioError::PipeWire(format!(
@@ -108,7 +110,9 @@ impl PipeWireController {
                 let output = Command::new("pw-metadata")
                     .args(["-n", "settings", "0", "clock.force-rate", "0"])
                     .output()
-                    .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))?;
+                    .map_err(|e| {
+                        AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e))
+                    })?;
                 if !output.status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     return Err(AudioError::PipeWire(format!(
@@ -149,4 +153,3 @@ impl Drop for PipeWireController {
         }
     }
 }
-

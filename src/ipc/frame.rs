@@ -2,6 +2,10 @@
 //! debuggability with `socat`; throughput is plenty at this scale.
 
 #![allow(dead_code)]
+// IPC frames hold heterogeneous payloads (small commands vs.
+// bulk-data events). Boxing the big ones would force allocation on
+// every receive; the size variance is by design.
+#![allow(clippy::large_enum_variant)]
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -107,7 +111,9 @@ where
     }
 
     // Doesn't even look like a Frame envelope — fatal.
-    Err(FrameError::Serialize(serde_json::from_slice::<Frame>(&body).unwrap_err()))
+    Err(FrameError::Serialize(
+        serde_json::from_slice::<Frame>(&body).unwrap_err(),
+    ))
 }
 
 async fn read_frame_body<R>(reader: &mut R) -> Result<Vec<u8>, FrameError>

@@ -118,9 +118,18 @@ impl App {
         let client_state = self.client_state.clone();
         tokio::spawn(async move {
             use tokio::signal::unix::{signal, SignalKind};
-            let mut term = match signal(SignalKind::terminate()) { Ok(s) => s, Err(_) => return };
-            let mut int = match signal(SignalKind::interrupt()) { Ok(s) => s, Err(_) => return };
-            let mut hup = match signal(SignalKind::hangup()) { Ok(s) => s, Err(_) => return };
+            let mut term = match signal(SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            let mut int = match signal(SignalKind::interrupt()) {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            let mut hup = match signal(SignalKind::hangup()) {
+                Ok(s) => s,
+                Err(_) => return,
+            };
             tokio::select! {
                 _ = term.recv() => {}
                 _ = int.recv() => {}
@@ -292,7 +301,10 @@ impl App {
             let ds = self.daemon_state.read().await;
             let cs = self.client_state.read().await;
             (
-                ds.now_playing.song.as_ref().and_then(|s| s.cover_art.clone()),
+                ds.now_playing
+                    .song
+                    .as_ref()
+                    .and_then(|s| s.cover_art.clone()),
                 cs.settings_state.cover_art,
             )
         };
@@ -376,7 +388,6 @@ impl App {
         });
     }
 
-
     pub(crate) async fn load_initial_data(&mut self) {
         {
             let mut cs = self.client_state.write().await;
@@ -403,8 +414,8 @@ impl App {
                 let ds = self.daemon_state.read().await;
                 let mut cs = self.client_state.write().await;
                 let mut bundle = AppState {
-                    daemon: &*ds,
-                    client: &mut *cs,
+                    daemon: &ds,
+                    client: &mut cs,
                 };
                 let cover_art = self.cover_art.clone();
                 terminal
@@ -458,9 +469,7 @@ async fn run_event_pump(
 ) {
     loop {
         match rx.recv().await {
-            Ok(ev) => {
-                apply_event(&daemon_state, &client_state, &client, &cover_art, ev).await
-            }
+            Ok(ev) => apply_event(&daemon_state, &client_state, &client, &cover_art, ev).await,
             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                 warn!("Event pump lagged by {}; resnapshot + resubscribe", n);
                 let new_rx = client.subscribe();
@@ -523,8 +532,7 @@ async fn apply_event(
                             Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) => {
                                 info!("Cover art bytes received: {} bytes", bytes.len());
                                 if !bytes.is_empty() {
-                                    let mut guard =
-                                        cover_art.lock().expect("cover_art poisoned");
+                                    let mut guard = cover_art.lock().expect("cover_art poisoned");
                                     guard.load(id, &bytes);
                                 }
                             }
@@ -559,22 +567,36 @@ async fn apply_event(
             };
             {
                 let mut ds = daemon_state.write().await;
-                for song in ds.queue.iter_mut() { update(song); }
-                for song in ds.library.random_songs.iter_mut() { update(song); }
+                for song in ds.queue.iter_mut() {
+                    update(song);
+                }
+                for song in ds.library.random_songs.iter_mut() {
+                    update(song);
+                }
                 for list in ds.library.album_songs_cache.values_mut() {
-                    for song in list.iter_mut() { update(song); }
+                    for song in list.iter_mut() {
+                        update(song);
+                    }
                 }
                 for list in ds.library.playlist_songs_cache.values_mut() {
-                    for song in list.iter_mut() { update(song); }
+                    for song in list.iter_mut() {
+                        update(song);
+                    }
                 }
                 if let Some(np) = ds.now_playing.song.as_mut() {
-                    if np.id == id { np.starred = marker.clone(); }
+                    if np.id == id {
+                        np.starred = marker.clone();
+                    }
                 }
             }
             {
                 let mut cs = client_state.write().await;
-                for song in cs.artists.songs.iter_mut() { update(song); }
-                for song in cs.playlists.songs.iter_mut() { update(song); }
+                for song in cs.artists.songs.iter_mut() {
+                    update(song);
+                }
+                for song in cs.playlists.songs.iter_mut() {
+                    update(song);
+                }
             }
         }
         DaemonEvent::RandomChanged(songs) => {
@@ -630,7 +652,11 @@ async fn apply_event(
                 let (current_id, already_loaded) = {
                     let ds = daemon_state.read().await;
                     let guard = cover_art.lock().expect("cover_art poisoned");
-                    let id = ds.now_playing.song.as_ref().and_then(|s| s.cover_art.clone());
+                    let id = ds
+                        .now_playing
+                        .song
+                        .as_ref()
+                        .and_then(|s| s.cover_art.clone());
                     let loaded = match (&id, &guard.current_id) {
                         (Some(i), Some(c)) => i == c,
                         _ => false,
@@ -648,8 +674,7 @@ async fn apply_event(
                             .await
                         {
                             if !bytes.is_empty() {
-                                let mut guard =
-                                    cover_art.lock().expect("cover_art poisoned");
+                                let mut guard = cover_art.lock().expect("cover_art poisoned");
                                 guard.load(id, &bytes);
                             }
                         }
