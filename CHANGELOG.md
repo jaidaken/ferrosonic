@@ -14,9 +14,22 @@
   the daemon fetches a fresh roll of random songs and keeps playing.
   Off by default, toggled on F6 (Settings).
 - Two-line footer so all of the keyboard shortcuts actually fit.
-- `Shift+R` shuffles the whole library (server fetches a fresh random
-  roll and starts playing). `r` on the Library page now shuffles the
-  highlighted artist or album. The old per-page `s` shuffle is gone.
+- Repeat modes. `r` cycles Off → One → All. `One` re-preloads the
+  current track so gapless still works on the loop; `All` wraps the
+  queue position when the last track ends. Persists in config.
+- Cover art in the cava band. Detects kitty / iTerm2 / sixel image
+  protocols via `ratatui-image` and falls back to half-blocks on
+  plainer terminals. Fetched server-side via `getCoverArt`, cached
+  on the daemon. Toggled on F6 (Settings).
+
+### Changed
+
+- Shuffle keys moved off `r` (now repeat). `t` shuffles the current
+  context (selected artist/album on Library, the playlist on
+  Playlists, the queue on Queue). `Shift+T` shuffles the whole
+  library (was `Shift+R`).
+- Global `t` no longer cycles themes; the theme picker on F6 is the
+  way to change themes now.
 
 ## [0.3.0] - 2026-05-11
 

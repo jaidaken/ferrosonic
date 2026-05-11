@@ -13,11 +13,13 @@ enum SettingChange {
     CavaSize,
     Daemon,
     AutoContinue,
+    Repeat,
+    CoverArt,
 }
 
 /// Number of settings fields. Used as the upper bound for the down-key
 /// navigation (`selected_field < SETTINGS_FIELD_COUNT - 1`).
-const SETTINGS_FIELD_COUNT: usize = 5;
+const SETTINGS_FIELD_COUNT: usize = 7;
 
 impl App {
     /// Handle settings page keys
@@ -94,6 +96,29 @@ impl App {
                         state.client.notify(format!("Auto-continue: {}", status));
                         change = Some(SettingChange::AutoContinue);
                     }
+                    5 => {
+                        // Left cycles backwards through repeat modes
+                        let cur = state.client.settings_state.repeat_mode;
+                        let new_mode = match cur {
+                            crate::config::RepeatMode::Off => crate::config::RepeatMode::All,
+                            crate::config::RepeatMode::One => crate::config::RepeatMode::Off,
+                            crate::config::RepeatMode::All => crate::config::RepeatMode::One,
+                        };
+                        state.client.settings_state.repeat_mode = new_mode;
+                        state.client.notify(format!("Repeat: {}", new_mode.label()));
+                        change = Some(SettingChange::Repeat);
+                    }
+                    6 => {
+                        state.client.settings_state.cover_art =
+                            !state.client.settings_state.cover_art;
+                        let status = if state.client.settings_state.cover_art {
+                            "On"
+                        } else {
+                            "Off"
+                        };
+                        state.client.notify(format!("Cover Art: {}", status));
+                        change = Some(SettingChange::CoverArt);
+                    }
                     _ => {}
                 },
                 // Right / Enter / Space
@@ -149,6 +174,23 @@ impl App {
                             state.client.notify(format!("Auto-continue: {}", status));
                             change = Some(SettingChange::AutoContinue);
                         }
+                        5 => {
+                            let new_mode = state.client.settings_state.repeat_mode.cycle();
+                            state.client.settings_state.repeat_mode = new_mode;
+                            state.client.notify(format!("Repeat: {}", new_mode.label()));
+                            change = Some(SettingChange::Repeat);
+                        }
+                        6 => {
+                            state.client.settings_state.cover_art =
+                                !state.client.settings_state.cover_art;
+                            let status = if state.client.settings_state.cover_art {
+                                "On"
+                            } else {
+                                "Off"
+                            };
+                            state.client.notify(format!("Cover Art: {}", status));
+                            change = Some(SettingChange::CoverArt);
+                        }
                         _ => {}
                     }
                 }
@@ -162,7 +204,17 @@ impl App {
 
         // Snapshot the new client-side values, then dispatch the
         // matching daemon request (it persists + emits ConfigChanged).
-        let (theme_name, cava_enabled, cava_size, daemon_enabled, auto_continue, gradient, h_gradient) = {
+        let (
+            theme_name,
+            cava_enabled,
+            cava_size,
+            daemon_enabled,
+            auto_continue,
+            repeat_mode,
+            cover_art,
+            gradient,
+            h_gradient,
+        ) = {
             let ds = self.daemon_state.read().await;
             let mut cs = self.client_state.write().await;
             let state = AppState { daemon: &*ds, client: &mut *cs };
@@ -173,6 +225,8 @@ impl App {
                 s.cava_size,
                 s.daemon_enabled,
                 s.auto_continue,
+                s.repeat_mode,
+                s.cover_art,
                 s.current_theme().cava_gradient.clone(),
                 s.current_theme().cava_horizontal_gradient.clone(),
             )
@@ -183,6 +237,8 @@ impl App {
             SettingChange::CavaSize => DaemonRequest::SetCavaSize(cava_size),
             SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
             SettingChange::AutoContinue => DaemonRequest::SetAutoContinue(auto_continue),
+            SettingChange::Repeat => DaemonRequest::SetRepeatMode(repeat_mode),
+            SettingChange::CoverArt => DaemonRequest::SetCoverArtEnabled(cover_art),
         };
         if let Err(e) = self.client.request(req).await {
             let ds = self.daemon_state.read().await;
@@ -214,7 +270,10 @@ impl App {
                     self.start_cava(&gradient, &h_gradient, cava_h);
                 }
             }
-            SettingChange::Daemon | SettingChange::AutoContinue => {}
+            SettingChange::Daemon
+            | SettingChange::AutoContinue
+            | SettingChange::Repeat
+            | SettingChange::CoverArt => {}
         }
 
         Ok(())

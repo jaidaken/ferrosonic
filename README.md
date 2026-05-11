@@ -14,6 +14,8 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Quick Play page** - Jump straight into your **Starred** songs or a **Random** roll without browsing
 - **Star songs** - Mark favourites with `n` (currently-playing) or `m` (highlighted); starred tracks show a ★ everywhere and populate the Quick Play Starred view
 - **Shuffle play** - Shuffle all songs by a selected artist or album directly from the Library page
+- **Repeat modes** - Cycle Off / One / All with `r`; the gapless pre-loader re-preloads the same track on One and wraps on All
+- **Cover art** - Display album art in the cava strip using kitty / iTerm2 / sixel image protocols; falls back to half-blocks on plainer terminals
 - **Playlist support** - Browse and play server playlists with shuffle capability
 - **Play queue management** - Add, remove, reorder, shuffle, and clear queue history; queue persists across daemon restarts
 - **Audio quality display** - Real-time display of sample rate, bit depth, codec format, and channel layout
@@ -106,6 +108,9 @@ Theme = "Default"
 Daemon = true
 Cava = false
 CavaSize = 40
+AutoContinue = false
+RepeatMode = "Off"
+CoverArt = false
 ```
 
 | Field | Description |
@@ -118,6 +123,9 @@ CavaSize = 40
 | `Daemon` | `true` (default) auto-spawns `ferrosonicd`; `false` runs single-process |
 | `Cava` | Enable the cava visualizer pane |
 | `CavaSize` | Cava pane height percentage (10-80, step 5) |
+| `AutoContinue` | Fetch fresh random songs and keep playing when the queue ends |
+| `RepeatMode` | Queue repeat: `"Off"`, `"One"`, or `"All"` |
+| `CoverArt` | Show cover art in the cava band (kitty / iTerm2 / sixel terminals) |
 
 Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/ferrosonic/ferrosonicd.log` (daemon). The queue is persisted to `~/.config/ferrosonic/queue.json` so it survives daemon restarts.
 
@@ -132,8 +140,8 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 | `l` | Next track |
 | `h` | Previous track |
 | `n` | Star/unstar currently-playing song |
-| `Shift+R` | Shuffle the entire library and play |
-| `t` | Cycle to next theme |
+| `r` | Cycle repeat mode (Off → One → All) |
+| `Shift+T` | Shuffle the entire library and play |
 | `Ctrl+R` | Refresh data from server |
 | `F1` | Library page |
 | `F2` | Queue page |
@@ -157,7 +165,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 | `Backspace` | Return to tree from song list |
 | `e` | Add selected item to end of queue |
 | `i` | Add selected item as next in queue |
-| `r` | Shuffle play all songs by the selected artist or album |
+| `t` | Shuffle play all songs by the selected artist or album |
 | `m` | Star/unstar highlighted song (songs pane focus only) |
 
 ### Queue Page (F2)
@@ -170,7 +178,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 | `d` | Remove selected song from queue (advances to next if removing current) |
 | `J` (Shift+J) | Move selected song down |
 | `K` (Shift+K) | Move selected song up |
-| `r` | Shuffle queue (current song stays in place) |
+| `t` | Shuffle queue (current song stays in place) |
 | `c` | Clear played history (remove songs before current) |
 | `m` | Star/unstar highlighted song |
 
@@ -197,7 +205,7 @@ The Quick Play page has two modes selectable from the options pane: **Starred** 
 | `Enter` | Load playlist songs or play selected song |
 | `e` | Add selected item to end of queue |
 | `i` | Add selected song as next in queue |
-| `r` | Shuffle play all songs in selected playlist |
+| `t` | Shuffle play all songs in selected playlist |
 | `m` | Star/unstar highlighted song (songs pane focus only) |
 
 ### Server Page (F5)

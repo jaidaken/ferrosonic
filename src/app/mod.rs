@@ -68,6 +68,11 @@ pub struct App {
     pub(crate) cava_config: Option<tempfile::NamedTempFile>,
     /// Last mouse click position and time (for second-click detection)
     pub(crate) last_click: Option<(u16, u16, std::time::Instant)>,
+    /// Cover-art picker + active protocol. Lazily probed once the
+    /// terminal is in raw mode; `None` here until `run()` initialises
+    /// it. Shared with the event-pump task so fresh art loads on
+    /// every `NowPlayingChanged`.
+    pub(crate) cover_art: std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
 }
 
 impl App {
@@ -91,6 +96,13 @@ impl App {
             cava_parser: None,
             cava_config: None,
             last_click: None,
+            cover_art: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::ui::cover_art::CoverArtState {
+                    picker: None,
+                    current_id: None,
+                    protocol: None,
+                },
+            )),
         }
     }
 
@@ -115,6 +127,13 @@ impl App {
             cava_parser: None,
             cava_config: None,
             last_click: None,
+            cover_art: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::ui::cover_art::CoverArtState {
+                    picker: None,
+                    current_id: None,
+                    protocol: None,
+                },
+            )),
         }
     }
 
@@ -235,6 +254,15 @@ impl App {
 
         info!("Terminal initialized");
 
+        // Probe image-protocol support now that we own the terminal in
+        // raw mode. Failure here just means cover-art rendering stays
+        // disabled — every other feature still works.
+        {
+            let probed = crate::ui::cover_art::CoverArtState::init();
+            let mut guard = self.cover_art.lock().expect("cover_art poisoned");
+            *guard = probed;
+        }
+
         // Load initial data if configured. In-process: directly check
         // the local SubsonicClient. Split: skip — ferrosonicd already
         // populated the library before the TUI connected (and the
@@ -335,11 +363,41 @@ impl App {
             );
         }
 
+        // Seed cover art for whatever's already playing in the snapshot,
+        // since no NowPlayingChanged event fires for an already-running
+        // daemon at TUI startup.
+        let (initial_cover_id, cover_art_enabled) = {
+            let ds = self.daemon_state.read().await;
+            let cs = self.client_state.read().await;
+            (
+                ds.now_playing.song.as_ref().and_then(|s| s.cover_art.clone()),
+                cs.settings_state.cover_art,
+            )
+        };
+        if cover_art_enabled {
+            if let Some(id) = initial_cover_id {
+                if let Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) = self
+                    .client
+                    .request(DaemonRequest::FetchCoverArt {
+                        id: id.clone(),
+                        size: 512,
+                    })
+                    .await
+                {
+                    if !bytes.is_empty() {
+                        let mut guard = self.cover_art.lock().expect("cover_art poisoned");
+                        guard.load(id, &bytes);
+                    }
+                }
+            }
+        }
+
         let daemon_state = self.daemon_state.clone();
         let client_state = self.client_state.clone();
         let client = self.client.clone();
+        let cover_art = self.cover_art.clone();
         tokio::spawn(async move {
-            run_event_pump(client, daemon_state, client_state, rx).await
+            run_event_pump(client, daemon_state, client_state, cover_art, rx).await
         });
     }
 
@@ -403,8 +461,9 @@ impl App {
                     daemon: &*ds,
                     client: &mut *cs,
                 };
+                let cover_art = self.cover_art.clone();
                 terminal
-                    .draw(|frame| ui::draw(frame, &mut bundle))
+                    .draw(|frame| ui::draw(frame, &mut bundle, &cover_art))
                     .map_err(UiError::Render)?;
             }
 
@@ -453,11 +512,14 @@ async fn run_event_pump(
     client: Arc<dyn DaemonClient>,
     daemon_state: SharedDaemonState,
     client_state: SharedClientState,
+    cover_art: std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
     mut rx: tokio::sync::broadcast::Receiver<crate::ipc::DaemonEvent>,
 ) {
     loop {
         match rx.recv().await {
-            Ok(ev) => apply_event(&daemon_state, &client_state, ev).await,
+            Ok(ev) => {
+                apply_event(&daemon_state, &client_state, &client, &cover_art, ev).await
+            }
             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                 warn!("Event pump lagged by {}; resnapshot + resubscribe", n);
                 let new_rx = client.subscribe();
@@ -483,6 +545,8 @@ async fn run_event_pump(
 async fn apply_event(
     daemon_state: &SharedDaemonState,
     client_state: &SharedClientState,
+    client: &Arc<dyn DaemonClient>,
+    cover_art: &std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
     ev: crate::ipc::DaemonEvent,
 ) {
     use crate::ipc::DaemonEvent;
@@ -493,8 +557,41 @@ async fn apply_event(
             ds.queue_position = position;
         }
         DaemonEvent::NowPlayingChanged(np) => {
-            let mut ds = daemon_state.write().await;
-            ds.now_playing = np;
+            let new_cover_id = np.song.as_ref().and_then(|s| s.cover_art.clone());
+            let cover_art_enabled = {
+                let cs = client_state.read().await;
+                cs.settings_state.cover_art
+            };
+            {
+                let mut ds = daemon_state.write().await;
+                ds.now_playing = np;
+            }
+            if cover_art_enabled {
+                if let Some(id) = new_cover_id {
+                    let already_loaded = {
+                        let guard = cover_art.lock().expect("cover_art poisoned");
+                        guard.current_id.as_deref() == Some(id.as_str())
+                    };
+                    if !already_loaded {
+                        if let Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) = client
+                            .request(DaemonRequest::FetchCoverArt {
+                                id: id.clone(),
+                                size: 512,
+                            })
+                            .await
+                        {
+                            if !bytes.is_empty() {
+                                let mut guard =
+                                    cover_art.lock().expect("cover_art poisoned");
+                                guard.load(id, &bytes);
+                            }
+                        }
+                    }
+                } else {
+                    let mut guard = cover_art.lock().expect("cover_art poisoned");
+                    guard.clear();
+                }
+            }
         }
         DaemonEvent::PositionTick(pos) => {
             let mut ds = daemon_state.write().await;
@@ -566,8 +663,27 @@ async fn apply_event(
             }
         }
         DaemonEvent::ConfigChanged(cfg) => {
-            let mut ds = daemon_state.write().await;
-            ds.config = cfg;
+            let repeat_mode = cfg.repeat_mode;
+            let cover_art = cfg.cover_art;
+            let auto_continue = cfg.auto_continue;
+            {
+                let mut ds = daemon_state.write().await;
+                ds.config = cfg;
+            }
+            // Mirror config-derived UI state into ClientState so the
+            // Settings page reflects what the daemon actually has.
+            let mut cs = client_state.write().await;
+            cs.settings_state.repeat_mode = repeat_mode;
+            cs.settings_state.cover_art = cover_art;
+            cs.settings_state.auto_continue = auto_continue;
+        }
+        DaemonEvent::RepeatModeChanged(mode) => {
+            {
+                let mut ds = daemon_state.write().await;
+                ds.config.repeat_mode = mode;
+            }
+            let mut cs = client_state.write().await;
+            cs.settings_state.repeat_mode = mode;
         }
         DaemonEvent::Shutdown => {
             let mut cs = client_state.write().await;

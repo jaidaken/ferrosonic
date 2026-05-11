@@ -340,6 +340,33 @@ impl SubsonicClient {
         Ok((playlist, detail.entry))
     }
 
+    /// Fetch cover-art bytes (JPEG or PNG, server's choice) for a
+    /// `coverArt` id at the requested longest-edge size in pixels.
+    /// Errors propagate; the caller is expected to fall back to no
+    /// art rather than failing the whole request.
+    pub async fn get_cover_art(&self, id: &str, size: u32) -> Result<Vec<u8>, SubsonicError> {
+        let mut url = self.base_url.join("rest/getCoverArt")?;
+        let (salt, token) = generate_auth_params(&self.password);
+        url.query_pairs_mut()
+            .append_pair("id", id)
+            .append_pair("size", &size.to_string())
+            .append_pair("u", &self.username)
+            .append_pair("t", &token)
+            .append_pair("s", &salt)
+            .append_pair("v", API_VERSION)
+            .append_pair("c", CLIENT_NAME);
+
+        let resp = self.http.get(url).send().await?;
+        if !resp.status().is_success() {
+            return Err(SubsonicError::Api {
+                code: resp.status().as_u16() as i32,
+                message: format!("getCoverArt HTTP {}", resp.status()),
+            });
+        }
+        let bytes = resp.bytes().await?;
+        Ok(bytes.to_vec())
+    }
+
     /// Get stream URL for a song
     ///
     /// Returns the full URL with authentication that can be passed to MPV

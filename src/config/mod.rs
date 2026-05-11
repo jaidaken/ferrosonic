@@ -56,6 +56,95 @@ pub struct Config {
     /// from the server and keep playing. Default `false`.
     #[serde(rename = "AutoContinue", default)]
     pub auto_continue: bool,
+
+    /// Repeat mode for the queue. `Off` plays through and stops,
+    /// `One` loops the current track, `All` wraps to the queue head.
+    /// Persists across daemon restarts.
+    #[serde(rename = "RepeatMode", default)]
+    pub repeat_mode: RepeatMode,
+
+    /// Show album art in the cava band on the now-playing screen.
+    /// Requires a terminal with image support (kitty / iTerm2 / sixel)
+    /// for full fidelity; half-block fallback otherwise.
+    #[serde(rename = "CoverArt", default)]
+    pub cover_art: bool,
+}
+
+/// How the queue behaves when it reaches the end.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepeatMode {
+    /// Stop when the queue ends (or fire auto-continue if enabled).
+    #[default]
+    Off,
+    /// Loop the currently-playing track forever.
+    One,
+    /// Wrap the queue position back to 0 when the end is reached.
+    All,
+}
+
+impl RepeatMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            RepeatMode::Off => "off",
+            RepeatMode::One => "one",
+            RepeatMode::All => "all",
+        }
+    }
+    pub fn cycle(self) -> Self {
+        match self {
+            RepeatMode::Off => RepeatMode::One,
+            RepeatMode::One => RepeatMode::All,
+            RepeatMode::All => RepeatMode::Off,
+        }
+    }
+    /// What track plays after `current` finishes on its own.
+    /// `One` repeats it; `All` wraps; `Off` advances and gives up
+    /// at the end (caller handles auto-continue / stop).
+    pub fn next_auto(self, current: usize, queue_len: usize) -> Option<usize> {
+        if queue_len == 0 {
+            return None;
+        }
+        match self {
+            RepeatMode::One => Some(current),
+            RepeatMode::All => Some((current + 1) % queue_len),
+            RepeatMode::Off => {
+                if current + 1 < queue_len {
+                    Some(current + 1)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+    /// What track plays when the user explicitly presses Next.
+    /// `One` is ignored on manual skip — the user wanted to move,
+    /// so wrap or stop as if Off / All.
+    pub fn next_manual(self, current: usize, queue_len: usize) -> Option<usize> {
+        if queue_len == 0 {
+            return None;
+        }
+        match self {
+            RepeatMode::All | RepeatMode::One => Some((current + 1) % queue_len),
+            RepeatMode::Off => {
+                if current + 1 < queue_len {
+                    Some(current + 1)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+    /// What track plays when the user explicitly presses Previous from
+    /// position 0. `All` / `One` wrap to the last track; `Off` stays.
+    pub fn prev_wrap(self, queue_len: usize) -> Option<usize> {
+        if queue_len == 0 {
+            return None;
+        }
+        match self {
+            RepeatMode::All | RepeatMode::One => Some(queue_len - 1),
+            RepeatMode::Off => None,
+        }
+    }
 }
 
 impl Default for Config {
@@ -70,6 +159,8 @@ impl Default for Config {
             cava_size: Self::default_cava_size(),
             daemon: Self::default_daemon(),
             auto_continue: false,
+            repeat_mode: RepeatMode::Off,
+            cover_art: false,
         }
     }
 }

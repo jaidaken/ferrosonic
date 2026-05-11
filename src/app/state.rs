@@ -259,6 +259,10 @@ pub struct SettingsState {
     /// Auto-continue with random songs when the queue ends. Daemon
     /// fetches a fresh batch and keeps playing.
     pub auto_continue: bool,
+    /// Repeat mode for the queue. Cycled by `r` globally.
+    pub repeat_mode: crate::config::RepeatMode,
+    /// Show cover art in the cava band on the now-playing screen.
+    pub cover_art: bool,
 }
 
 impl Default for SettingsState {
@@ -271,6 +275,8 @@ impl Default for SettingsState {
             cava_size: 40,
             daemon_enabled: true,
             auto_continue: false,
+            repeat_mode: crate::config::RepeatMode::Off,
+            cover_art: false,
         }
     }
 }
@@ -410,6 +416,8 @@ pub fn new_shared_client_state(config: &Config) -> SharedClientState {
     client.settings_state.cava_size = config.cava_size.clamp(10, 80);
     client.settings_state.daemon_enabled = config.daemon;
     client.settings_state.auto_continue = config.auto_continue;
+    client.settings_state.repeat_mode = config.repeat_mode;
+    client.settings_state.cover_art = config.cover_art;
     // Songs-page default: Starred. The page's input handler treats
     // a None option as "do nothing" on arrow keys.
     client.songs.selected_option = Some(SongOption::Starred);

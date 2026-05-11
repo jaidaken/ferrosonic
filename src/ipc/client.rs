@@ -269,6 +269,18 @@ impl DaemonClient for InProcessClient {
                 self.core.set_auto_continue(on).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::SetRepeatMode(mode) => {
+                self.core.set_repeat_mode(mode).await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
+            DaemonRequest::SetCoverArtEnabled(on) => {
+                self.core.set_cover_art_enabled(on).await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
+            DaemonRequest::FetchCoverArt { id, size } => {
+                let bytes = self.core.get_cover_art(&id, size).await;
+                Ok(DaemonResponse::CoverArt(bytes))
+            }
 
             // ── Lifecycle ───────────────────────────────────────────
             DaemonRequest::Subscribe => {

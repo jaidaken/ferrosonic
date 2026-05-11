@@ -16,6 +16,7 @@ pub struct Footer<'a> {
     page: Page,
     sample_rate: Option<u32>,
     notification: Option<&'a Notification>,
+    repeat_mode: crate::config::RepeatMode,
     colors: ThemeColors,
 }
 
@@ -25,6 +26,7 @@ impl<'a> Footer<'a> {
             page,
             sample_rate: None,
             notification: None,
+            repeat_mode: crate::config::RepeatMode::Off,
             colors,
         }
     }
@@ -39,71 +41,72 @@ impl<'a> Footer<'a> {
         self
     }
 
-    fn global_keybinds(&self) -> Vec<(&'static str, &'static str)> {
+    pub fn repeat_mode(mut self, mode: crate::config::RepeatMode) -> Self {
+        self.repeat_mode = mode;
+        self
+    }
+
+    fn global_keybinds(&self) -> Vec<(String, String)> {
+        let repeat_label = format!("Repeat ({})", self.repeat_mode.label());
         vec![
-            ("q", "Quit"),
-            ("p/Space", "Pause"),
-            ("h", "Prev"),
-            ("l", "Next"),
-            ("n", "Star playing"),
-            ("Shift+R", "Shuffle library"),
-            ("t", "Theme"),
+            ("q".into(), "Quit".into()),
+            ("p/Space".into(), "Pause".into()),
+            ("h".into(), "Prev".into()),
+            ("l".into(), "Next".into()),
+            ("n".into(), "Star playing".into()),
+            ("r".into(), repeat_label),
+            ("Shift+T".into(), "Shuffle library".into()),
         ]
     }
 
-    fn page_keybinds(&self) -> Vec<(&'static str, &'static str)> {
+    fn page_keybinds(&self) -> Vec<(String, String)> {
+        let s = |k: &str, d: &str| (k.to_string(), d.to_string());
         match self.page {
-            Page::QuickPlay => vec![
-                ("m", "Star selected"),
-                ("Enter", "Play"),
-            ],
+            Page::QuickPlay => vec![s("m", "Star selected"), s("Enter", "Play")],
             Page::Library => vec![
-                ("m", "Star selected"),
-                ("/", "Filter"),
-                ("←/→", "Focus"),
-                ("e", "Add"),
-                ("i", "Add next"),
-                ("r", "Shuffle"),
-                ("Enter", "Play"),
+                s("m", "Star selected"),
+                s("/", "Filter"),
+                s("←/→", "Focus"),
+                s("e", "Add"),
+                s("i", "Add next"),
+                s("t", "Shuffle"),
+                s("Enter", "Play"),
             ],
             Page::Queue => vec![
-                ("m", "Star selected"),
-                ("d", "Remove"),
-                ("J/K", "Move"),
-                ("r", "Shuffle"),
-                ("c", "Clear history"),
-                ("Enter", "Play"),
+                s("m", "Star selected"),
+                s("d", "Remove"),
+                s("J/K", "Move"),
+                s("t", "Shuffle"),
+                s("c", "Clear history"),
+                s("Enter", "Play"),
             ],
             Page::Playlists => vec![
-                ("m", "Star selected"),
-                ("←/→", "Focus"),
-                ("e", "Add"),
-                ("i", "Add next"),
-                ("r", "Shuffle play"),
-                ("Enter", "Play"),
+                s("m", "Star selected"),
+                s("←/→", "Focus"),
+                s("e", "Add"),
+                s("i", "Add next"),
+                s("t", "Shuffle play"),
+                s("Enter", "Play"),
             ],
             Page::Server => vec![
-                ("Tab", "Next field"),
-                ("Enter", "Test/Save"),
-                ("Ctrl+R", "Refresh"),
+                s("Tab", "Next field"),
+                s("Enter", "Test/Save"),
+                s("Ctrl+R", "Refresh"),
             ],
-            Page::Settings => vec![("←/→/Enter", "Change")],
+            Page::Settings => vec![s("←/→/Enter", "Change")],
         }
     }
 }
 
-fn render_binds<'a>(
-    binds: &[(&'static str, &'static str)],
-    colors: &ThemeColors,
-) -> Line<'a> {
+fn render_binds<'a>(binds: &[(String, String)], colors: &ThemeColors) -> Line<'a> {
     let mut spans = Vec::new();
     for (i, (key, desc)) in binds.iter().enumerate() {
         if i > 0 {
             spans.push(Span::styled(" │ ", Style::default().fg(colors.secondary)));
         }
-        spans.push(Span::styled(*key, Style::default().fg(colors.accent)));
+        spans.push(Span::styled(key.clone(), Style::default().fg(colors.accent)));
         spans.push(Span::raw(":"));
-        spans.push(Span::styled(*desc, Style::default().fg(colors.muted)));
+        spans.push(Span::styled(desc.clone(), Style::default().fg(colors.muted)));
     }
     Line::from(spans)
 }

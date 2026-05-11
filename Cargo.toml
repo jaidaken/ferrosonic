@@ -77,6 +77,12 @@ tempfile = "3"
 # Terminal emulator for cava integration
 vt100 = "0.15"
 
+# Cover-art display: ratatui-image autodetects kitty / iTerm2 / sixel
+# and falls back to half-blocks in terminals without image support.
+# `image` is the JPEG/PNG decoder ratatui-image consumes.
+ratatui-image = { version = "8", default-features = false }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
 [profile.release]
 lto = true
 codegen-units = 1

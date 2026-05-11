@@ -172,7 +172,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('t') => {
                 // Shuffle play playlist
                 use rand::seq::SliceRandom;
                 if !state.client.playlists.songs.is_empty() {

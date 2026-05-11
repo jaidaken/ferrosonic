@@ -1,5 +1,6 @@
 //! Terminal UI module
 
+pub mod cover_art;
 pub mod footer;
 pub mod header;
 pub mod layout;

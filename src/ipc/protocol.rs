@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::app::state::NowPlaying;
-use crate::config::Config;
+use crate::config::{Config, RepeatMode};
 use crate::daemon::state::DaemonState;
 use crate::subsonic::models::{Album, Artist, Child, Playlist, SearchResult3};
 
@@ -128,6 +128,14 @@ pub enum DaemonRequest {
     /// Enable/disable auto-continue: when the queue ends, fetch a
     /// fresh batch of random songs and keep playing.
     SetAutoContinue(bool),
+    /// Set the queue repeat mode (Off / One / All). Persisted.
+    SetRepeatMode(RepeatMode),
+    /// Enable/disable cover-art display in the now-playing area.
+    SetCoverArtEnabled(bool),
+    /// Fetch cover-art bytes for the given Subsonic `coverArt` id at
+    /// the requested longest-edge size in pixels. Daemon caches the
+    /// raw bytes; the TUI decodes them locally.
+    FetchCoverArt { id: String, size: u32 },
 
     // ── Lifecycle ───────────────────────────────────────────────────────
     /// Subscribe to event broadcast. Daemon's first event after this is a
@@ -184,6 +192,9 @@ pub enum DaemonResponse {
     Snapshot(Box<DaemonState>),
     /// Reply to `Search`: matched artists, albums, songs.
     SearchResults(SearchResult3),
+    /// Reply to `FetchCoverArt`: the raw encoded image bytes (JPEG or
+    /// PNG as the server provides), or empty on error.
+    CoverArt(Vec<u8>),
     /// Reply to `Ping`.
     Pong,
 }
@@ -245,6 +256,8 @@ pub enum DaemonEvent {
         message: String,
         is_error: bool,
     },
+    /// Repeat mode changed.
+    RepeatModeChanged(RepeatMode),
     /// Configuration changed (theme, server, cava knobs). Clients should
     /// reload their local config view.
     ConfigChanged(Config),

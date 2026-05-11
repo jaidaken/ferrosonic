@@ -127,26 +127,8 @@ impl App {
                 drop(state); drop(cs); drop(ds);
                 return self.client.request(DaemonRequest::Previous).await.map(|_| ()).map_err(Error::from);
             }
-            // Cycle theme (global)
-            (KeyCode::Char('t'), KeyModifiers::NONE) => {
-                state.client.settings_state.next_theme();
-                let theme_name = state.client.settings_state.theme_name().to_string();
-                state.client.notify(format!("Theme: {}", theme_name));
-                let cava_enabled = state.client.settings_state.cava_enabled;
-                let td = state.client.settings_state.current_theme();
-                let g = td.cava_gradient.clone();
-                let h = td.cava_horizontal_gradient.clone();
-                let cava_h = state.client.settings_state.cava_size as u32;
-                drop(state); drop(cs); drop(ds);
-                let _ = self
-                    .client
-                    .request(DaemonRequest::SetTheme(theme_name))
-                    .await;
-                if cava_enabled {
-                    self.start_cava(&g, &h, cava_h);
-                }
-                return Ok(());
-            }
+            // Cycle theme moved to F6 Settings; freeing `t` for the
+            // per-page shuffle-context binding.
             // Toggle star on currently-playing song
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 let song_id = state.daemon.now_playing.song.as_ref().map(|s| s.id.clone());
@@ -159,11 +141,23 @@ impl App {
                 }
                 return Ok(());
             }
-            // Shift+R: shuffle the entire library and play.
-            (KeyCode::Char('R'), _) => {
+            // Shift+T: shuffle the entire library and play.
+            (KeyCode::Char('T'), _) => {
                 state.client.notify("Shuffling library...");
                 drop(state); drop(cs); drop(ds);
                 let _ = self.client.request(DaemonRequest::ShuffleLibrary).await;
+                return Ok(());
+            }
+            // r: cycle repeat mode (off → one → all)
+            (KeyCode::Char('r'), m) if !m.contains(KeyModifiers::CONTROL) => {
+                let new_mode = state.client.settings_state.repeat_mode.cycle();
+                state.client.settings_state.repeat_mode = new_mode;
+                state.client.notify(format!("Repeat: {}", new_mode.label()));
+                drop(state); drop(cs); drop(ds);
+                let _ = self
+                    .client
+                    .request(DaemonRequest::SetRepeatMode(new_mode))
+                    .await;
                 return Ok(());
             }
             // Ctrl+R to refresh data from server

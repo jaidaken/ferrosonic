@@ -108,7 +108,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('t') => {
                 // Shuffle queue
                 state.client.notify("Queue shuffled");
                 drop(state); drop(cs); drop(ds);

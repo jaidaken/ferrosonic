@@ -55,6 +55,9 @@ pub struct DaemonCore {
     /// `try_send(())` on every queue change; the task drains it, sleeps
     /// briefly, then writes the latest queue to disk.
     queue_save_tx: tokio::sync::mpsc::Sender<()>,
+    /// Cover-art byte cache keyed by `"<coverArt-id>@<size>"`. Bounded
+    /// at 64 entries to keep RAM predictable; oldest dropped on insert.
+    cover_art_cache: RwLock<std::collections::HashMap<String, Vec<u8>>>,
 }
 
 impl DaemonCore {
@@ -85,6 +88,7 @@ impl DaemonCore {
             subsonic: RwLock::new(subsonic),
             event_tx,
             queue_save_tx,
+            cover_art_cache: RwLock::new(std::collections::HashMap::new()),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -460,74 +464,145 @@ impl DaemonCore {
     /// batch from the server and keeps playing.
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
-        let (queue_len, current_pos, auto_continue) = {
+        let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
             (
                 state.queue.len(),
                 state.queue_position,
                 state.config.auto_continue,
+                state.config.repeat_mode,
             )
         };
         if queue_len == 0 {
             return Ok(());
         }
-        let next_pos = match current_pos {
-            Some(pos) if pos + 1 < queue_len => pos + 1,
-            _ => {
-                if auto_continue {
-                    info!("Queue ended, auto-continuing with random songs");
-                    if let Some(client) = self.subsonic.read().await.clone() {
-                        match client.get_random_songs().await {
-                            Ok(songs) if !songs.is_empty() => {
-                                let start_pos;
-                                {
-                                    let mut state = self.state.write().await;
-                                    start_pos = state.queue.len();
-                                    state.queue.extend(songs);
-                                }
-                                self.emit_queue().await;
-                                return self.play_queue_position(start_pos).await;
-                            }
-                            Ok(_) => {
-                                self.emit(DaemonEvent::Notification {
-                                    message: "Auto-continue: server returned no songs".to_string(),
-                                    is_error: true,
-                                });
-                            }
-                            Err(e) => {
-                                error!("Auto-continue fetch failed: {}", e);
-                                self.emit(DaemonEvent::Notification {
-                                    message: format!("Auto-continue failed: {}", e),
-                                    is_error: true,
-                                });
-                            }
+        let next_pos: Option<usize> = match current_pos {
+            Some(p) => repeat.next_manual(p, queue_len),
+            None => Some(0),
+        };
+        if let Some(p) = next_pos {
+            return self.play_queue_position(p).await;
+        }
+        if auto_continue {
+            info!("Queue ended, auto-continuing with random songs");
+            if let Some(client) = self.subsonic.read().await.clone() {
+                match client.get_random_songs().await {
+                    Ok(songs) if !songs.is_empty() => {
+                        let start_pos;
+                        {
+                            let mut state = self.state.write().await;
+                            start_pos = state.queue.len();
+                            state.queue.extend(songs);
                         }
+                        self.emit_queue().await;
+                        return self.play_queue_position(start_pos).await;
+                    }
+                    Ok(_) => {
+                        self.emit(DaemonEvent::Notification {
+                            message: "Auto-continue: server returned no songs".to_string(),
+                            is_error: true,
+                        });
+                    }
+                    Err(e) => {
+                        error!("Auto-continue fetch failed: {}", e);
+                        self.emit(DaemonEvent::Notification {
+                            message: format!("Auto-continue failed: {}", e),
+                            is_error: true,
+                        });
                     }
                 }
-                info!("Reached end of queue");
-                let mut mpv = self.mpv.lock().await;
-                let _ = mpv.stop().await;
-                drop(mpv);
-                let mut state = self.state.write().await;
-                state.now_playing.state = PlaybackState::Stopped;
-                state.now_playing.position = 0.0;
-                drop(state);
-                self.emit_now_playing().await;
-                return Ok(());
             }
+        }
+        info!("Reached end of queue");
+        let mut mpv = self.mpv.lock().await;
+        let _ = mpv.stop().await;
+        drop(mpv);
+        let mut state = self.state.write().await;
+        state.now_playing.state = PlaybackState::Stopped;
+        state.now_playing.position = 0.0;
+        drop(state);
+        self.emit_now_playing().await;
+        Ok(())
+    }
+
+    /// Advance the queue when the current track ends on its own. Honours
+    /// `repeat=One` (restart current) and `repeat=All` (wrap to head);
+    /// falls through to the auto-continue / stop path at the end of an
+    /// `Off`-mode queue. Distinct from `next_track`, which models a
+    /// manual user skip and ignores `repeat=One`.
+    pub async fn advance_auto(self: &Arc<Self>) -> Result<(), Error> {
+        use crate::app::state::PlaybackState;
+        let (queue_len, current_pos, auto_continue, repeat) = {
+            let state = self.state.read().await;
+            (
+                state.queue.len(),
+                state.queue_position,
+                state.config.auto_continue,
+                state.config.repeat_mode,
+            )
         };
-        self.play_queue_position(next_pos).await
+        if queue_len == 0 {
+            return Ok(());
+        }
+        let next_pos: Option<usize> = match current_pos {
+            Some(p) => repeat.next_auto(p, queue_len),
+            None => Some(0),
+        };
+        if let Some(p) = next_pos {
+            return self.play_queue_position(p).await;
+        }
+        if auto_continue {
+            info!("Queue ended, auto-continuing with random songs");
+            if let Some(client) = self.subsonic.read().await.clone() {
+                match client.get_random_songs().await {
+                    Ok(songs) if !songs.is_empty() => {
+                        let start_pos;
+                        {
+                            let mut state = self.state.write().await;
+                            start_pos = state.queue.len();
+                            state.queue.extend(songs);
+                        }
+                        self.emit_queue().await;
+                        return self.play_queue_position(start_pos).await;
+                    }
+                    Ok(_) => {
+                        self.emit(DaemonEvent::Notification {
+                            message: "Auto-continue: server returned no songs".to_string(),
+                            is_error: true,
+                        });
+                    }
+                    Err(e) => {
+                        error!("Auto-continue fetch failed: {}", e);
+                        self.emit(DaemonEvent::Notification {
+                            message: format!("Auto-continue failed: {}", e),
+                            is_error: true,
+                        });
+                    }
+                }
+            }
+        }
+        info!("Reached end of queue");
+        let mut mpv = self.mpv.lock().await;
+        let _ = mpv.stop().await;
+        drop(mpv);
+        let mut state = self.state.write().await;
+        state.now_playing.state = PlaybackState::Stopped;
+        state.now_playing.position = 0.0;
+        drop(state);
+        self.emit_now_playing().await;
+        Ok(())
     }
 
     /// Previous track in the queue, with the standard "restart current
     /// track if more than 3s elapsed" behaviour.
     pub async fn prev_track(self: &Arc<Self>) -> Result<(), Error> {
-        let (queue_len, current_pos, position) = {
+        let (queue_len, current_pos, position, repeat) = {
             let state = self.state.read().await;
             (
                 state.queue.len(),
                 state.queue_position,
                 state.now_playing.position,
+                state.config.repeat_mode,
             )
         };
         if queue_len == 0 {
@@ -538,8 +613,12 @@ impl DaemonCore {
                 if pos > 0 {
                     return self.play_queue_position(pos - 1).await;
                 }
+                // At track 0: wrap to last track if repeat=All/One,
+                // otherwise restart current.
+                if let Some(wrap_to) = repeat.prev_wrap(queue_len) {
+                    return self.play_queue_position(wrap_to).await;
+                }
             }
-            // At track 0 with <3s elapsed — restart from 0
             let mut mpv = self.mpv.lock().await;
             if let Err(e) = mpv.seek(0.0).await {
                 error!("Failed to restart track: {}", e);
@@ -626,15 +705,19 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Pre-load the next queue track into mpv's playlist for gapless playback.
+    /// Pre-load the auto-advance target into mpv's playlist for
+    /// gapless playback. The target depends on the repeat mode:
+    /// `One` re-loads the current song; `All` wraps at queue end;
+    /// `Off` preloads the next song or nothing at the end.
     pub async fn preload_next_track(self: &Arc<Self>, current_pos: usize) {
         let next_song = {
             let state = self.state.read().await;
-            let next_pos = current_pos + 1;
-            if next_pos >= state.queue.len() {
-                return;
-            }
-            match state.queue.get(next_pos) {
+            let queue_len = state.queue.len();
+            let target = state
+                .config
+                .repeat_mode
+                .next_auto(current_pos, queue_len);
+            match target.and_then(|p| state.queue.get(p)) {
                 Some(s) => s.clone(),
                 None => return,
             }
@@ -796,18 +879,15 @@ impl DaemonCore {
                 mpv.get_playlist_count().await.ok()
             };
             if count_opt == Some(1) {
-                let next_pos_opt = {
+                let cur_pos_opt = {
                     let state = self.state.read().await;
-                    state.queue_position.and_then(|pos| {
-                        if pos + 1 < state.queue.len() {
-                            Some(pos)
-                        } else {
-                            None
-                        }
-                    })
+                    state.queue_position
                 };
-                if let Some(pos) = next_pos_opt {
+                if let Some(pos) = cur_pos_opt {
                     debug!("Playlist count is 1, re-preloading next track");
+                    // preload_next_track is repeat-aware; if there's
+                    // no auto-advance target (queue end, repeat=Off)
+                    // it no-ops.
                     self.preload_next_track(pos).await;
                 }
             }
@@ -820,13 +900,12 @@ impl DaemonCore {
             if mpv_pos_opt == Some(1) {
                 let advance_info = {
                     let state = self.state.read().await;
+                    let queue_len = state.queue.len();
+                    let repeat = state.config.repeat_mode;
                     state.queue_position.and_then(|cur| {
-                        let next = cur + 1;
-                        if next < state.queue.len() {
-                            state.queue.get(next).map(|s| (next, s.clone()))
-                        } else {
-                            None
-                        }
+                        repeat
+                            .next_auto(cur, queue_len)
+                            .and_then(|n| state.queue.get(n).map(|s| (n, s.clone())))
                     })
                 };
                 if let Some((next_pos, song)) = advance_info {
@@ -855,7 +934,7 @@ impl DaemonCore {
             };
             if idle_opt == Some(true) {
                 info!("Track ended, advancing to next");
-                let _ = self.next_track().await;
+                let _ = self.advance_auto().await;
                 return;
             }
         }
@@ -1252,6 +1331,79 @@ impl DaemonCore {
         }
         self.emit_config_changed().await;
         Ok(())
+    }
+
+    /// Persist the repeat mode. Re-preloads the auto-advance target so
+    /// the gapless pipeline picks up the new mode at the next track
+    /// boundary without waiting for a track change.
+    pub async fn set_repeat_mode(self: &Arc<Self>, mode: crate::config::RepeatMode) -> Result<(), Error> {
+        let cur_pos = {
+            let mut state = self.state.write().await;
+            state.config.repeat_mode = mode;
+            state.config.save_default().map_err(Error::Config)?;
+            state.queue_position
+        };
+        self.emit(DaemonEvent::RepeatModeChanged(mode));
+        self.emit_config_changed().await;
+        if let Some(pos) = cur_pos {
+            // Clear any previously-appended track so the next preload
+            // call writes the new target (same song for One, etc.).
+            let mut mpv = self.mpv.lock().await;
+            if let Ok(count) = mpv.get_playlist_count().await {
+                if count > 1 {
+                    let _ = mpv.playlist_remove(1).await;
+                }
+            }
+            drop(mpv);
+            self.preload_next_track(pos).await;
+        }
+        Ok(())
+    }
+
+    /// Persist the cover-art display preference.
+    pub async fn set_cover_art_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.config.cover_art = on;
+            state.config.save_default().map_err(Error::Config)?;
+        }
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Fetch cover-art bytes for the given `coverArt` id. Cached per
+    /// (id, size) so repeated requests don't re-hit the server.
+    /// Returns empty on error so the TUI just renders no art instead
+    /// of bubbling an error through the protocol.
+    pub async fn get_cover_art(self: &Arc<Self>, id: &str, size: u32) -> Vec<u8> {
+        let key = format!("{}@{}", id, size);
+        {
+            let cache = self.cover_art_cache.read().await;
+            if let Some(bytes) = cache.get(&key) {
+                return bytes.clone();
+            }
+        }
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Vec::new();
+        };
+        match client.get_cover_art(id, size).await {
+            Ok(bytes) => {
+                let mut cache = self.cover_art_cache.write().await;
+                // Bound the cache; drop one random entry past 64 to keep
+                // memory predictable.
+                if cache.len() >= 64 {
+                    if let Some(k) = cache.keys().next().cloned() {
+                        cache.remove(&k);
+                    }
+                }
+                cache.insert(key, bytes.clone());
+                bytes
+            }
+            Err(e) => {
+                error!("get_cover_art failed for {}: {}", id, e);
+                Vec::new()
+            }
+        }
     }
 
     /// Set cava size (10..=80) and persist.
