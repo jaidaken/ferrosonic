@@ -52,13 +52,33 @@ pub struct MpvController {
 
 impl MpvController {
     pub fn new() -> Self {
+        Self::with_socket_path(mpv_socket_path())
+    }
+
+    /// For tests and any caller that needs to point the controller at
+    /// a specific socket path (e.g. a fake mpv server listening on a
+    /// per-test tempdir socket). Real callers use [`Self::new`].
+    pub fn with_socket_path(socket_path: PathBuf) -> Self {
         Self {
-            socket_path: mpv_socket_path(),
+            socket_path,
             process: None,
             request_id: AtomicU64::new(1),
             reader: None,
             writer: None,
         }
+    }
+
+    /// For tests: connect to a socket that is already listening (a
+    /// fake mpv). Skips spawning a real mpv child process. The fake
+    /// must be ready to accept connections before this is called.
+    pub async fn connect_to_existing(&mut self) -> Result<(), AudioError> {
+        if !self.socket_path.exists() {
+            return Err(AudioError::MpvIpc(format!(
+                "Socket {} does not exist",
+                self.socket_path.display()
+            )));
+        }
+        self.connect().await
     }
 
     pub async fn start(&mut self) -> Result<(), AudioError> {
@@ -128,7 +148,9 @@ impl MpvController {
             return false;
         }
         match self.process.as_mut() {
-            None => false,
+            // No spawned child: only reachable from `connect_to_existing`
+            // in tests. Treat the live IPC connection as the indicator.
+            None => self.writer.is_some(),
             Some(child) => match child.try_wait() {
                 Ok(None) => true,
                 Ok(Some(_)) => {

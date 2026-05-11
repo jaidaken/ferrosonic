@@ -100,6 +100,8 @@ assert_matches = "1"
 tokio-test = "0.4"
 # Trait-level mocks where a dyn-Trait boundary already exists.
 mockall = "0.13"
+# Serialize tests that share global state (env vars, working dir).
+serial_test = "3"
 
 [profile.release]
 lto = true

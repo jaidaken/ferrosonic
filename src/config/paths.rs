@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
+/// Honors `FERROSONIC_CONFIG_DIR` for tests; otherwise XDG default.
 pub fn config_dir() -> Option<PathBuf> {
+    if let Some(override_path) = std::env::var_os("FERROSONIC_CONFIG_DIR") {
+        return Some(PathBuf::from(override_path));
+    }
     dirs::config_dir().map(|p| p.join("ferrosonic"))
 }
 

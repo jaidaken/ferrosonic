@@ -54,6 +54,18 @@ pub struct DaemonCore {
 
 impl DaemonCore {
     pub fn new(state: SharedDaemonState, config: &Config) -> Arc<Self> {
+        Self::new_with_mpv(state, config, MpvController::new())
+    }
+
+    /// For tests: build a DaemonCore around a pre-constructed
+    /// MpvController. Lets test code inject an MpvController that
+    /// points at a fake mpv socket via `MpvController::with_socket_path`
+    /// + `connect_to_existing`.
+    pub fn new_with_mpv(
+        state: SharedDaemonState,
+        config: &Config,
+        mpv: MpvController,
+    ) -> Arc<Self> {
         let subsonic = if config.is_configured() {
             match SubsonicClient::new(&config.base_url, &config.username, &config.password) {
                 Ok(client) => Some(client),
@@ -71,7 +83,7 @@ impl DaemonCore {
 
         let core = Arc::new(Self {
             state,
-            mpv: Mutex::new(MpvController::new()),
+            mpv: Mutex::new(mpv),
             pipewire: Mutex::new(PipeWireController::new()),
             subsonic: RwLock::new(subsonic),
             event_tx,
