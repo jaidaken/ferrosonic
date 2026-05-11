@@ -403,47 +403,57 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<(), Error> {
         loop {
-            let cava_active = self.cava_parser.is_some();
-            let tick_rate = if cava_active {
-                Duration::from_millis(16)
-            } else {
-                Duration::from_millis(100)
-            };
-
-            {
-                let ds = self.daemon_state.read().await;
-                let mut cs = self.client_state.write().await;
-                let mut bundle = AppState {
-                    daemon: &ds,
-                    client: &mut cs,
-                };
-                let cover_art = self.cover_art.clone();
-                terminal
-                    .draw(|frame| ui::draw(frame, &mut bundle, &cover_art))
-                    .map_err(UiError::Render)?;
+            let tick_rate = self.tick_rate();
+            self.draw_once(terminal).await?;
+            if self.should_quit().await {
+                break;
             }
-
-            {
-                let cs = self.client_state.read().await;
-                if cs.should_quit {
-                    break;
-                }
-            }
-
             if event::poll(tick_rate).map_err(UiError::Input)? {
                 let event = event::read().map_err(UiError::Input)?;
                 self.handle_event(event).await?;
             }
-
             self.read_cava_output().await;
-
-            {
-                let mut cs = self.client_state.write().await;
-                cs.check_notification_timeout();
-            }
+            self.tick_post().await;
         }
-
         Ok(())
+    }
+
+    fn tick_rate(&self) -> Duration {
+        if self.cava_parser.is_some() {
+            Duration::from_millis(16)
+        } else {
+            Duration::from_millis(100)
+        }
+    }
+
+    /// Test seam: render one frame into any Backend (TestBackend in
+    /// tests, CrosstermBackend in production).
+    pub async fn draw_once<B: ratatui::backend::Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+    ) -> Result<(), Error> {
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let mut bundle = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
+        let cover_art = self.cover_art.clone();
+        terminal
+            .draw(|frame| ui::draw(frame, &mut bundle, &cover_art))
+            .map_err(UiError::Render)?;
+        Ok(())
+    }
+
+    /// Test seam: check the quit flag.
+    pub async fn should_quit(&self) -> bool {
+        self.client_state.read().await.should_quit
+    }
+
+    /// Test seam: per-tick post-event work (notification expiry).
+    pub async fn tick_post(&mut self) {
+        let mut cs = self.client_state.write().await;
+        cs.check_notification_timeout();
     }
 }
 
