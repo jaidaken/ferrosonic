@@ -100,6 +100,42 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_search3(&self, artists: &[&str], albums: &[&str], songs: &[&str]) {
+        let artist_list: Vec<Value> = artists
+            .iter()
+            .enumerate()
+            .map(|(i, name)| json!({"id": format!("artist-{}", i), "name": name}))
+            .collect();
+        let album_list: Vec<Value> = albums
+            .iter()
+            .enumerate()
+            .map(|(i, name)| json!({"id": format!("album-{}", i), "name": name}))
+            .collect();
+        let song_list: Vec<Value> = songs
+            .iter()
+            .enumerate()
+            .map(|(i, title)| {
+                json!({
+                    "id": format!("song-{}", i),
+                    "title": title,
+                    "artist": "Test Artist",
+                    "album": "Test Album"
+                })
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/search3"))
+            .respond_with(ok_body(json!({
+                "searchResult3": {
+                    "artist": artist_list,
+                    "album": album_list,
+                    "song": song_list
+                }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_stream_for(&self, song_id: &str, body: Vec<u8>) {
         Mock::given(method("GET"))
             .and(path("/rest/stream"))
