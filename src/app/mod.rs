@@ -54,6 +54,12 @@ pub struct App {
     pub(crate) cover_art: std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
 }
 
+/// Pure function: sets the quit flag. Tests call this directly.
+pub async fn handle_signal_received(client_state: SharedClientState) {
+    let mut s = client_state.write().await;
+    s.should_quit = true;
+}
+
 impl App {
     pub fn new(config: Config) -> Self {
         let daemon_state = new_shared_daemon_state(config.clone());
@@ -135,8 +141,7 @@ impl App {
                 _ = int.recv() => {}
                 _ = hup.recv() => {}
             }
-            let mut s = client_state.write().await;
-            s.should_quit = true;
+            handle_signal_received(client_state).await;
         });
     }
 
