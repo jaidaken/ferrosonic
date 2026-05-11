@@ -55,9 +55,7 @@ impl MpvController {
         Self::with_socket_path(mpv_socket_path())
     }
 
-    /// For tests and any caller that needs to point the controller at
-    /// a specific socket path (e.g. a fake mpv server listening on a
-    /// per-test tempdir socket). Real callers use [`Self::new`].
+    /// Test seam: point the controller at a specific socket path.
     pub fn with_socket_path(socket_path: PathBuf) -> Self {
         Self {
             socket_path,
@@ -68,9 +66,7 @@ impl MpvController {
         }
     }
 
-    /// For tests: connect to a socket that is already listening (a
-    /// fake mpv). Skips spawning a real mpv child process. The fake
-    /// must be ready to accept connections before this is called.
+    /// Test seam: connect to an mpv socket that's already listening.
     pub async fn connect_to_existing(&mut self) -> Result<(), AudioError> {
         if !self.socket_path.exists() {
             return Err(AudioError::MpvIpc(format!(
@@ -148,8 +144,7 @@ impl MpvController {
             return false;
         }
         match self.process.as_mut() {
-            // No spawned child: only reachable from `connect_to_existing`
-            // in tests. Treat the live IPC connection as the indicator.
+            // Test seam: live IPC, no spawned child.
             None => self.writer.is_some(),
             Some(child) => match child.try_wait() {
                 Ok(None) => true,

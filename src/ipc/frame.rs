@@ -2,9 +2,7 @@
 //! debuggability with `socat`; throughput is plenty at this scale.
 
 #![allow(dead_code)]
-// IPC frames hold heterogeneous payloads (small commands vs.
-// bulk-data events). Boxing the big ones would force allocation on
-// every receive; the size variance is by design.
+// Variants span single bool to full snapshot; boxing helps nothing.
 #![allow(clippy::large_enum_variant)]
 
 use serde::{Deserialize, Serialize};

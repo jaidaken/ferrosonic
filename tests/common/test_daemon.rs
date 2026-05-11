@@ -1,14 +1,7 @@
-//! Builds a real `DaemonCore` wired to fake mpv + fake Subsonic.
+//! Real `DaemonCore` wired to fake mpv + fake Subsonic.
 //!
-//! Every integration test should construct a `TestDaemon` and drive
-//! it through the real public daemon API. Drop cleans up the tempdir
-//! and the fake mpv listener; cleanup is best-effort.
-//!
-//! IMPORTANT: tests using `TestDaemon::new` mutate the process-global
-//! `FERROSONIC_CONFIG_DIR` env var. Annotate them with
-//! `#[serial_test::serial]` so cargo test runs them one at a time
-//! within a binary. Nextest already runs each test in its own
-//! process, so the annotation is a no-op there.
+//! Tests using `TestDaemon::new` set FERROSONIC_CONFIG_DIR; mark them
+//! `#[serial_test::serial]` for cargo test (nextest is process-per-test).
 
 use std::sync::Arc;
 
@@ -31,10 +24,6 @@ pub struct TestDaemon {
 }
 
 impl TestDaemon {
-    /// Spin up fakes, point `FERROSONIC_CONFIG_DIR` at a fresh tempdir,
-    /// and connect a real `DaemonCore` to both. Subsonic endpoints
-    /// have no mocks yet; tests should add them before exercising any
-    /// daemon path that hits the network.
     pub async fn new() -> Self {
         let config_dir = tempfile::tempdir().expect("create config tempdir");
         std::env::set_var("FERROSONIC_CONFIG_DIR", config_dir.path());

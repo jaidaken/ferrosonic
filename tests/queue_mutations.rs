@@ -1,5 +1,4 @@
-//! Queue mutation invariants. Exercises `move_queue_item`,
-//! `shuffle_queue`, and `clear_queue_history` against a seeded state.
+//! Queue mutation invariants.
 
 mod common;
 
@@ -111,8 +110,6 @@ async fn shuffle_preserves_current_track_in_place() {
     }
     let current_id = td.state.read().await.queue[3].id.clone();
 
-    // Multiple runs guard against the rare case where shuffle
-    // happens to return the same order.
     for _ in 0..5 {
         td.core.shuffle_queue().await;
         let s = td.state.read().await;

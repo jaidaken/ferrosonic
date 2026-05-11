@@ -1,9 +1,4 @@
-//! Tokio Unix-socket server that pretends to be mpv's JSON-IPC.
-//!
-//! Models enough of the mpv protocol that `MpvController` and
-//! `DaemonCore::play_queue_position` work end-to-end without spawning
-//! a real mpv child. Captures every received command so tests can
-//! assert on call order.
+//! Fake mpv JSON-IPC server for integration tests.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -80,8 +75,7 @@ impl FakeMpv {
         self.state.lock().await.commands.clone()
     }
 
-    /// Wait until the test predicate fires on the captured commands,
-    /// or `timeout_ms` elapses. Useful for polling for async effects.
+    /// Poll captured commands against `predicate` until it returns true or `timeout_ms` elapses.
     pub async fn wait_for<F>(&self, timeout_ms: u64, predicate: F) -> bool
     where
         F: Fn(&[Vec<Value>]) -> bool,

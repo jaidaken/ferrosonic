@@ -1,8 +1,6 @@
 //! Ferrosonic, terminal-based Subsonic music client.
 
-// `drop(guard)` on a MutexGuard / RwLockWriteGuard releases the lock
-// before the next .await. Clippy doesn't see that as the load-bearing
-// effect it is.
+// drop(guard) releases a lock before .await; clippy can't see that.
 #![allow(clippy::drop_non_drop)]
 
 pub mod app;

@@ -1,5 +1,4 @@
-//! Smoke test for the integration harness. Proves the fake mpv +
-//! fake Subsonic + TestDaemon plumbing actually wires together.
+//! Smoke test for the integration harness.
 
 mod common;
 
@@ -12,9 +11,6 @@ use serial_test::serial;
 async fn fake_mpv_responds_to_basic_commands() {
     let td = TestDaemon::new().await;
 
-    // The daemon's MpvController is connected to the fake. Pause via
-    // the public API; expect the fake to record the set_property
-    // command and flip its internal state.
     {
         let mut mpv = td.core.mpv.lock().await;
         mpv.pause().await.expect("fake mpv should accept pause");

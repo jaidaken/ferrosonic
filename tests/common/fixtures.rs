@@ -1,8 +1,7 @@
-//! Builders for common test fixtures.
+//! Test fixture builders.
 
 use ferrosonic::subsonic::models::Child;
 
-/// Minimal song with a stable id and title. Duration 180 s by default.
 pub fn song(id: &str, title: &str) -> Child {
     Child {
         id: id.into(),
@@ -26,7 +25,6 @@ pub fn song(id: &str, title: &str) -> Child {
     }
 }
 
-/// Build a contiguous run of test songs.
 pub fn songs(prefix: &str, count: usize) -> Vec<Child> {
     (0..count)
         .map(|i| song(&format!("{}-{}", prefix, i), &format!("Track {}", i)))

@@ -1,8 +1,4 @@
-//! Shared test harness for ferrosonic integration tests.
-//!
-//! Pulled into each `tests/<name>.rs` via `mod common;`. Cargo treats
-//! files inside this directory as a private module and never builds
-//! them as a standalone test binary.
+//! Shared test harness. Imported via `mod common;` in each test.
 
 #![allow(dead_code, unused_imports)]
 

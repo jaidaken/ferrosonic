@@ -1,8 +1,4 @@
 //! Pure-logic tests for the `RepeatMode` state machine.
-//!
-//! No harness, no async runtime. The state machine is the central
-//! decision point for both manual Next and gapless auto-advance, so
-//! every transition gets a regression here.
 
 use ferrosonic::config::RepeatMode;
 

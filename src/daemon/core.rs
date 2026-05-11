@@ -57,10 +57,7 @@ impl DaemonCore {
         Self::new_with_mpv(state, config, MpvController::new())
     }
 
-    /// For tests: build a DaemonCore around a pre-constructed
-    /// MpvController. Lets test code inject an MpvController that
-    /// points at a fake mpv socket via `MpvController::with_socket_path`
-    /// + `connect_to_existing`.
+    /// Test seam: build a DaemonCore around a pre-built MpvController.
     pub fn new_with_mpv(
         state: SharedDaemonState,
         config: &Config,

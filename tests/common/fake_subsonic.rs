@@ -1,8 +1,4 @@
 //! Wiremock wrapper for the Subsonic REST API.
-//!
-//! Mounts a local HTTP server, returns canned JSON for the endpoints
-//! the daemon uses (ping, search3, getRandomSongs, getArtists, etc.),
-//! and records request bodies for test-side assertions.
 
 use serde_json::{json, Value};
 use wiremock::matchers::{method, path};

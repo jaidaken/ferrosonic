@@ -1,8 +1,4 @@
 //! Regression tests for the 0.4.1 MPRIS Stop fix.
-//!
-//! Stop must halt playback while leaving the queue and current
-//! selection intact. Play after Stop must resume the same track from
-//! frame 0 by re-issuing play_queue_position.
 
 mod common;
 
@@ -16,9 +12,6 @@ use serial_test::serial;
 async fn stop_preserves_queue_and_position() {
     let td = TestDaemon::new().await;
 
-    // Seed a queue and position state to mimic mid-playback. We don't
-    // actually start playback; the test only exercises the Stop
-    // mutation against the daemon state.
     {
         let mut s = td.state.write().await;
         s.queue = vec![
@@ -60,7 +53,6 @@ async fn resume_from_stopped_replays_via_loadfile() {
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
 
-    // Seed and Stop.
     {
         let mut s = td.state.write().await;
         s.queue = vec![song("a", "Track A"), song("b", "Track B")];
@@ -70,14 +62,11 @@ async fn resume_from_stopped_replays_via_loadfile() {
         s.now_playing.position = 0.0;
     }
 
-    // Trigger the new Stopped -> Play transition.
     td.core
         .resume_playback()
         .await
         .expect("resume_playback from Stopped");
 
-    // Direct PlayMode in resume routes through play_queue_position
-    // which calls mpv.loadfile. The fake should have captured it.
     let saw_loadfile = td
         .fake_mpv
         .wait_for(2000, |cmds| {
@@ -134,8 +123,6 @@ async fn toggle_pause_from_stopped_also_resumes() {
 async fn stop_with_empty_queue_is_safe() {
     let td = TestDaemon::new().await;
 
-    // No queue, no song. Stop should be a clean no-op (or set state
-    // to Stopped without panicking).
     td.core
         .stop_keep_queue()
         .await

@@ -1,9 +1,6 @@
 //! IPC protocol: length-prefixed JSON over a Unix socket.
 
 #![allow(dead_code)]
-// Events carry heterogeneous payloads, from a single bool to a full
-// snapshot. Boxing the big ones would mask the wire shape without
-// fixing the underlying variance.
 #![allow(clippy::large_enum_variant)]
 
 use serde::{Deserialize, Serialize};
