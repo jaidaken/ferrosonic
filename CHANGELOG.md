@@ -2,34 +2,27 @@
 
 ## [0.4.1] - 2026-05-11
 
-Two robustness fixes on top of 0.4.0: Stop no longer wipes the queue,
-and ferrosonic surfaces a clear error instead of silently degrading
-when the daemon is unreachable.
+Two papercuts from 0.4.0 sanded down.
 
 ### Changed
 
-- **Stop keeps the queue.** Pressing the header Stop button, sending
-  MPRIS Stop (headset stop button, waybar, KDE / GNOME / Plasma media
-  controllers), or any other Stop invocation now halts playback while
-  leaving the queue and current selection intact. Pressing Play
-  (`Space`, MPRIS Play, mouse Play) resumes the same track from the
-  beginning. Previous behavior cleared the queue and reset
-  now-playing; if a user picked up bluetooth headphones and pressed
-  Stop, their queue vanished. Use the Queue page's Clear action
-  (or pick a new album / playlist / search result) to actually
-  empty the queue.
+- **Stop keeps your queue.** Hitting Stop (the header button,
+  bluetooth headphone Stop key, the media widget in waybar / KDE /
+  GNOME / Plasma, or `playerctl stop`) no longer wipes the queue.
+  Playback halts, the track sits at 0:00, your queue stays exactly
+  as it was. Press Play and the same track resumes from the start.
+  To actually empty the queue, use the Queue page's Clear action or
+  pick a new album / playlist / search result.
 
 ### Fixed
 
-- **No more silent in-process fallback.** If `ferrosonicd` can't be
-  spawned or connected to, ferrosonic now exits with a clear error
-  message pointing at the daemon log path and offering remediation
-  steps (remove a stale socket, run with `--standalone`, or set
-  `Daemon=false`). Previously the TUI silently fell back to
-  single-process mode, hiding daemon panics and leaving the user
-  without persistent playback / MPRIS / queue-survives-close with
-  no indication of why. The explicit `--standalone` flag still works
-  as before for users who want single-process mode on purpose.
+- **Daemon failures now show up instead of hiding.** If ferrosonic
+  can't reach `ferrosonicd` on launch, you get a clear error
+  pointing at the daemon log file plus what to try next (remove a
+  stale socket, run with `--standalone`, set `Daemon=false` in
+  your config). Previously the TUI silently started in
+  single-process mode, so a daemon crash looked like "music stops
+  when I close the terminal again" with no clue why.
 
 ## [0.4.0] - 2026-05-11
 
