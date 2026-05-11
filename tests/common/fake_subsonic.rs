@@ -100,6 +100,22 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_star(&self) {
+        Mock::given(method("GET"))
+            .and(path("/rest/star"))
+            .respond_with(ok_body(json!({})))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_unstar(&self) {
+        Mock::given(method("GET"))
+            .and(path("/rest/unstar"))
+            .respond_with(ok_body(json!({})))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_search3(&self, artists: &[&str], albums: &[&str], songs: &[&str]) {
         let artist_list: Vec<Value> = artists
             .iter()
