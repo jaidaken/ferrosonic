@@ -296,7 +296,7 @@ impl App {
         }
     }
 
-    async fn seed_cover_art(&self) {
+    pub async fn seed_cover_art(&self) {
         let (id, enabled) = {
             let ds = self.daemon_state.read().await;
             let cs = self.client_state.read().await;
@@ -331,7 +331,7 @@ impl App {
     /// Subscribe BEFORE Snapshot RPC so daemon events emitted during
     /// the RPC land in the receiver buffer instead of being lost
     /// (tokio broadcast only delivers events after subscribe).
-    async fn bootstrap_and_pump(&self) {
+    pub async fn bootstrap_and_pump(&self) {
         let rx = self.client.subscribe();
 
         let snap = match self.client.request(DaemonRequest::Snapshot).await {
