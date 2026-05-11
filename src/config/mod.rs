@@ -315,4 +315,76 @@ Password = "testpass"
         config.password = "pass".to_string();
         assert!(config.is_configured());
     }
+
+    #[test]
+    fn defaults_match_documented_values() {
+        let c = Config::default();
+        assert_eq!(c.cava_size, 40);
+        assert_eq!(c.cover_art_size, 16);
+        assert!(c.daemon, "daemon defaults on");
+        assert!(!c.cava);
+        assert!(!c.cover_art);
+        assert!(!c.auto_continue);
+        assert_eq!(c.repeat_mode, RepeatMode::Off);
+    }
+
+    #[test]
+    fn missing_fields_fall_back_to_defaults() {
+        let toml = "BaseURL = \"https://x\"\n";
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(toml.as_bytes()).unwrap();
+        let c = Config::load_from_file(file.path()).unwrap();
+        assert_eq!(c.base_url, "https://x");
+        assert_eq!(c.cava_size, 40, "CavaSize falls back");
+        assert_eq!(c.cover_art_size, 16, "CoverArtSize falls back");
+        assert!(c.daemon, "Daemon defaults true");
+    }
+
+    #[test]
+    fn corrupt_toml_returns_error() {
+        let toml = "this is not valid = = toml [[";
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(toml.as_bytes()).unwrap();
+        let r = Config::load_from_file(file.path());
+        assert!(r.is_err(), "corrupt TOML should not parse");
+    }
+
+    #[test]
+    fn unknown_field_is_ignored_not_fatal() {
+        let toml = "BaseURL = \"x\"\nUnknownKey = 5\n";
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(toml.as_bytes()).unwrap();
+        let c = Config::load_from_file(file.path()).expect("unknown fields tolerated");
+        assert_eq!(c.base_url, "x");
+    }
+
+    #[test]
+    fn repeat_mode_serializes_in_pascal_case() {
+        for (mode, expected) in [
+            (RepeatMode::Off, "\"Off\""),
+            (RepeatMode::One, "\"One\""),
+            (RepeatMode::All, "\"All\""),
+        ] {
+            let s = toml::Value::try_from(mode).unwrap();
+            assert_eq!(s.to_string(), expected, "{:?} serializes as {}", mode, expected);
+        }
+    }
+
+    #[test]
+    fn cover_art_size_round_trip_preserved() {
+        let toml = "BaseURL = \"x\"\nCoverArtSize = 22\n";
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(toml.as_bytes()).unwrap();
+        let c = Config::load_from_file(file.path()).unwrap();
+        assert_eq!(c.cover_art_size, 22);
+    }
+
+    #[test]
+    fn repeat_mode_explicit_value_loads() {
+        let toml = "BaseURL = \"x\"\nRepeatMode = \"All\"\n";
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(toml.as_bytes()).unwrap();
+        let c = Config::load_from_file(file.path()).unwrap();
+        assert_eq!(c.repeat_mode, RepeatMode::All);
+    }
 }
