@@ -4,28 +4,52 @@ use std::sync::Mutex;
 
 use ratatui::layout::Rect;
 use ratatui::Frame;
-use ratatui_image::picker::Picker;
+use ratatui_image::picker::{Picker, ProtocolType};
 use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::StatefulImage;
+use tracing::{info, warn};
 
 pub struct CoverArtState {
-    /// `None` when probe failed — rendering is then a no-op.
     pub picker: Option<Picker>,
+    pub protocol_type: Option<ProtocolType>,
     pub current_id: Option<String>,
     pub protocol: Option<StatefulProtocol>,
 }
 
 impl CoverArtState {
     pub fn init() -> Self {
-        let picker = Picker::from_query_stdio().ok();
-        Self {
-            picker,
-            current_id: None,
-            protocol: None,
+        match Picker::from_query_stdio() {
+            Ok(picker) => {
+                let pt = picker.protocol_type();
+                info!(
+                    "Cover-art picker initialised: protocol={:?} font_size={:?}",
+                    pt,
+                    picker.font_size()
+                );
+                Self {
+                    protocol_type: Some(pt),
+                    picker: Some(picker),
+                    current_id: None,
+                    protocol: None,
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Cover-art terminal probe failed ({}); falling back to half-blocks",
+                    e
+                );
+                let mut picker = Picker::from_fontsize((8, 16));
+                picker.set_protocol_type(ProtocolType::Halfblocks);
+                Self {
+                    protocol_type: Some(ProtocolType::Halfblocks),
+                    picker: Some(picker),
+                    current_id: None,
+                    protocol: None,
+                }
+            }
         }
     }
 
-    /// Idempotent for the same `id`.
     pub fn load(&mut self, id: String, bytes: &[u8]) {
         if self.current_id.as_deref() == Some(id.as_str()) && self.protocol.is_some() {
             return;
@@ -36,10 +60,18 @@ impl CoverArtState {
         };
         match image::load_from_memory(bytes) {
             Ok(dyn_img) => {
+                info!(
+                    "Cover-art decoded: {}x{} bytes={} id={}",
+                    dyn_img.width(),
+                    dyn_img.height(),
+                    bytes.len(),
+                    id
+                );
                 self.protocol = Some(picker.new_resize_protocol(dyn_img));
                 self.current_id = Some(id);
             }
-            Err(_) => {
+            Err(e) => {
+                warn!("Cover-art decode failed: {}", e);
                 self.protocol = None;
                 self.current_id = None;
             }

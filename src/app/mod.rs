@@ -74,6 +74,7 @@ impl App {
             cover_art: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::ui::cover_art::CoverArtState {
                     picker: None,
+                    protocol_type: None,
                     current_id: None,
                     protocol: None,
                 },
@@ -99,6 +100,7 @@ impl App {
             cover_art: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::ui::cover_art::CoverArtState {
                     picker: None,
+                    protocol_type: None,
                     current_id: None,
                     protocol: None,
                 },
@@ -498,17 +500,27 @@ async fn apply_event(
                         guard.current_id.as_deref() == Some(id.as_str())
                     };
                     if !already_loaded {
-                        if let Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) = client
+                        info!("Fetching cover art id={}", id);
+                        match client
                             .request(DaemonRequest::FetchCoverArt {
                                 id: id.clone(),
                                 size: 512,
                             })
                             .await
                         {
-                            if !bytes.is_empty() {
-                                let mut guard =
-                                    cover_art.lock().expect("cover_art poisoned");
-                                guard.load(id, &bytes);
+                            Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) => {
+                                info!("Cover art bytes received: {} bytes", bytes.len());
+                                if !bytes.is_empty() {
+                                    let mut guard =
+                                        cover_art.lock().expect("cover_art poisoned");
+                                    guard.load(id, &bytes);
+                                }
+                            }
+                            Ok(other) => {
+                                warn!("FetchCoverArt: unexpected response: {:?}", other);
+                            }
+                            Err(e) => {
+                                warn!("FetchCoverArt failed: {}", e);
                             }
                         }
                     }
@@ -587,16 +599,52 @@ async fn apply_event(
         }
         DaemonEvent::ConfigChanged(cfg) => {
             let repeat_mode = cfg.repeat_mode;
-            let cover_art = cfg.cover_art;
+            let cover_art_enabled = cfg.cover_art;
             let auto_continue = cfg.auto_continue;
             {
                 let mut ds = daemon_state.write().await;
                 ds.config = cfg;
             }
-            let mut cs = client_state.write().await;
-            cs.settings_state.repeat_mode = repeat_mode;
-            cs.settings_state.cover_art = cover_art;
-            cs.settings_state.auto_continue = auto_continue;
+            {
+                let mut cs = client_state.write().await;
+                cs.settings_state.repeat_mode = repeat_mode;
+                cs.settings_state.cover_art = cover_art_enabled;
+                cs.settings_state.auto_continue = auto_continue;
+            }
+
+            if cover_art_enabled {
+                let (current_id, already_loaded) = {
+                    let ds = daemon_state.read().await;
+                    let guard = cover_art.lock().expect("cover_art poisoned");
+                    let id = ds.now_playing.song.as_ref().and_then(|s| s.cover_art.clone());
+                    let loaded = match (&id, &guard.current_id) {
+                        (Some(i), Some(c)) => i == c,
+                        _ => false,
+                    };
+                    (id, loaded)
+                };
+                if let Some(id) = current_id {
+                    if !already_loaded {
+                        info!("Cover art enabled; fetching current id={}", id);
+                        if let Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) = client
+                            .request(DaemonRequest::FetchCoverArt {
+                                id: id.clone(),
+                                size: 512,
+                            })
+                            .await
+                        {
+                            if !bytes.is_empty() {
+                                let mut guard =
+                                    cover_art.lock().expect("cover_art poisoned");
+                                guard.load(id, &bytes);
+                            }
+                        }
+                    }
+                }
+            } else {
+                let mut guard = cover_art.lock().expect("cover_art poisoned");
+                guard.clear();
+            }
         }
         DaemonEvent::RepeatModeChanged(mode) => {
             {
