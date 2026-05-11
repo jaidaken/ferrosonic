@@ -22,7 +22,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if inner.height < 11 {
+    if inner.height < 14 {
         return;
     }
 
@@ -38,6 +38,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         Constraint::Length(2), // Cava size
         Constraint::Length(1), // Spacing
         Constraint::Length(2), // Daemon toggle
+        Constraint::Length(1), // Spacing
+        Constraint::Length(2), // Auto-continue toggle
         Constraint::Min(1),    // Remaining space
     ])
     .split(inner);
@@ -97,6 +99,17 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
+    // Auto-continue toggle (field 4)
+    let auto_value = if settings.auto_continue { "On" } else { "Off" };
+    render_option(
+        frame,
+        chunks[9],
+        "Auto-continue",
+        auto_value,
+        settings.selected_field == 4,
+        &colors,
+    );
+
     // Help text at bottom
     let help_text = match settings.selected_field {
         0 => "← → or Enter to change theme (auto-saves)",
@@ -105,6 +118,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         2 if state.client.cava_available => "← → to adjust cava size (10%-80%, auto-saves)",
         2 => "cava is not installed on this system",
         3 => "← → or Enter to toggle background daemon (takes effect on next launch)",
+        4 => "← → or Enter to toggle auto-continue (random songs when queue ends)",
         _ => "",
     };
     let help = Paragraph::new(help_text).style(Style::default().fg(colors.muted));

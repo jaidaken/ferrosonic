@@ -455,12 +455,18 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Skip to the next track in the queue. If at end, stops playback.
+    /// Skip to the next track in the queue. If at end, either stops
+    /// playback or, when `AutoContinue` is on, appends a fresh random
+    /// batch from the server and keeps playing.
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
-        let (queue_len, current_pos) = {
+        let (queue_len, current_pos, auto_continue) = {
             let state = self.state.read().await;
-            (state.queue.len(), state.queue_position)
+            (
+                state.queue.len(),
+                state.queue_position,
+                state.config.auto_continue,
+            )
         };
         if queue_len == 0 {
             return Ok(());
@@ -468,6 +474,36 @@ impl DaemonCore {
         let next_pos = match current_pos {
             Some(pos) if pos + 1 < queue_len => pos + 1,
             _ => {
+                if auto_continue {
+                    info!("Queue ended, auto-continuing with random songs");
+                    if let Some(client) = self.subsonic.read().await.clone() {
+                        match client.get_random_songs().await {
+                            Ok(songs) if !songs.is_empty() => {
+                                let start_pos;
+                                {
+                                    let mut state = self.state.write().await;
+                                    start_pos = state.queue.len();
+                                    state.queue.extend(songs);
+                                }
+                                self.emit_queue().await;
+                                return self.play_queue_position(start_pos).await;
+                            }
+                            Ok(_) => {
+                                self.emit(DaemonEvent::Notification {
+                                    message: "Auto-continue: server returned no songs".to_string(),
+                                    is_error: true,
+                                });
+                            }
+                            Err(e) => {
+                                error!("Auto-continue fetch failed: {}", e);
+                                self.emit(DaemonEvent::Notification {
+                                    message: format!("Auto-continue failed: {}", e),
+                                    is_error: true,
+                                });
+                            }
+                        }
+                    }
+                }
                 info!("Reached end of queue");
                 let mut mpv = self.mpv.lock().await;
                 let _ = mpv.stop().await;
@@ -1174,6 +1210,19 @@ impl DaemonCore {
                 .config
                 .save_default()
                 .map_err(Error::Config)?;
+        }
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the auto-continue preference. Daemon checks this when
+    /// the queue ends; if `true`, it fetches a fresh random batch and
+    /// keeps playing.
+    pub async fn set_auto_continue(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.config.auto_continue = on;
+            state.config.save_default().map_err(Error::Config)?;
         }
         self.emit_config_changed().await;
         Ok(())

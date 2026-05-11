@@ -51,6 +51,11 @@ pub struct Config {
     /// CLI flag overrides this to `false` for a one-off launch.
     #[serde(rename = "Daemon", default = "Config::default_daemon")]
     pub daemon: bool,
+
+    /// When the queue runs out, fetch a fresh batch of random songs
+    /// from the server and keep playing. Default `false`.
+    #[serde(rename = "AutoContinue", default)]
+    pub auto_continue: bool,
 }
 
 impl Default for Config {
@@ -64,6 +69,7 @@ impl Default for Config {
             cava: false,
             cava_size: Self::default_cava_size(),
             daemon: Self::default_daemon(),
+            auto_continue: false,
         }
     }
 }

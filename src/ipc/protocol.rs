@@ -117,6 +117,9 @@ pub enum DaemonRequest {
     /// Enable/disable the daemon-mode preference. Takes effect on the
     /// *next* TUI launch; the daemon (if running) keeps running.
     SetDaemonEnabled(bool),
+    /// Enable/disable auto-continue: when the queue ends, fetch a
+    /// fresh batch of random songs and keep playing.
+    SetAutoContinue(bool),
 
     // ── Lifecycle ───────────────────────────────────────────────────────
     /// Subscribe to event broadcast. Daemon's first event after this is a

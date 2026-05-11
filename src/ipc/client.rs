@@ -253,6 +253,10 @@ impl DaemonClient for InProcessClient {
                 self.core.set_daemon_enabled(on).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::SetAutoContinue(on) => {
+                self.core.set_auto_continue(on).await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
 
             // ── Lifecycle ───────────────────────────────────────────
             DaemonRequest::Subscribe => {

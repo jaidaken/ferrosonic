@@ -220,6 +220,9 @@ pub struct SettingsState {
     /// connects to `ferrosonicd` (music persists across TUI close).
     /// When `false`, runs standalone. Takes effect on next launch.
     pub daemon_enabled: bool,
+    /// Auto-continue with random songs when the queue ends. Daemon
+    /// fetches a fresh batch and keeps playing.
+    pub auto_continue: bool,
 }
 
 impl Default for SettingsState {
@@ -231,6 +234,7 @@ impl Default for SettingsState {
             cava_enabled: false,
             cava_size: 40,
             daemon_enabled: true,
+            auto_continue: false,
         }
     }
 }
@@ -369,6 +373,7 @@ pub fn new_shared_client_state(config: &Config) -> SharedClientState {
     client.settings_state.cava_enabled = config.cava;
     client.settings_state.cava_size = config.cava_size.clamp(10, 80);
     client.settings_state.daemon_enabled = config.daemon;
+    client.settings_state.auto_continue = config.auto_continue;
     // Songs-page default: Starred. The page's input handler treats
     // a None option as "do nothing" on arrow keys.
     client.songs.selected_option = Some(SongOption::Starred);

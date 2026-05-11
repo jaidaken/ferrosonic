@@ -46,7 +46,7 @@ impl<'a> Footer<'a> {
             ("h", "Prev"),
             ("l", "Next"),
             ("n", "Star playing"),
-            ("R", "Shuffle library"),
+            ("Shift+R", "Shuffle library"),
             ("t", "Theme"),
         ]
     }

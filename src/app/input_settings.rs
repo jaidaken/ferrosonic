@@ -12,11 +12,12 @@ enum SettingChange {
     Cava,
     CavaSize,
     Daemon,
+    AutoContinue,
 }
 
 /// Number of settings fields. Used as the upper bound for the down-key
 /// navigation (`selected_field < SETTINGS_FIELD_COUNT - 1`).
-const SETTINGS_FIELD_COUNT: usize = 4;
+const SETTINGS_FIELD_COUNT: usize = 5;
 
 impl App {
     /// Handle settings page keys
@@ -82,6 +83,17 @@ impl App {
                         ));
                         change = Some(SettingChange::Daemon);
                     }
+                    4 => {
+                        state.client.settings_state.auto_continue =
+                            !state.client.settings_state.auto_continue;
+                        let status = if state.client.settings_state.auto_continue {
+                            "On"
+                        } else {
+                            "Off"
+                        };
+                        state.client.notify(format!("Auto-continue: {}", status));
+                        change = Some(SettingChange::AutoContinue);
+                    }
                     _ => {}
                 },
                 // Right / Enter / Space
@@ -126,6 +138,17 @@ impl App {
                             ));
                             change = Some(SettingChange::Daemon);
                         }
+                        4 => {
+                            state.client.settings_state.auto_continue =
+                                !state.client.settings_state.auto_continue;
+                            let status = if state.client.settings_state.auto_continue {
+                                "On"
+                            } else {
+                                "Off"
+                            };
+                            state.client.notify(format!("Auto-continue: {}", status));
+                            change = Some(SettingChange::AutoContinue);
+                        }
                         _ => {}
                     }
                 }
@@ -139,7 +162,7 @@ impl App {
 
         // Snapshot the new client-side values, then dispatch the
         // matching daemon request (it persists + emits ConfigChanged).
-        let (theme_name, cava_enabled, cava_size, daemon_enabled, gradient, h_gradient) = {
+        let (theme_name, cava_enabled, cava_size, daemon_enabled, auto_continue, gradient, h_gradient) = {
             let ds = self.daemon_state.read().await;
             let mut cs = self.client_state.write().await;
             let state = AppState { daemon: &*ds, client: &mut *cs };
@@ -149,6 +172,7 @@ impl App {
                 s.cava_enabled,
                 s.cava_size,
                 s.daemon_enabled,
+                s.auto_continue,
                 s.current_theme().cava_gradient.clone(),
                 s.current_theme().cava_horizontal_gradient.clone(),
             )
@@ -158,6 +182,7 @@ impl App {
             SettingChange::Cava => DaemonRequest::SetCavaEnabled(cava_enabled),
             SettingChange::CavaSize => DaemonRequest::SetCavaSize(cava_size),
             SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
+            SettingChange::AutoContinue => DaemonRequest::SetAutoContinue(auto_continue),
         };
         if let Err(e) = self.client.request(req).await {
             let ds = self.daemon_state.read().await;
@@ -189,7 +214,7 @@ impl App {
                     self.start_cava(&gradient, &h_gradient, cava_h);
                 }
             }
-            SettingChange::Daemon => {}
+            SettingChange::Daemon | SettingChange::AutoContinue => {}
         }
 
         Ok(())
