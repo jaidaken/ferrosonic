@@ -6,7 +6,7 @@ use tracing::{error, info};
 use super::*;
 
 impl App {
-    pub(super) fn start_cava(
+    pub fn start_cava(
         &mut self,
         cava_gradient: &[String; 8],
         cava_horizontal_gradient: &[String; 8],
@@ -106,7 +106,7 @@ impl App {
         }
     }
 
-    pub(super) fn stop_cava(&mut self) {
+    pub fn stop_cava(&mut self) {
         if let Some(ref mut child) = self.cava_process {
             let _ = child.kill();
             let _ = child.wait();
@@ -117,7 +117,7 @@ impl App {
         self.cava_config = None;
     }
 
-    pub(super) async fn read_cava_output(&mut self) {
+    pub async fn read_cava_output(&mut self) {
         let (Some(ref mut master), Some(ref mut parser)) =
             (&mut self.cava_pty_master, &mut self.cava_parser)
         else {
@@ -201,7 +201,7 @@ fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
     }
 }
 
-pub(super) fn generate_cava_config(g: &[String; 8], h: &[String; 8]) -> String {
+pub fn generate_cava_config(g: &[String; 8], h: &[String; 8]) -> String {
     format!(
         "\
 [general]

@@ -1,6 +1,6 @@
 //! Main application module
 
-mod cava;
+pub mod cava;
 pub mod client_state;
 mod input;
 mod input_library;
