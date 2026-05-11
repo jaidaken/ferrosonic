@@ -29,15 +29,11 @@ impl App {
             let cava_ok = cs.cava_available;
 
             match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if field > 0 {
-                        cs.settings_state.selected_field = field - 1;
-                    }
+                KeyCode::Up | KeyCode::Char('k') if field > 0 => {
+                    cs.settings_state.selected_field = field - 1;
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if field < SETTINGS_FIELD_COUNT - 1 {
-                        cs.settings_state.selected_field = field + 1;
-                    }
+                KeyCode::Down | KeyCode::Char('j') if field < SETTINGS_FIELD_COUNT - 1 => {
+                    cs.settings_state.selected_field = field + 1;
                 }
                 KeyCode::Left | KeyCode::Char('h') => {
                     change = adjust_setting(&mut cs.settings_state, field, -1, cava_ok);

@@ -18,15 +18,11 @@ impl App {
         let is_text_field = field <= 2;
 
         match key.code {
-            KeyCode::Up => {
-                if field > 0 {
-                    state.client.server_state.selected_field -= 1;
-                }
+            KeyCode::Up if field > 0 => {
+                state.client.server_state.selected_field -= 1;
             }
-            KeyCode::Down => {
-                if field < 4 {
-                    state.client.server_state.selected_field += 1;
-                }
+            KeyCode::Down if field < 4 => {
+                state.client.server_state.selected_field += 1;
             }
             KeyCode::Tab => {
                 state.client.server_state.selected_field = (field + 1) % 5;

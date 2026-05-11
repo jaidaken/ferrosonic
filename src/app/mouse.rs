@@ -305,15 +305,13 @@ impl App {
                     state.client.queue_state.selected = Some(0);
                 }
             }
-            Page::QuickPlay => {
-                if state.client.songs.focus == 1 {
-                    if let Some(sel) = state.client.songs.selected_index {
-                        if sel > 0 {
-                            state.client.songs.selected_index = Some(sel - 1);
-                        }
-                    } else if !state.songs_list().is_empty() {
-                        state.client.songs.selected_index = Some(0);
+            Page::QuickPlay if state.client.songs.focus == 1 => {
+                if let Some(sel) = state.client.songs.selected_index {
+                    if sel > 0 {
+                        state.client.songs.selected_index = Some(sel - 1);
                     }
+                } else if !state.songs_list().is_empty() {
+                    state.client.songs.selected_index = Some(0);
                 }
             }
             Page::Playlists => {
@@ -374,16 +372,14 @@ impl App {
                     state.client.queue_state.selected = Some(0);
                 }
             }
-            Page::QuickPlay => {
-                if state.client.songs.focus == 1 {
-                    let max = state.songs_list().len().saturating_sub(1);
-                    if let Some(sel) = state.client.songs.selected_index {
-                        if sel < max {
-                            state.client.songs.selected_index = Some(sel + 1);
-                        }
-                    } else if !state.songs_list().is_empty() {
-                        state.client.songs.selected_index = Some(0);
+            Page::QuickPlay if state.client.songs.focus == 1 => {
+                let max = state.songs_list().len().saturating_sub(1);
+                if let Some(sel) = state.client.songs.selected_index {
+                    if sel < max {
+                        state.client.songs.selected_index = Some(sel + 1);
                     }
+                } else if !state.songs_list().is_empty() {
+                    state.client.songs.selected_index = Some(0);
                 }
             }
             Page::Playlists => {

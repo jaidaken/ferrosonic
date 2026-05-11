@@ -120,12 +120,10 @@ impl App {
             KeyCode::Left => {
                 state.client.artists.focus = 0;
             }
-            KeyCode::Right => {
-                if !state.client.artists.songs.is_empty() {
-                    state.client.artists.focus = 1;
-                    if state.client.artists.selected_song.is_none() {
-                        state.client.artists.selected_song = Some(0);
-                    }
+            KeyCode::Right if !state.client.artists.songs.is_empty() => {
+                state.client.artists.focus = 1;
+                if state.client.artists.selected_song.is_none() {
+                    state.client.artists.selected_song = Some(0);
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -220,102 +218,54 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('t') => {
-                if state.client.artists.focus == 0 {
-                    let tree_items = build_tree_items(&state);
-                    if let Some(idx) = state.client.artists.selected_index {
-                        if let Some(item) = tree_items.get(idx) {
-                            match item {
-                                TreeItem::Artist {
-                                    artist,
-                                    expanded: _,
-                                } => {
-                                    let artist_id = artist.id.clone();
-                                    let artist_name = artist.name.clone();
+            KeyCode::Char('t') if state.client.artists.focus == 0 => {
+                let tree_items = build_tree_items(&state);
+                if let Some(idx) = state.client.artists.selected_index {
+                    if let Some(item) = tree_items.get(idx) {
+                        match item {
+                            TreeItem::Artist {
+                                artist,
+                                expanded: _,
+                            } => {
+                                let artist_id = artist.id.clone();
+                                let artist_name = artist.name.clone();
 
-                                    drop(state);
-                                    drop(cs);
-                                    drop(ds);
+                                drop(state);
+                                drop(cs);
+                                drop(ds);
 
-                                    let albums_resp = self
-                                        .client
-                                        .request(DaemonRequest::LoadArtist(artist_id.clone()))
-                                        .await;
-                                    let albums = match albums_resp {
-                                        Ok(crate::ipc::DaemonResponse::ArtistAlbums(a)) => a,
-                                        _ => Vec::new(),
-                                    };
-                                    if !albums.is_empty() {
-                                        let mut artists_songs: Vec<_> = Vec::new();
-                                        for album in albums {
-                                            let songs = self.load_album(&album.id).await;
-                                            artists_songs.extend(songs);
-                                        }
-
-                                        if artists_songs.is_empty() {
-                                            let ds = self.daemon_state.read().await;
-                                            let mut cs = self.client_state.write().await;
-                                            let state = AppState {
-                                                daemon: &ds,
-                                                client: &mut cs,
-                                            };
-                                            state.client.notify_error(format!(
-                                                "No songs found for {}",
-                                                artist_name,
-                                            ));
-                                            return Ok(());
-                                        }
-
-                                        artists_songs.shuffle(&mut thread_rng());
-
-                                        let song_count = artists_songs.len();
-                                        {
-                                            let ds = self.daemon_state.read().await;
-                                            let mut cs = self.client_state.write().await;
-                                            let state = AppState {
-                                                daemon: &ds,
-                                                client: &mut cs,
-                                            };
-                                            state.client.notify(format!(
-                                                "Shuffling {} songs by {}",
-                                                song_count, artist_name
-                                            ));
-                                        }
-
-                                        return self
-                                            .client
-                                            .request(DaemonRequest::EnqueueSongs {
-                                                songs: artists_songs,
-                                                mode: EnqueueMode::Replace { play_from: Some(0) },
-                                            })
-                                            .await
-                                            .map(|_| ())
-                                            .map_err(Error::from);
+                                let albums_resp = self
+                                    .client
+                                    .request(DaemonRequest::LoadArtist(artist_id.clone()))
+                                    .await;
+                                let albums = match albums_resp {
+                                    Ok(crate::ipc::DaemonResponse::ArtistAlbums(a)) => a,
+                                    _ => Vec::new(),
+                                };
+                                if !albums.is_empty() {
+                                    let mut artists_songs: Vec<_> = Vec::new();
+                                    for album in albums {
+                                        let songs = self.load_album(&album.id).await;
+                                        artists_songs.extend(songs);
                                     }
-                                }
-                                TreeItem::Album { album } => {
-                                    let album_id = album.id.clone();
-                                    let album_name = album.name.clone();
 
-                                    drop(state);
-                                    drop(cs);
-                                    drop(ds);
-
-                                    let songs = self.load_album(&album_id).await;
-                                    if songs.is_empty() {
+                                    if artists_songs.is_empty() {
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
                                         let state = AppState {
                                             daemon: &ds,
                                             client: &mut cs,
                                         };
-                                        state.client.notify_error("Album has no songs");
+                                        state.client.notify_error(format!(
+                                            "No songs found for {}",
+                                            artist_name,
+                                        ));
                                         return Ok(());
                                     }
 
-                                    let mut shuffled_songs = songs;
-                                    shuffled_songs.shuffle(&mut thread_rng());
+                                    artists_songs.shuffle(&mut thread_rng());
 
+                                    let song_count = artists_songs.len();
                                     {
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
@@ -323,44 +273,90 @@ impl App {
                                             daemon: &ds,
                                             client: &mut cs,
                                         };
-                                        state.client.notify(format!("Shuffling {}", album_name));
+                                        state.client.notify(format!(
+                                            "Shuffling {} songs by {}",
+                                            song_count, artist_name
+                                        ));
                                     }
 
                                     return self
                                         .client
                                         .request(DaemonRequest::EnqueueSongs {
-                                            songs: shuffled_songs,
+                                            songs: artists_songs,
                                             mode: EnqueueMode::Replace { play_from: Some(0) },
                                         })
                                         .await
                                         .map(|_| ())
                                         .map_err(Error::from);
                                 }
-                                TreeItem::Song { song } => {
-                                    let song = song.clone();
-                                    let title = song.title.clone();
-                                    drop(state);
-                                    drop(cs);
-                                    drop(ds);
-                                    {
-                                        let ds = self.daemon_state.read().await;
-                                        let mut cs = self.client_state.write().await;
-                                        let state = AppState {
-                                            daemon: &ds,
-                                            client: &mut cs,
-                                        };
-                                        state.client.notify(format!("Playing: {}", title));
-                                    }
-                                    return self
-                                        .client
-                                        .request(DaemonRequest::EnqueueSongs {
-                                            songs: vec![song],
-                                            mode: EnqueueMode::Replace { play_from: Some(0) },
-                                        })
-                                        .await
-                                        .map(|_| ())
-                                        .map_err(Error::from);
+                            }
+                            TreeItem::Album { album } => {
+                                let album_id = album.id.clone();
+                                let album_name = album.name.clone();
+
+                                drop(state);
+                                drop(cs);
+                                drop(ds);
+
+                                let songs = self.load_album(&album_id).await;
+                                if songs.is_empty() {
+                                    let ds = self.daemon_state.read().await;
+                                    let mut cs = self.client_state.write().await;
+                                    let state = AppState {
+                                        daemon: &ds,
+                                        client: &mut cs,
+                                    };
+                                    state.client.notify_error("Album has no songs");
+                                    return Ok(());
                                 }
+
+                                let mut shuffled_songs = songs;
+                                shuffled_songs.shuffle(&mut thread_rng());
+
+                                {
+                                    let ds = self.daemon_state.read().await;
+                                    let mut cs = self.client_state.write().await;
+                                    let state = AppState {
+                                        daemon: &ds,
+                                        client: &mut cs,
+                                    };
+                                    state.client.notify(format!("Shuffling {}", album_name));
+                                }
+
+                                return self
+                                    .client
+                                    .request(DaemonRequest::EnqueueSongs {
+                                        songs: shuffled_songs,
+                                        mode: EnqueueMode::Replace { play_from: Some(0) },
+                                    })
+                                    .await
+                                    .map(|_| ())
+                                    .map_err(Error::from);
+                            }
+                            TreeItem::Song { song } => {
+                                let song = song.clone();
+                                let title = song.title.clone();
+                                drop(state);
+                                drop(cs);
+                                drop(ds);
+                                {
+                                    let ds = self.daemon_state.read().await;
+                                    let mut cs = self.client_state.write().await;
+                                    let state = AppState {
+                                        daemon: &ds,
+                                        client: &mut cs,
+                                    };
+                                    state.client.notify(format!("Playing: {}", title));
+                                }
+                                return self
+                                    .client
+                                    .request(DaemonRequest::EnqueueSongs {
+                                        songs: vec![song],
+                                        mode: EnqueueMode::Replace { play_from: Some(0) },
+                                    })
+                                    .await
+                                    .map(|_| ())
+                                    .map_err(Error::from);
                             }
                         }
                     }
@@ -512,10 +508,8 @@ impl App {
                     }
                 }
             }
-            KeyCode::Backspace => {
-                if state.client.artists.focus == 1 {
-                    state.client.artists.focus = 0;
-                }
+            KeyCode::Backspace if state.client.artists.focus == 1 => {
+                state.client.artists.focus = 0;
             }
             KeyCode::Char('e') => {
                 if state.client.artists.focus == 1 {

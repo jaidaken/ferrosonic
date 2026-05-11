@@ -99,12 +99,10 @@ impl App {
             KeyCode::Left => {
                 state.client.songs.focus = 0;
             }
-            KeyCode::Right => {
-                if !state.songs_list().is_empty() {
-                    state.client.songs.focus = 1;
-                    if state.client.songs.selected_index.is_none() {
-                        state.client.songs.selected_index = Some(0);
-                    }
+            KeyCode::Right if !state.songs_list().is_empty() => {
+                state.client.songs.focus = 1;
+                if state.client.songs.selected_index.is_none() {
+                    state.client.songs.selected_index = Some(0);
                 }
             }
             KeyCode::Char('m') => {
