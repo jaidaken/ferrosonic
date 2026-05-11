@@ -106,6 +106,12 @@ impl FakeMpv {
             .properties
             .insert(name.to_string(), value);
     }
+
+    pub async fn set_loaded_file(&self, path: &str) {
+        let mut s = self.state.lock().await;
+        s.loaded_file = Some(path.to_string());
+        s.playlist = vec![path.to_string()];
+    }
 }
 
 async fn handle_connection(stream: UnixStream, state: Arc<Mutex<FakeMpvState>>) {
