@@ -324,12 +324,18 @@ pub async fn start_mpris_server(
     Ok(server)
 }
 
-/// Releases the daemon read lock before the D-Bus await so a slow
-/// D-Bus doesn't block the render-path write lock.
-pub async fn update_mpris_properties(
-    server: &Server<MprisPlayer>,
-    daemon_state: &SharedDaemonState,
-) -> Result<()> {
+/// Snapshot of the values that `update_mpris_properties` will push.
+/// Extracted so tests can verify the construction without D-Bus.
+#[derive(Debug)]
+pub struct MprisPropertySnapshot {
+    pub playback: PlaybackStatus,
+    pub can_go_next: bool,
+    pub can_go_prev: bool,
+    pub metadata: Option<Metadata>,
+}
+
+/// Pure: builds the property snapshot from daemon state.
+pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisPropertySnapshot {
     let (playback, can_go_next, can_go_prev, current_song, config) = {
         let ds = daemon_state.read().await;
         let pb = match ds.now_playing.state {
@@ -345,34 +351,56 @@ pub async fn update_mpris_properties(
         (pb, cgn, cgp, ds.current_song().cloned(), ds.config.clone())
     };
 
+    let metadata = current_song.map(|song| build_metadata_for(&song, &config));
+
+    MprisPropertySnapshot {
+        playback,
+        can_go_next,
+        can_go_prev,
+        metadata,
+    }
+}
+
+fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
+    let mut metadata = Metadata::new();
+    metadata.set_trackid(
+        Some(TrackId::try_from(format!("/org/mpris/MediaPlayer2/Track/{}", song.id)).ok())
+            .flatten(),
+    );
+    metadata.set_title(Some(song.title.clone()));
+    metadata.set_artist(song.artist.clone().map(|a| vec![a]));
+    metadata.set_album(song.album.clone());
+
+    if let Some(duration) = song.duration {
+        metadata.set_length(Some(Time::from_micros(duration as i64 * 1_000_000)));
+    }
+
+    if let Some(ref cover_art_id) = song.cover_art {
+        if let Some(cover_url) = build_cover_art_url(config, cover_art_id) {
+            metadata.set_art_url(Some(cover_url));
+        }
+    }
+
+    metadata
+}
+
+/// Releases the daemon read lock before the D-Bus await so a slow
+/// D-Bus doesn't block the render-path write lock.
+pub async fn update_mpris_properties(
+    server: &Server<MprisPlayer>,
+    daemon_state: &SharedDaemonState,
+) -> Result<()> {
+    let snap = build_property_snapshot(daemon_state).await;
+
     server
         .properties_changed([
-            Property::PlaybackStatus(playback),
-            Property::CanGoNext(can_go_next),
-            Property::CanGoPrevious(can_go_prev),
+            Property::PlaybackStatus(snap.playback),
+            Property::CanGoNext(snap.can_go_next),
+            Property::CanGoPrevious(snap.can_go_prev),
         ])
         .await?;
 
-    if let Some(song) = current_song {
-        let mut metadata = Metadata::new();
-        metadata.set_trackid(
-            Some(TrackId::try_from(format!("/org/mpris/MediaPlayer2/Track/{}", song.id)).ok())
-                .flatten(),
-        );
-        metadata.set_title(Some(song.title.clone()));
-        metadata.set_artist(song.artist.clone().map(|a| vec![a]));
-        metadata.set_album(song.album.clone());
-
-        if let Some(duration) = song.duration {
-            metadata.set_length(Some(Time::from_micros(duration as i64 * 1_000_000)));
-        }
-
-        if let Some(ref cover_art_id) = song.cover_art {
-            if let Some(cover_url) = build_cover_art_url(&config, cover_art_id) {
-                metadata.set_art_url(Some(cover_url));
-            }
-        }
-
+    if let Some(metadata) = snap.metadata {
         server
             .properties_changed([Property::Metadata(metadata)])
             .await?;
