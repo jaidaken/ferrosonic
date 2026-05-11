@@ -291,11 +291,7 @@ impl App {
 
         let result = self.event_loop(&mut terminal).await;
 
-        self.stop_cava();
-
-        if let Some(ref core) = self.core {
-            core.quit_mpv().await;
-        }
+        self.shutdown_subsystems().await;
 
         disable_raw_mode().map_err(UiError::TerminalInit)?;
         execute!(
@@ -308,6 +304,14 @@ impl App {
 
         info!("Terminal restored");
         result
+    }
+
+    /// Test seam: stop cava + quit mpv. Idempotent. Does not touch terminal.
+    pub async fn shutdown_subsystems(&mut self) {
+        self.stop_cava();
+        if let Some(ref core) = self.core {
+            core.quit_mpv().await;
+        }
     }
 
     pub(crate) async fn load_album(&self, album_id: &str) -> Vec<crate::subsonic::models::Child> {
