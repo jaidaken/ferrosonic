@@ -81,7 +81,7 @@ vt100 = "0.15"
 # and falls back to half-blocks in terminals without image support.
 # `image` is the JPEG/PNG decoder ratatui-image consumes.
 ratatui-image = { version = "8", default-features = false }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
 
 [profile.release]
 lto = true
