@@ -81,10 +81,27 @@ impl FakeSubsonic {
     }
 
     pub async fn expect_starred(&self) {
+        self.expect_starred_with(&[]).await;
+    }
+
+    pub async fn expect_starred_with(&self, songs: &[&str]) {
+        let song_list: Vec<Value> = songs
+            .iter()
+            .enumerate()
+            .map(|(i, title)| {
+                json!({
+                    "id": format!("starred-{}", i),
+                    "title": title,
+                    "starred": "2026-05-11T00:00:00Z",
+                    "artist": "X",
+                    "album": "Y"
+                })
+            })
+            .collect();
         Mock::given(method("GET"))
             .and(path("/rest/getStarred2"))
             .respond_with(ok_body(json!({
-                "starred2": { "song": [] }
+                "starred2": { "song": song_list }
             })))
             .mount(&self.server)
             .await;
