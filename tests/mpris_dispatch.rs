@@ -105,6 +105,93 @@ async fn mpris_seek_dispatches_seek_relative_with_seconds() {
 }
 
 #[tokio::test]
+async fn mpris_metadata_reflects_now_playing() {
+    let (player, _, daemon_state) = build_player();
+    {
+        let mut s = daemon_state.write().await;
+        let mut sng = common::song("abc", "Lullaby");
+        sng.artist = Some("The Cure".into());
+        sng.album = Some("Disintegration".into());
+        sng.duration = Some(243);
+        s.queue.push(sng.clone());
+        s.queue_position = Some(0);
+        s.now_playing.song = Some(sng);
+    }
+
+    let md = player.metadata().await.unwrap();
+    let title = md.title().map(String::from);
+    let artist = md.artist().map(|a| a.first().cloned());
+    let album = md.album().map(String::from);
+    assert_eq!(title.as_deref(), Some("Lullaby"));
+    assert_eq!(artist.unwrap_or_default().as_deref(), Some("The Cure"));
+    assert_eq!(album.as_deref(), Some("Disintegration"));
+}
+
+#[tokio::test]
+async fn mpris_can_go_next_and_previous_track_queue_position() {
+    let (player, _, daemon_state) = build_player();
+    {
+        let mut s = daemon_state.write().await;
+        s.queue = common::songs("t", 3);
+        s.queue_position = Some(1);
+    }
+
+    assert!(player.can_go_next().await.unwrap());
+    assert!(player.can_go_previous().await.unwrap());
+
+    {
+        let mut s = daemon_state.write().await;
+        s.queue_position = Some(0);
+    }
+    assert!(player.can_go_next().await.unwrap());
+    assert!(!player.can_go_previous().await.unwrap());
+
+    {
+        let mut s = daemon_state.write().await;
+        s.queue_position = Some(2);
+    }
+    assert!(!player.can_go_next().await.unwrap());
+    assert!(player.can_go_previous().await.unwrap());
+}
+
+#[tokio::test]
+async fn mpris_can_play_tracks_queue_non_empty() {
+    let (player, _, daemon_state) = build_player();
+    assert!(
+        !player.can_play().await.unwrap(),
+        "empty queue: cannot play"
+    );
+
+    {
+        let mut s = daemon_state.write().await;
+        s.queue.push(common::song("a", "A"));
+    }
+    assert!(player.can_play().await.unwrap());
+}
+
+#[tokio::test]
+async fn mpris_set_volume_dispatches_set_volume_request() {
+    let (player, rec, _) = build_player();
+    player.set_volume(0.7).await.unwrap();
+    drain_fire(&rec, 1).await;
+    match rec.requests().await.as_slice() {
+        [DaemonRequest::SetVolume(v)] => assert_eq!(*v, 70),
+        other => panic!("expected SetVolume(70), got {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn mpris_position_reflects_daemon_state_in_microseconds() {
+    let (player, _, daemon_state) = build_player();
+    {
+        let mut s = daemon_state.write().await;
+        s.now_playing.position = 12.5;
+    }
+    let pos = player.position().await.unwrap();
+    assert_eq!(pos.as_micros(), 12_500_000);
+}
+
+#[tokio::test]
 async fn mpris_playback_status_reports_daemon_state() {
     let (player, _rec, daemon_state) = build_player();
 
