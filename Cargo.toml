@@ -1,6 +1,6 @@
 [package]
 name = "ferrosonic"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "A terminal-based Subsonic music client with bit-perfect audio playback"
 license = "MIT"
@@ -29,7 +29,7 @@ tui-tree-widget = "0.22"
 
 # HTTP client for Subsonic API. rustls (not openssl) so the release
 # binary can be statically linked against musl and run on any distro.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -80,8 +80,11 @@ vt100 = "0.15"
 # Cover-art display: ratatui-image autodetects kitty / iTerm2 / sixel
 # and falls back to half-blocks in terminals without image support.
 # `image` is the JPEG/PNG decoder ratatui-image consumes.
-ratatui-image = { version = "8", default-features = false }
+ratatui-image = { version = "8", default-features = false, features = ["chafa"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
+# Direct libchafa wrapper for high-quality halfblocks (ratatui-image's
+# bundled chafa wrapper doesn't expose dither / work-factor knobs).
+libloading = "0.8"
 
 [profile.release]
 lto = true

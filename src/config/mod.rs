@@ -43,6 +43,12 @@ pub struct Config {
 
     #[serde(rename = "CoverArt", default)]
     pub cover_art: bool,
+
+    /// Total height of the now-playing section in rows when cover art
+    /// is visible. Range 8..=24, step 2. The art height is this minus
+    /// 3 (2 border rows + 1 progress bar row).
+    #[serde(rename = "CoverArtSize", default = "Config::default_cover_art_size")]
+    pub cover_art_size: u8,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,6 +135,7 @@ impl Default for Config {
             auto_continue: false,
             repeat_mode: RepeatMode::Off,
             cover_art: false,
+            cover_art_size: Self::default_cover_art_size(),
         }
     }
 }
@@ -140,6 +147,10 @@ impl Config {
 
     fn default_daemon() -> bool {
         true
+    }
+
+    fn default_cover_art_size() -> u8 {
+        16
     }
 
     pub fn new() -> Self {

@@ -1,6 +1,4 @@
-//! UI page implementations
-
-pub mod artists;
+pub mod library;
 pub mod playlists;
 pub mod queue;
 pub mod server;

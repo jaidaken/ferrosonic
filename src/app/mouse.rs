@@ -97,7 +97,7 @@ impl App {
     ) -> Result<(), Error> {
         match page {
             Page::QuickPlay => self.handle_quick_play_click(x, y, layout).await,
-            Page::Library => self.handle_artists_click(x, y, layout).await,
+            Page::Library => self.handle_library_click(x, y, layout).await,
             Page::Queue => self.handle_queue_click(y, layout).await,
             Page::Playlists => self.handle_playlists_click(x, y, layout).await,
             _ => Ok(()),
@@ -280,7 +280,7 @@ impl App {
         match state.client.page {
             Page::Library => {
                 if state.client.artists.focus == 0 {
-                    let tree_items = crate::ui::pages::artists::build_tree_items(&state);
+                    let tree_items = crate::ui::pages::library::build_tree_items(&state);
                     let max = tree_items.len().saturating_sub(1);
                     if let Some(sel) = state.client.artists.selected_index {
                         if sel < max {

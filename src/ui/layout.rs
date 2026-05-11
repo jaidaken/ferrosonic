@@ -11,7 +11,9 @@ use super::cover_art::{self, CoverArtState};
 use super::footer::Footer;
 use super::header::Header;
 use super::pages;
-use super::widgets::{CavaWidget, NowPlayingWidget};
+use super::widgets::{self, CavaWidget, NowPlayingWidget};
+
+const NOW_PLAYING_BASE: u16 = 7;
 
 pub fn draw(
     frame: &mut Frame,
@@ -21,20 +23,32 @@ pub fn draw(
     let area = frame.area();
 
     let cava_active = state.client.settings_state.cava_enabled && !state.client.cava_screen.is_empty();
-    let art_active = state.client.settings_state.cover_art
-        && cover_art_state
-            .try_lock()
-            .map(|g| g.protocol.is_some())
-            .unwrap_or(false);
+    // Dynamic now-playing size: reserve the larger area only when art
+    // is actually going to render. Stable across the fetch window
+    // because it keys off the song's cover_art id (set on the daemon
+    // before bytes arrive), not the protocol-loaded flag.
+    let art_visible = state.client.settings_state.cover_art
+        && state
+            .daemon
+            .now_playing
+            .song
+            .as_ref()
+            .and_then(|s| s.cover_art.as_ref())
+            .is_some();
 
-    let show_band = cava_active || art_active;
+    let now_playing_h = if art_visible {
+        (state.client.settings_state.cover_art_size as u16).clamp(8, 24)
+    } else {
+        NOW_PLAYING_BASE
+    };
+
     let band_pct = state.client.settings_state.cava_size as u16;
-    let (header_area, band_area, content_area, now_playing_area, footer_area) = if show_band {
+    let (header_area, cava_area, content_area, now_playing_area, footer_area) = if cava_active {
         let chunks = Layout::vertical([
             Constraint::Length(1),
             Constraint::Percentage(band_pct),
-            Constraint::Min(10),
-            Constraint::Length(7),
+            Constraint::Min(8),
+            Constraint::Length(now_playing_h),
             Constraint::Length(2),
         ])
         .split(area);
@@ -42,28 +56,12 @@ pub fn draw(
     } else {
         let chunks = Layout::vertical([
             Constraint::Length(1),
-            Constraint::Min(10),
-            Constraint::Length(7),
+            Constraint::Min(8),
+            Constraint::Length(now_playing_h),
             Constraint::Length(2),
         ])
         .split(area);
         (chunks[0], None, chunks[1], chunks[2], chunks[3])
-    };
-
-    let (cava_area, art_area) = match (band_area, cava_active, art_active) {
-        (Some(band), true, true) => {
-            // Width = 2 * height so art stays square-ish.
-            let art_cols = (band.height as u16).saturating_mul(2).min(band.width / 2);
-            let split = Layout::horizontal([
-                Constraint::Length(art_cols.max(8)),
-                Constraint::Min(0),
-            ])
-            .split(band);
-            (Some(split[1]), Some(split[0]))
-        }
-        (Some(band), true, false) => (Some(band), None),
-        (Some(band), false, true) => (None, Some(band)),
-        _ => (None, None),
     };
 
     let (content_left, content_right) = match state.client.page {
@@ -99,33 +97,38 @@ pub fn draw(
         frame.render_widget(cava_widget, cava_rect);
     }
 
-    if let Some(art_rect) = art_area {
-        cover_art::render(frame, art_rect, cover_art_state);
-    }
-
     match state.client.page {
-        Page::QuickPlay => {
-            pages::songs::render(frame, content_area, state);
-        }
-        Page::Library => {
-            pages::artists::render(frame, content_area, state);
-        }
-        Page::Queue => {
-            pages::queue::render(frame, content_area, state);
-        }
-        Page::Playlists => {
-            pages::playlists::render(frame, content_area, state);
-        }
-        Page::Server => {
-            pages::server::render(frame, content_area, state);
-        }
-        Page::Settings => {
-            pages::settings::render(frame, content_area, state);
-        }
+        Page::QuickPlay => pages::songs::render(frame, content_area, state),
+        Page::Library => pages::library::render(frame, content_area, state),
+        Page::Queue => pages::queue::render(frame, content_area, state),
+        Page::Playlists => pages::playlists::render(frame, content_area, state),
+        Page::Server => pages::server::render(frame, content_area, state),
+        Page::Settings => pages::settings::render(frame, content_area, state),
     }
 
-    let now_playing = NowPlayingWidget::new(&state.daemon.now_playing, colors);
+    // 50/50 horizontal split when art is actually visible. When no
+    // art, info uses the full inner width and re-centers naturally.
+    let art_cols = if art_visible {
+        now_playing_area.width.saturating_sub(2) / 2
+    } else {
+        0
+    };
+
+    let now_playing = NowPlayingWidget::new(&state.daemon.now_playing, colors)
+        .art_reserved_cols(art_cols);
     frame.render_widget(now_playing, now_playing_area);
+
+    if art_visible {
+        let cell_size = cover_art_state
+            .try_lock()
+            .map(|g| g.cell_size)
+            .unwrap_or((10, 20));
+        if let Some(rect) =
+            widgets::now_playing::art_rect(now_playing_area, art_cols, cell_size)
+        {
+            cover_art::render(frame, rect, cover_art_state);
+        }
+    }
 
     let footer = Footer::new(state.client.page, colors)
         .sample_rate(state.daemon.now_playing.sample_rate)

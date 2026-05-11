@@ -205,8 +205,10 @@ pub struct SettingsState {
     pub auto_continue: bool,
     /// Repeat mode for the queue. Cycled by `r` globally.
     pub repeat_mode: crate::config::RepeatMode,
-    /// Show cover art in the cava band on the now-playing screen.
+    /// Show cover art in the now-playing section.
     pub cover_art: bool,
+    /// Total now-playing height (rows) when art is visible.
+    pub cover_art_size: u8,
 }
 
 impl Default for SettingsState {
@@ -221,6 +223,7 @@ impl Default for SettingsState {
             auto_continue: false,
             repeat_mode: crate::config::RepeatMode::Off,
             cover_art: false,
+            cover_art_size: 16,
         }
     }
 }
@@ -336,6 +339,7 @@ pub fn new_shared_client_state(config: &Config) -> SharedClientState {
     client.settings_state.auto_continue = config.auto_continue;
     client.settings_state.repeat_mode = config.repeat_mode;
     client.settings_state.cover_art = config.cover_art;
+    client.settings_state.cover_art_size = config.cover_art_size.clamp(8, 24);
     client.songs.selected_option = Some(SongOption::Starred);
     Arc::new(RwLock::new(client))
 }

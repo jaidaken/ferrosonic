@@ -102,17 +102,36 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
     let artists = &state.client.artists;
 
     let focused = artists.focus == 0;
-    let border_style = if focused {
+    let searching = artists.filter_active || !artists.filter.is_empty();
+
+    // Searching takes priority over the focus colour so an active
+    // search is always visually obvious.
+    let border_style = if searching {
+        Style::default()
+            .fg(colors.accent)
+            .add_modifier(Modifier::BOLD)
+    } else if focused {
         Style::default().fg(colors.border_focused)
     } else {
         Style::default().fg(colors.border_unfocused)
     };
 
     let scope_label = artists.filter_scope.label();
-    let title = if artists.filter_active {
-        format!(" {} (/{}) ", capitalize(scope_label), artists.filter)
-    } else if !artists.filter.is_empty() {
-        format!(" {} [{}] ", capitalize(scope_label), artists.filter)
+    // Slash count mirrors the cycle depth — `/` artists, `//` albums,
+    // `///` songs — so the prompt itself tells you which scope you're
+    // searching across.
+    let scope_slashes = match artists.filter_scope {
+        FilterScope::Artists => "/",
+        FilterScope::Albums => "//",
+        FilterScope::Songs => "///",
+    };
+    let title = if searching {
+        format!(
+            " Search {} ({}{}) ",
+            scope_label,
+            scope_slashes,
+            artists.filter
+        )
     } else {
         " Artists ".to_string()
     };
@@ -287,12 +306,4 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
 
     frame.render_stateful_widget(list, area, &mut list_state);
     state.client.artists.song_scroll_offset = list_state.offset();
-}
-
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(first) => first.to_uppercase().chain(c).collect(),
-        None => String::new(),
-    }
 }

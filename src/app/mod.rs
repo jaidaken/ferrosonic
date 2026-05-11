@@ -3,7 +3,7 @@
 mod cava;
 pub mod client_state;
 mod input;
-mod input_artists;
+mod input_library;
 mod input_playlists;
 mod input_queue;
 mod input_server;
@@ -11,7 +11,7 @@ mod input_settings;
 mod input_songs;
 pub mod models;
 mod mouse;
-mod mouse_artists;
+mod mouse_library;
 mod mouse_playlists;
 pub mod state;
 
@@ -75,8 +75,11 @@ impl App {
                 crate::ui::cover_art::CoverArtState {
                     picker: None,
                     protocol_type: None,
+                    cell_size: (10, 20),
                     current_id: None,
+                    image: None,
                     protocol: None,
+                    chafa_cache: None,
                 },
             )),
         }
@@ -101,8 +104,11 @@ impl App {
                 crate::ui::cover_art::CoverArtState {
                     picker: None,
                     protocol_type: None,
+                    cell_size: (10, 20),
                     current_id: None,
+                    image: None,
                     protocol: None,
+                    chafa_cache: None,
                 },
             )),
         }
@@ -221,6 +227,11 @@ impl App {
             *guard = probed;
         }
 
+        // Snapshot-loaded current song needs an explicit cover-art fetch
+        // now that the picker is initialised. (No NowPlayingChanged
+        // event fires for an already-running daemon.)
+        self.seed_cover_art().await;
+
         // Split-build: ferrosonicd has already populated the library
         // and the snapshot delivered it. In-process: fetch here.
         if let Some(ref core) = self.core {
@@ -276,6 +287,35 @@ impl App {
         }
     }
 
+    async fn seed_cover_art(&self) {
+        let (id, enabled) = {
+            let ds = self.daemon_state.read().await;
+            let cs = self.client_state.read().await;
+            (
+                ds.now_playing.song.as_ref().and_then(|s| s.cover_art.clone()),
+                cs.settings_state.cover_art,
+            )
+        };
+        if !enabled {
+            return;
+        }
+        let Some(id) = id else { return };
+        info!("Seeding cover art for current song id={}", id);
+        if let Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) = self
+            .client
+            .request(DaemonRequest::FetchCoverArt {
+                id: id.clone(),
+                size: 512,
+            })
+            .await
+        {
+            if !bytes.is_empty() {
+                let mut guard = self.cover_art.lock().expect("cover_art poisoned");
+                guard.load(id, &bytes);
+            }
+        }
+    }
+
     /// Subscribe BEFORE Snapshot RPC so daemon events emitted during
     /// the RPC land in the receiver buffer instead of being lost
     /// (tokio broadcast only delivers events after subscribe).
@@ -304,34 +344,6 @@ impl App {
                 ds.library.artists.len(),
                 ds.library.playlists.len(),
             );
-        }
-
-        // No NowPlayingChanged fires for an already-running daemon,
-        // so seed cover art from the snapshot here.
-        let (initial_cover_id, cover_art_enabled) = {
-            let ds = self.daemon_state.read().await;
-            let cs = self.client_state.read().await;
-            (
-                ds.now_playing.song.as_ref().and_then(|s| s.cover_art.clone()),
-                cs.settings_state.cover_art,
-            )
-        };
-        if cover_art_enabled {
-            if let Some(id) = initial_cover_id {
-                if let Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) = self
-                    .client
-                    .request(DaemonRequest::FetchCoverArt {
-                        id: id.clone(),
-                        size: 512,
-                    })
-                    .await
-                {
-                    if !bytes.is_empty() {
-                        let mut guard = self.cover_art.lock().expect("cover_art poisoned");
-                        guard.load(id, &bytes);
-                    }
-                }
-            }
         }
 
         let daemon_state = self.daemon_state.clone();
@@ -600,6 +612,7 @@ async fn apply_event(
         DaemonEvent::ConfigChanged(cfg) => {
             let repeat_mode = cfg.repeat_mode;
             let cover_art_enabled = cfg.cover_art;
+            let cover_art_size = cfg.cover_art_size;
             let auto_continue = cfg.auto_continue;
             {
                 let mut ds = daemon_state.write().await;
@@ -609,6 +622,7 @@ async fn apply_event(
                 let mut cs = client_state.write().await;
                 cs.settings_state.repeat_mode = repeat_mode;
                 cs.settings_state.cover_art = cover_art_enabled;
+                cs.settings_state.cover_art_size = cover_art_size;
                 cs.settings_state.auto_continue = auto_continue;
             }
 

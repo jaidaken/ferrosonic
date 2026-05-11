@@ -3,13 +3,13 @@ use crate::error::Error;
 use super::*;
 
 impl App {
-    pub(super) async fn handle_artists_click(
+    pub(super) async fn handle_library_click(
         &mut self,
         x: u16,
         y: u16,
         layout: &LayoutAreas,
     ) -> Result<(), Error> {
-        use crate::ui::pages::artists::{build_tree_items, TreeItem};
+        use crate::ui::pages::library::{build_tree_items, TreeItem};
 
         let ds = self.daemon_state.read().await;
 

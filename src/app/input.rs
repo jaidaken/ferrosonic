@@ -69,7 +69,7 @@ impl App {
                 drop(state); drop(cs); drop(ds);
                 return match page {
                     Page::Server => self.handle_server_key(key).await,
-                    Page::Library => self.handle_artists_key(key).await,
+                    Page::Library => self.handle_library_key(key).await,
                     _ => Ok(()),
                 };
             }
@@ -161,7 +161,7 @@ impl App {
         drop(state); drop(cs); drop(ds);
         match page {
             Page::QuickPlay => self.handle_songs_key(key).await,
-            Page::Library => self.handle_artists_key(key).await,
+            Page::Library => self.handle_library_key(key).await,
             Page::Queue => self.handle_queue_key(key).await,
             Page::Playlists => self.handle_playlists_key(key).await,
             Page::Server => self.handle_server_key(key).await,

@@ -77,6 +77,17 @@ impl MpvController {
             .arg("--cache=yes")
             .arg("--cache-secs=120")
             .arg("--demuxer-max-bytes=100MiB")
+            // Keep the audio device open across track swaps so the
+            // hardware doesn't re-initialise and produce a click/silence
+            // window on every loadfile. mpv emits real PCM silence
+            // during the swap rather than dropping the device.
+            .arg("--audio-stream-silence=yes")
+            // Don't pause while waiting for the initial cache to fill —
+            // start playback as soon as the decoder has bytes, which is
+            // what we want for a music TUI.
+            .arg("--cache-pause-initial=no")
+            // And don't pause on cache underrun later either.
+            .arg("--cache-pause=no")
             .arg(format!("--input-ipc-server={}", self.socket_path.display()))
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -198,6 +209,15 @@ impl MpvController {
     pub async fn playlist_remove(&mut self, index: usize) -> Result<(), AudioError> {
         debug!("Removing playlist entry {}", index);
         self.send_command(vec![json!("playlist-remove"), json!(index)])
+            .await?;
+        Ok(())
+    }
+
+    pub async fn playlist_next(&mut self) -> Result<(), AudioError> {
+        debug!("Advancing to next playlist entry");
+        // `force` advances even at the last entry; we always control
+        // the playlist so this is safe.
+        self.send_command(vec![json!("playlist-next"), json!("force")])
             .await?;
         Ok(())
     }

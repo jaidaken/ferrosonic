@@ -1,5 +1,3 @@
-//! Custom UI widgets
-
 pub mod cava;
 pub mod now_playing;
 pub mod progress_bar;

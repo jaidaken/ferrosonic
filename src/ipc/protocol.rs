@@ -67,6 +67,7 @@ pub enum DaemonRequest {
     SetAutoContinue(bool),
     SetRepeatMode(RepeatMode),
     SetCoverArtEnabled(bool),
+    SetCoverArtSize(u8),
     FetchCoverArt { id: String, size: u32 },
 
     Subscribe,

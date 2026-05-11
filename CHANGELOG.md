@@ -1,35 +1,84 @@
 # Changelog
 
-## Unreleased
+## [0.4.0] - 2026-05-11
+
+Album art, library-wide search, repeat modes, and seamless album
+switches. The Library page and the Now Playing section both got
+meaningful upgrades.
 
 ### Added
 
-- Library search across the whole server. `/` still filters the artist
-  tree by name, but pressing `/` again on an empty filter cycles the
-  scope to albums, then songs. Whatever you type after that goes
-  through the Subsonic `search3` endpoint, so you find tracks even
-  when the artist isn't expanded. Stale replies from fast typing are
-  dropped via a generation counter.
-- Auto-continue. When the queue empties at the end of the last track,
-  the daemon fetches a fresh roll of random songs and keeps playing.
-  Off by default, toggled on F6 (Settings).
-- Two-line footer so all of the keyboard shortcuts actually fit.
-- Repeat modes. `r` cycles Off → One → All. `One` re-preloads the
-  current track so gapless still works on the loop; `All` wraps the
-  queue position when the last track ends. Persists in config.
-- Cover art in the cava band. Detects kitty / iTerm2 / sixel image
-  protocols via `ratatui-image` and falls back to half-blocks on
-  plainer terminals. Fetched server-side via `getCoverArt`, cached
-  on the daemon. Toggled on F6 (Settings).
+- **Cover art** in the now-playing section. Splits the row
+  horizontally — info on the left, art on the right, progress bar
+  across the bottom. Detects kitty / iTerm2 / sixel image protocols
+  automatically; falls back to half-blocks for terminals that don't
+  do graphics (alacritty, foot without sixel, plain xterm). When the
+  `chafa` library is installed it's used for substantially higher
+  fidelity half-blocks — sextants, octants, braille, Floyd-Steinberg
+  dithering, truecolor. Toggled and sized on F6 (Settings). Section
+  height auto-shrinks when there's no art to show.
+- **Library-wide search.** `/` opens the search bar; press `/` again
+  on an empty query to cycle the scope: artists (`/`), albums (`//`),
+  songs (`///`). Anything you type hits Subsonic's `search3`
+  endpoint, so you find tracks the artist isn't expanded for. The
+  bar lights up in your theme's accent colour while you're searching
+  so you can tell at a glance. Stale replies from fast typing are
+  dropped.
+- **Repeat modes.** `r` cycles Off → One → All. `One` re-preloads
+  the current track so gapless still works on the loop; `All` wraps
+  the queue position when the last track ends. Persisted in config.
+- **Auto-continue.** When the queue empties at the end of the last
+  track, ferrosonic fetches a fresh roll of random songs from the
+  server and keeps playing. Off by default, toggled on F6.
+- **Seamless album switches.** Picking a new album or shuffling the
+  library no longer mid-cuts audio. Audio stops immediately
+  (cleanly, no click), the new track's bytes pre-buffer to local
+  disk, and only then does playback resume — guaranteed to start
+  cleanly from frame 0 with no stutter regardless of network
+  latency. Rapid switches cancel previous downloads so the audio
+  always reflects the most recent choice. Gapless playback between
+  songs within a queue is unchanged.
+- **Settings page redesign**, grouped into Display / Now Playing /
+  Playback / System sections. New knobs:
+  - **Cover Art Size** (8-24 rows, step 2) — controls the
+    now-playing section height when art is visible.
+  - **Repeat** (Off / One / All) — mirrors the `r` global key.
+  - **Cover Art** (On / Off) — mirrors enabling cover-art display.
+- **Two-line footer** so every keybind fits without scrolling.
+  Notifications now appear bottom-right under the sample rate
+  instead of hiding the keybinds.
 
 ### Changed
 
-- Shuffle keys moved off `r` (now repeat). `t` shuffles the current
-  context (selected artist/album on Library, the playlist on
-  Playlists, the queue on Queue). `Shift+T` shuffles the whole
-  library (was `Shift+R`).
-- Global `t` no longer cycles themes; the theme picker on F6 is the
-  way to change themes now.
+- **Shuffle keys.** `r` is now Repeat, so shuffle moved: `t`
+  shuffles the current context (artist / album / playlist / queue),
+  `Shift+T` shuffles the whole library. (Was `s` / `Shift+R` in
+  0.3.0.)
+- **Global `t` no longer cycles themes.** The theme picker on F6 is
+  the entry point; `t` is shuffle-context now.
+- The Library page footer puts `n: Star playing` next to
+  `m: Star selected` for easier scanning.
+- mpv tuning for cleaner transitions: keeps the audio device open
+  across track changes (`--audio-stream-silence=yes`), starts
+  playback as soon as the decoder has bytes
+  (`--cache-pause-initial=no`), no pause-on-underrun
+  (`--cache-pause=no`).
+- The audio-quality row (format / bit depth / sample rate /
+  channels) now appears within ~250 ms of a track change instead of
+  waiting up to half a second.
+- README documents `chafa` as an optional runtime dependency for
+  high-fidelity cover-art rendering.
+
+### Fixed
+
+- The ▶ play indicator no longer sticks on the previous track
+  during gapless track advance.
+- Protocol-version skew between an old daemon and a new TUI (or
+  vice versa) no longer severs the IPC connection — unknown request
+  / response variants are reported as errors and the connection
+  stays alive.
+- Cover art with WebP-encoded album art (Navidrome's default
+  output) now decodes correctly; previously only JPEG/PNG worked.
 
 ## [0.3.0] - 2026-05-11
 

@@ -81,7 +81,10 @@ impl DaemonClient for InProcessClient {
                 self.enqueue_songs(songs, mode).await
             }
             DaemonRequest::PlayQueueIndex(pos) => {
-                self.core.play_queue_position(pos).await.map_err(err)?;
+                self.core
+                    .play_queue_position(pos, crate::daemon::core::PlayMode::Direct)
+                    .await
+                    .map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::RemoveFromQueue(pos) => {
@@ -105,7 +108,10 @@ impl DaemonClient for InProcessClient {
                 }
                 if was_playing {
                     if pos < new_len {
-                        self.core.play_queue_position(pos).await.map_err(err)?;
+                        self.core
+                            .play_queue_position(pos, crate::daemon::core::PlayMode::Direct)
+                            .await
+                            .map_err(err)?;
                     } else {
                         self.core.halt_keep_queue().await;
                         self.core.broadcast_queue_changed().await;
@@ -238,6 +244,10 @@ impl DaemonClient for InProcessClient {
                 self.core.set_cover_art_enabled(on).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::SetCoverArtSize(sz) => {
+                self.core.set_cover_art_size(sz).await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
             DaemonRequest::FetchCoverArt { id, size } => {
                 let bytes = self.core.get_cover_art(&id, size).await;
                 Ok(DaemonResponse::CoverArt(bytes))
@@ -279,7 +289,10 @@ impl InProcessClient {
                 }
                 self.core.broadcast_queue_changed().await;
                 if let Some(idx) = play_from {
-                    self.core.play_queue_position(idx).await.map_err(err)?;
+                    self.core
+                        .play_queue_position(idx, crate::daemon::core::PlayMode::Buffered)
+                        .await
+                        .map_err(err)?;
                 }
             }
             EnqueueMode::Append => {

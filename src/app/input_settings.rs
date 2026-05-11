@@ -9,180 +9,48 @@ enum SettingChange {
     Theme,
     Cava,
     CavaSize,
-    Daemon,
-    AutoContinue,
-    Repeat,
     CoverArt,
+    CoverArtSize,
+    Repeat,
+    AutoContinue,
+    Daemon,
 }
 
-const SETTINGS_FIELD_COUNT: usize = 7;
+const SETTINGS_FIELD_COUNT: usize = 8;
 
 impl App {
     pub(super) async fn handle_settings_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let mut change: Option<SettingChange> = None;
 
         {
-            let ds = self.daemon_state.read().await;
+            let _ds = self.daemon_state.read().await;
             let mut cs = self.client_state.write().await;
-            let state = AppState { daemon: &*ds, client: &mut *cs };
-            let field = state.client.settings_state.selected_field;
+            let field = cs.settings_state.selected_field;
+            let cava_ok = cs.cava_available;
 
             match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     if field > 0 {
-                        state.client.settings_state.selected_field = field - 1;
+                        cs.settings_state.selected_field = field - 1;
                     }
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     if field < SETTINGS_FIELD_COUNT - 1 {
-                        state.client.settings_state.selected_field = field + 1;
+                        cs.settings_state.selected_field = field + 1;
                     }
                 }
-                KeyCode::Left | KeyCode::Char('h') => match field {
-                    0 => {
-                        state.client.settings_state.prev_theme();
-                        let label = state.client.settings_state.theme_name().to_string();
-                        state.client.notify(format!("Theme: {}", label));
-                        change = Some(SettingChange::Theme);
+                KeyCode::Left | KeyCode::Char('h') => {
+                    change = adjust_setting(&mut cs.settings_state, field, -1, cava_ok);
+                    if let Some(c) = change {
+                        let msg = change_message(&cs.settings_state, c);
+                        cs.notify(msg);
                     }
-                    1 if state.client.cava_available => {
-                        state.client.settings_state.cava_enabled = !state.client.settings_state.cava_enabled;
-                        let status = if state.client.settings_state.cava_enabled {
-                            "On"
-                        } else {
-                            "Off"
-                        };
-                        state.client.notify(format!("Cava: {}", status));
-                        change = Some(SettingChange::Cava);
-                    }
-                    2 if state.client.cava_available => {
-                        let cur = state.client.settings_state.cava_size;
-                        if cur > 10 {
-                            let new_size = cur - 5;
-                            state.client.settings_state.cava_size = new_size;
-                            state.client.notify(format!("Cava Size: {}%", new_size));
-                            change = Some(SettingChange::CavaSize);
-                        }
-                    }
-                    3 => {
-                        state.client.settings_state.daemon_enabled =
-                            !state.client.settings_state.daemon_enabled;
-                        let status = if state.client.settings_state.daemon_enabled {
-                            "On"
-                        } else {
-                            "Off"
-                        };
-                        state.client.notify(format!(
-                            "Daemon: {} (restart to apply)",
-                            status
-                        ));
-                        change = Some(SettingChange::Daemon);
-                    }
-                    4 => {
-                        state.client.settings_state.auto_continue =
-                            !state.client.settings_state.auto_continue;
-                        let status = if state.client.settings_state.auto_continue {
-                            "On"
-                        } else {
-                            "Off"
-                        };
-                        state.client.notify(format!("Auto-continue: {}", status));
-                        change = Some(SettingChange::AutoContinue);
-                    }
-                    5 => {
-                        let cur = state.client.settings_state.repeat_mode;
-                        let new_mode = match cur {
-                            crate::config::RepeatMode::Off => crate::config::RepeatMode::All,
-                            crate::config::RepeatMode::One => crate::config::RepeatMode::Off,
-                            crate::config::RepeatMode::All => crate::config::RepeatMode::One,
-                        };
-                        state.client.settings_state.repeat_mode = new_mode;
-                        state.client.notify(format!("Repeat: {}", new_mode.label()));
-                        change = Some(SettingChange::Repeat);
-                    }
-                    6 => {
-                        state.client.settings_state.cover_art =
-                            !state.client.settings_state.cover_art;
-                        let status = if state.client.settings_state.cover_art {
-                            "On"
-                        } else {
-                            "Off"
-                        };
-                        state.client.notify(format!("Cover Art: {}", status));
-                        change = Some(SettingChange::CoverArt);
-                    }
-                    _ => {}
-                },
+                }
                 KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Char(' ') => {
-                    match field {
-                        0 => {
-                            state.client.settings_state.next_theme();
-                            let label = state.client.settings_state.theme_name().to_string();
-                            state.client.notify(format!("Theme: {}", label));
-                            change = Some(SettingChange::Theme);
-                        }
-                        1 if state.client.cava_available => {
-                            state.client.settings_state.cava_enabled = !state.client.settings_state.cava_enabled;
-                            let status = if state.client.settings_state.cava_enabled {
-                                "On"
-                            } else {
-                                "Off"
-                            };
-                            state.client.notify(format!("Cava: {}", status));
-                            change = Some(SettingChange::Cava);
-                        }
-                        2 if state.client.cava_available => {
-                            let cur = state.client.settings_state.cava_size;
-                            if cur < 80 {
-                                let new_size = cur + 5;
-                                state.client.settings_state.cava_size = new_size;
-                                state.client.notify(format!("Cava Size: {}%", new_size));
-                                change = Some(SettingChange::CavaSize);
-                            }
-                        }
-                        3 => {
-                            state.client.settings_state.daemon_enabled =
-                                !state.client.settings_state.daemon_enabled;
-                            let status = if state.client.settings_state.daemon_enabled {
-                                "On"
-                            } else {
-                                "Off"
-                            };
-                            state.client.notify(format!(
-                                "Daemon: {} (restart to apply)",
-                                status
-                            ));
-                            change = Some(SettingChange::Daemon);
-                        }
-                        4 => {
-                            state.client.settings_state.auto_continue =
-                                !state.client.settings_state.auto_continue;
-                            let status = if state.client.settings_state.auto_continue {
-                                "On"
-                            } else {
-                                "Off"
-                            };
-                            state.client.notify(format!("Auto-continue: {}", status));
-                            change = Some(SettingChange::AutoContinue);
-                        }
-                        5 => {
-                            let new_mode = state.client.settings_state.repeat_mode.cycle();
-                            state.client.settings_state.repeat_mode = new_mode;
-                            state.client.notify(format!("Repeat: {}", new_mode.label()));
-                            change = Some(SettingChange::Repeat);
-                        }
-                        6 => {
-                            state.client.settings_state.cover_art =
-                                !state.client.settings_state.cover_art;
-                            let status = if state.client.settings_state.cover_art {
-                                "On"
-                            } else {
-                                "Off"
-                            };
-                            state.client.notify(format!("Cover Art: {}", status));
-                            change = Some(SettingChange::CoverArt);
-                        }
-                        _ => {}
+                    change = adjust_setting(&mut cs.settings_state, field, 1, cava_ok);
+                    if let Some(c) = change {
+                        let msg = change_message(&cs.settings_state, c);
+                        cs.notify(msg);
                     }
                 }
                 _ => {}
@@ -197,10 +65,11 @@ impl App {
             theme_name,
             cava_enabled,
             cava_size,
-            daemon_enabled,
-            auto_continue,
-            repeat_mode,
             cover_art,
+            cover_art_size,
+            repeat_mode,
+            auto_continue,
+            daemon_enabled,
             gradient,
             h_gradient,
         ) = {
@@ -212,10 +81,11 @@ impl App {
                 s.theme_name().to_string(),
                 s.cava_enabled,
                 s.cava_size,
-                s.daemon_enabled,
-                s.auto_continue,
-                s.repeat_mode,
                 s.cover_art,
+                s.cover_art_size,
+                s.repeat_mode,
+                s.auto_continue,
+                s.daemon_enabled,
                 s.current_theme().cava_gradient.clone(),
                 s.current_theme().cava_horizontal_gradient.clone(),
             )
@@ -224,10 +94,11 @@ impl App {
             SettingChange::Theme => DaemonRequest::SetTheme(theme_name),
             SettingChange::Cava => DaemonRequest::SetCavaEnabled(cava_enabled),
             SettingChange::CavaSize => DaemonRequest::SetCavaSize(cava_size),
-            SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
-            SettingChange::AutoContinue => DaemonRequest::SetAutoContinue(auto_continue),
-            SettingChange::Repeat => DaemonRequest::SetRepeatMode(repeat_mode),
             SettingChange::CoverArt => DaemonRequest::SetCoverArtEnabled(cover_art),
+            SettingChange::CoverArtSize => DaemonRequest::SetCoverArtSize(cover_art_size),
+            SettingChange::Repeat => DaemonRequest::SetRepeatMode(repeat_mode),
+            SettingChange::AutoContinue => DaemonRequest::SetAutoContinue(auto_continue),
+            SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
         };
         if let Err(e) = self.client.request(req).await {
             let ds = self.daemon_state.read().await;
@@ -257,12 +128,106 @@ impl App {
                     self.start_cava(&gradient, &h_gradient, cava_h);
                 }
             }
-            SettingChange::Daemon
-            | SettingChange::AutoContinue
+            SettingChange::CoverArt
+            | SettingChange::CoverArtSize
             | SettingChange::Repeat
-            | SettingChange::CoverArt => {}
+            | SettingChange::AutoContinue
+            | SettingChange::Daemon => {}
         }
 
         Ok(())
+    }
+}
+
+/// `step`: -1 for left, +1 for right/enter. Mutates the settings
+/// state and returns the matching `SettingChange` so the caller can
+/// dispatch + notify.
+fn adjust_setting(
+    s: &mut crate::app::state::SettingsState,
+    field: usize,
+    step: i32,
+    cava_ok: bool,
+) -> Option<SettingChange> {
+    use crate::config::RepeatMode;
+    match field {
+        0 => {
+            if step < 0 {
+                s.prev_theme();
+            } else {
+                s.next_theme();
+            }
+            Some(SettingChange::Theme)
+        }
+        1 if cava_ok => {
+            s.cava_enabled = !s.cava_enabled;
+            Some(SettingChange::Cava)
+        }
+        2 if cava_ok => {
+            let cur = s.cava_size as i32;
+            let new = (cur + step * 5).clamp(10, 80) as u8;
+            if new != s.cava_size {
+                s.cava_size = new;
+                Some(SettingChange::CavaSize)
+            } else {
+                None
+            }
+        }
+        3 => {
+            s.cover_art = !s.cover_art;
+            Some(SettingChange::CoverArt)
+        }
+        4 => {
+            let cur = s.cover_art_size as i32;
+            let new = (cur + step * 2).clamp(8, 24) as u8;
+            if new != s.cover_art_size {
+                s.cover_art_size = new;
+                Some(SettingChange::CoverArtSize)
+            } else {
+                None
+            }
+        }
+        5 => {
+            // Left and right both cycle; left goes one back, right one forward.
+            s.repeat_mode = if step < 0 {
+                match s.repeat_mode {
+                    RepeatMode::Off => RepeatMode::All,
+                    RepeatMode::One => RepeatMode::Off,
+                    RepeatMode::All => RepeatMode::One,
+                }
+            } else {
+                s.repeat_mode.cycle()
+            };
+            Some(SettingChange::Repeat)
+        }
+        6 => {
+            s.auto_continue = !s.auto_continue;
+            Some(SettingChange::AutoContinue)
+        }
+        7 => {
+            s.daemon_enabled = !s.daemon_enabled;
+            Some(SettingChange::Daemon)
+        }
+        _ => None,
+    }
+}
+
+fn change_message(s: &crate::app::state::SettingsState, change: SettingChange) -> String {
+    match change {
+        SettingChange::Theme => format!("Theme: {}", s.theme_name()),
+        SettingChange::Cava => format!("Cava: {}", on_off(s.cava_enabled)),
+        SettingChange::CavaSize => format!("Cava Size: {}%", s.cava_size),
+        SettingChange::CoverArt => format!("Cover Art: {}", on_off(s.cover_art)),
+        SettingChange::CoverArtSize => format!("Cover Art Size: {} rows", s.cover_art_size),
+        SettingChange::Repeat => format!("Repeat: {}", s.repeat_mode.label()),
+        SettingChange::AutoContinue => format!("Auto-continue: {}", on_off(s.auto_continue)),
+        SettingChange::Daemon => format!("Daemon: {} (restart to apply)", on_off(s.daemon_enabled)),
+    }
+}
+
+fn on_off(v: bool) -> &'static str {
+    if v {
+        "On"
+    } else {
+        "Off"
     }
 }

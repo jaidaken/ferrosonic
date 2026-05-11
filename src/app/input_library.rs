@@ -9,8 +9,8 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 impl App {
-    pub(super) async fn handle_artists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
-        use crate::ui::pages::artists::{build_tree_items, TreeItem};
+    pub(super) async fn handle_library_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+        use crate::ui::pages::library::{build_tree_items, TreeItem};
 
         let ds = self.daemon_state.read().await;
 
@@ -625,9 +625,9 @@ impl App {
 
     async fn collect_songs_for(
         &mut self,
-        item: &crate::ui::pages::artists::TreeItem,
+        item: &crate::ui::pages::library::TreeItem,
     ) -> Vec<crate::subsonic::models::Child> {
-        use crate::ui::pages::artists::TreeItem;
+        use crate::ui::pages::library::TreeItem;
         match item {
             TreeItem::Song { song } => vec![song.clone()],
             TreeItem::Album { album } => self.load_album(&album.id).await,

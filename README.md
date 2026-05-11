@@ -15,7 +15,7 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Star songs** - Mark favourites with `n` (currently-playing) or `m` (highlighted); starred tracks show a ★ everywhere and populate the Quick Play Starred view
 - **Shuffle play** - Shuffle all songs by a selected artist or album directly from the Library page
 - **Repeat modes** - Cycle Off / One / All with `r`; the gapless pre-loader re-preloads the same track on One and wraps on All
-- **Cover art** - Display album art in the cava strip using kitty / iTerm2 / sixel image protocols; falls back to half-blocks on plainer terminals
+- **Cover art** - Display album art in the now-playing section using kitty / iTerm2 / sixel image protocols; falls back to half-blocks on plainer terminals (chafa-enhanced when the `chafa` library is installed)
 - **Playlist support** - Browse and play server playlists with shuffle capability
 - **Play queue management** - Add, remove, reorder, shuffle, and clear queue history; queue persists across daemon restarts
 - **Audio quality display** - Real-time display of sample rate, bit depth, codec format, and channel layout
@@ -44,6 +44,7 @@ Ferrosonic requires the following at runtime:
 | **WirePlumber** | PipeWire session manager | Recommended |
 | **D-Bus** | MPRIS2 desktop media controls | Recommended |
 | **cava** | Audio visualizer | Optional |
+| **chafa** | Higher-fidelity cover-art half-blocks (sextants / braille / dithering). Loaded via `dlopen` at runtime; if absent, ferrosonic falls back to primitive `▀▄` half-blocks. | Optional |
 
 ### Quick Install
 
@@ -154,7 +155,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 
 | Key | Action |
 |---|---|
-| `/` | Filter / search (typing fires a server-side `search3`) |
+| `/` | Search (typing fires a server-side `search3`) |
 | `//` / `///` | Cycle scope: artists → albums → songs (press `/` again on empty filter) |
 | `Enter` | Lock the filter in (keeps results, exits input mode) |
 | `Esc` | Clear filter and search results |
