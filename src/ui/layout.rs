@@ -1,5 +1,3 @@
-//! Main layout and rendering
-
 use std::sync::{Arc, Mutex};
 
 use ratatui::{
@@ -15,11 +13,6 @@ use super::header::Header;
 use super::pages;
 use super::widgets::{CavaWidget, NowPlayingWidget};
 
-/// Draw the entire UI.
-///
-/// `cover_art` carries the optional decoded image. If cover art is
-/// enabled and an image is loaded it shares the cava band with the
-/// visualizer; on its own it takes a small dedicated band.
 pub fn draw(
     frame: &mut Frame,
     state: &mut AppState<'_>,
@@ -34,15 +27,6 @@ pub fn draw(
             .map(|g| g.protocol.is_some())
             .unwrap_or(false);
 
-    // Main layout:
-    // [Header]          - 1 line
-    // [Cava]            - ~40% (optional, only when cava is active)
-    // [Page Content]    - flexible
-    // [Now Playing]     - 7 lines
-    // [Footer]          - 1 line
-
-    // Top band: cava + cover art sit on the same row when both are
-    // enabled (split horizontally). Either alone takes the whole band.
     let show_band = cava_active || art_active;
     let band_pct = state.client.settings_state.cava_size as u16;
     let (header_area, band_area, content_area, now_playing_area, footer_area) = if show_band {
@@ -68,9 +52,7 @@ pub fn draw(
 
     let (cava_area, art_area) = match (band_area, cava_active, art_active) {
         (Some(band), true, true) => {
-            // Reserve a square-ish region on the left for art, cava
-            // takes the rest. Width tied to band height so the art
-            // stays roughly proportional to the available row count.
+            // Width = 2 * height so art stays square-ish.
             let art_cols = (band.height as u16).saturating_mul(2).min(band.width / 2);
             let split = Layout::horizontal([
                 Constraint::Length(art_cols.max(8)),
@@ -84,7 +66,6 @@ pub fn draw(
         _ => (None, None),
     };
 
-    // Compute dual-pane splits for pages that use them
     let (content_left, content_right) = match state.client.page {
         Page::Library | Page::Playlists => {
             let panes =
@@ -101,7 +82,6 @@ pub fn draw(
         _ => (None, None),
     };
 
-    // Store layout areas for mouse hit-testing
     state.client.layout = LayoutAreas {
         header: header_area,
         content: content_area,
@@ -110,23 +90,19 @@ pub fn draw(
         content_right,
     };
 
-    // Render header
     let colors = *state.client.settings_state.theme_colors();
     let header = Header::new(state.client.page, state.daemon.now_playing.state, colors);
     frame.render_widget(header, header_area);
 
-    // Render cava visualizer if active
     if let Some(cava_rect) = cava_area {
         let cava_widget = CavaWidget::new(&state.client.cava_screen);
         frame.render_widget(cava_widget, cava_rect);
     }
 
-    // Render cover art if active and a protocol is loaded.
     if let Some(art_rect) = art_area {
         cover_art::render(frame, art_rect, cover_art_state);
     }
 
-    // Render current page
     match state.client.page {
         Page::QuickPlay => {
             pages::songs::render(frame, content_area, state);
@@ -148,11 +124,9 @@ pub fn draw(
         }
     }
 
-    // Render now playing
     let now_playing = NowPlayingWidget::new(&state.daemon.now_playing, colors);
     frame.render_widget(now_playing, now_playing_area);
 
-    // Render footer
     let footer = Footer::new(state.client.page, colors)
         .sample_rate(state.daemon.now_playing.sample_rate)
         .repeat_mode(state.client.settings_state.repeat_mode)

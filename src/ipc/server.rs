@@ -1,24 +1,6 @@
-//! Daemon-side IPC server. Listens on the Unix socket, spawns a
-//! per-connection task that:
-//! - reads `Frame::Request` frames from the client,
-//! - dispatches each through an `InProcessClient` (the same type the
-//!   single-process build uses) to `DaemonCore`,
-//! - writes the matching `Frame::Response` back, with the original
-//!   request `id` echoed,
-//! - subscribes to `DaemonCore::event_tx` and writes every event as
-//!   `Frame::Event` until the connection closes.
-//!
-//! Concurrency: one task per connected client, isolated from the
-//! others. A misbehaving client (slow read, disconnect mid-frame)
-//! cannot block any other client or the daemon's own tasks.
-//!
-//! Stale-socket handling: if the socket file already exists at
-//! bind time, we attempt to connect to it; if the connection
-//! succeeds, another daemon is running and we return `AddrInUse`.
-//! If it fails, we unlink and retry. This avoids zombies left by
-//! `kill -9` of a previous daemon.
+//! Daemon-side IPC server: one task per connected client.
 
-#![allow(dead_code)] // wired into ferrosonicd binary in phase 5
+#![allow(dead_code)]
 
 use std::path::Path;
 use std::sync::Arc;
@@ -35,14 +17,9 @@ use crate::ipc::path::ensure_parent_dir;
 use crate::ipc::protocol::DaemonEvent;
 use crate::ipc::DaemonClient;
 
-/// Capacity of the per-connection event forward queue. If a client
-/// can't keep up, the broadcast Receiver lags and the connection task
-/// resubscribes (clients see a `Lagged` notice on the next event).
 const EVENT_FORWARD_CAPACITY: usize = 256;
 
-/// Bind the socket and accept connections forever. Returns `Err` only
-/// if the bind itself fails; per-connection errors are logged and the
-/// loop continues.
+/// `Err` only on bind failure; per-connection errors are logged.
 pub async fn serve(core: Arc<DaemonCore>, path: &Path) -> std::io::Result<()> {
     ensure_parent_dir(path)?;
     handle_stale_socket(path).await?;
@@ -62,16 +39,15 @@ pub async fn serve(core: Arc<DaemonCore>, path: &Path) -> std::io::Result<()> {
             }
             Err(e) => {
                 error!("Accept failed: {}", e);
-                // Brief pause to avoid spinning on EMFILE etc.
+                // Backoff: avoid spinning on EMFILE.
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
         }
     }
 }
 
-/// If the socket file exists, probe for a live daemon.
-/// - Connection succeeds → return `AddrInUse`.
-/// - Connection fails (e.g., ECONNREFUSED) → unlink and continue.
+/// Connect-and-fail probes for a live daemon at the socket path;
+/// success means another daemon owns it, failure means it's stale.
 async fn handle_stale_socket(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());
@@ -89,23 +65,16 @@ async fn handle_stale_socket(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Drive one client connection to completion. Returns when either side
-/// closes the socket or a frame error occurs.
 async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<(), FrameError> {
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = read_half;
 
     let dispatcher: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(core.clone()));
-
-    // Subscribe to daemon events for this connection.
     let mut events: broadcast::Receiver<DaemonEvent> = dispatcher.subscribe();
 
-    // Per-connection writer queue: both the request-handler tasks and
-    // the event-forward branch push into this. mpsc serialises writes
-    // on the single write_half — UnixStream is not Sync.
+    // mpsc serialises writes on the single write_half (UnixStream is !Sync).
     let (writer_tx, mut writer_rx) = tokio::sync::mpsc::channel::<Frame>(EVENT_FORWARD_CAPACITY);
 
-    // Writer task.
     let writer_task = tokio::spawn(async move {
         while let Some(frame) = writer_rx.recv().await {
             if let Err(e) = write_frame(&mut write_half, &frame).await {
@@ -116,7 +85,6 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
         let _ = write_half.shutdown().await;
     });
 
-    // Event-forward task.
     let event_writer_tx = writer_tx.clone();
     let event_task = tokio::spawn(async move {
         loop {
@@ -128,7 +96,6 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
                 }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     warn!("Event subscriber lagged by {}; resyncing", n);
-                    // Emit a notification frame so the client knows.
                     let frame = Frame::Event(DaemonEvent::Notification {
                         message: format!("Client lagged by {} events", n),
                         is_error: false,
@@ -142,7 +109,6 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
         }
     });
 
-    // Read loop: dispatch requests, write responses.
     loop {
         let frame = match read_frame(&mut reader).await {
             Ok(f) => f,
@@ -176,9 +142,7 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
         }
     }
 
-    // Drop writer_tx so writer_task ends; event_task ends when its
-    // own writer_tx clone is dropped (this holds the last reference
-    // when this function returns).
+    // Drop last writer_tx so writer_task ends.
     drop(writer_tx);
     let _ = event_task.await;
     let _ = writer_task.await;

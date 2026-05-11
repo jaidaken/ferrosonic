@@ -37,49 +37,24 @@ use crate::ui;
 
 pub use state::*;
 
-/// Main application — TUI client side. After phase 2.2 the audio session
-/// (queue, playback, library, MPV/PipeWire/Subsonic) is owned by
-/// `DaemonCore`. `App` holds an `Arc<DaemonCore>` and runs the cava
-/// subprocess + the TUI event loop. Phase 5 splits `App` into the
-/// `ferrosonic` binary and `DaemonCore` into `ferrosonicd`.
 pub struct App {
-    /// Daemon-side core. `Some` for the in-process build, `None` for
-    /// the split build (mpv lives in `ferrosonicd`). Lifecycle calls
-    /// (`start_mpv`/`quit_mpv`/`spawn_polling_task`) only fire when
-    /// `Some`.
+    /// `Some` in-process, `None` when talking to a remote daemon.
     pub(crate) core: Option<Arc<DaemonCore>>,
-    /// Daemon command channel. `InProcessClient` or `SocketClient`.
     pub(crate) client: Arc<dyn DaemonClient>,
-    /// Daemon-side state mirror. In-process: same Arc that `core.state`
-    /// wraps. Split: TUI-local mirror, written by the event pump.
     pub(crate) daemon_state: SharedDaemonState,
-    /// Client-side state: page, selection, scroll offsets, notifications,
-    /// cava buffer, layout cache. Always owned solely by `App`.
     pub(crate) client_state: SharedClientState,
-    /// Cava child process
     pub(crate) cava_process: Option<std::process::Child>,
-    /// Cava pty master fd for reading output
     pub(crate) cava_pty_master: Option<std::fs::File>,
-    /// Cava terminal parser
     pub(crate) cava_parser: Option<vt100::Parser>,
-    /// Cava config file. Holding the `NamedTempFile` keeps the file
-    /// alive for the duration of the cava process and removes it on
-    /// drop / `stop_cava`.
+    /// Holding the `NamedTempFile` keeps the cava config alive and
+    /// removes it on drop / `stop_cava`.
     pub(crate) cava_config: Option<tempfile::NamedTempFile>,
-    /// Last mouse click position and time (for second-click detection)
     pub(crate) last_click: Option<(u16, u16, std::time::Instant)>,
-    /// Cover-art picker + active protocol. Lazily probed once the
-    /// terminal is in raw mode; `None` here until `run()` initialises
-    /// it. Shared with the event-pump task so fresh art loads on
-    /// every `NowPlayingChanged`.
+    /// `picker` is `None` until `run()` probes the terminal.
     pub(crate) cover_art: std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
 }
 
 impl App {
-    /// Create a new application instance. Builds the shared `AppState`,
-    /// then constructs the `DaemonCore` against it. After this call the
-    /// caller owns both `self.core` and `self.state` — they reference the
-    /// same `Arc<RwLock<AppState>>` internally.
     pub fn new(config: Config) -> Self {
         let daemon_state = new_shared_daemon_state(config.clone());
         let client_state = new_shared_client_state(&config);
@@ -106,14 +81,8 @@ impl App {
         }
     }
 
-    /// Construct an App that talks to a remote daemon via `client`. No
-    /// `DaemonCore` is built — mpv, the queue, and the library cache
-    /// live in `ferrosonicd`. The TUI's `state.daemon` half is a mirror
-    /// populated at boot from `DaemonRequest::Snapshot` and updated by
-    /// the event-pump task spawned in `run()`.
-    ///
-    /// Used by the `ferrosonic` binary's split path. The in-process
-    /// path keeps using `App::new(config)`.
+    /// Split-build constructor. `state.daemon` is a mirror populated
+    /// from `DaemonRequest::Snapshot` and the event pump.
     pub fn with_remote_client(client: Arc<dyn DaemonClient>, config: Config) -> Self {
         let daemon_state = new_shared_daemon_state(config.clone());
         let client_state = new_shared_client_state(&config);
@@ -154,13 +123,9 @@ impl App {
         });
     }
 
-    /// Run the application
     pub async fn run(&mut self) -> Result<(), Error> {
         self.spawn_signal_quit();
         let _term_guard = TerminalGuard;
-        // In-process build: spawn the daemon's playback poll + start
-        // mpv here. Split build: ferrosonicd already did both; the TUI
-        // only does view-side work.
         let _poll_task = self.core.as_ref().map(|c| c.spawn_polling_task());
 
         if let Some(ref core) = self.core {
@@ -177,8 +142,6 @@ impl App {
             self.bootstrap_and_pump().await;
         }
 
-        // Start MPRIS server. Reads `daemon_state` for properties +
-        // metadata; writes `client_state.should_quit` on MPRIS Quit.
         match start_mpris_server(
             self.daemon_state.clone(),
             self.client_state.clone(),
@@ -198,7 +161,6 @@ impl App {
             }
         }
 
-        // Seed and load themes
         {
             use crate::ui::theme::{load_themes, seed_default_themes};
             if let Some(themes_dir) = crate::config::paths::themes_dir() {
@@ -214,7 +176,6 @@ impl App {
             cs.settings_state.set_theme_by_name(&theme_name);
         }
 
-        // Check if cava is available
         let cava_available = std::process::Command::new("which")
             .arg("cava")
             .stdout(std::process::Stdio::null())
@@ -231,7 +192,6 @@ impl App {
             }
         }
 
-        // Start cava if enabled and available
         {
             let cs = self.client_state.read().await;
             if cs.settings_state.cava_enabled && cava_available {
@@ -244,7 +204,6 @@ impl App {
             }
         }
 
-        // Setup terminal
         enable_raw_mode().map_err(UiError::TerminalInit)?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
@@ -254,19 +213,14 @@ impl App {
 
         info!("Terminal initialized");
 
-        // Probe image-protocol support now that we own the terminal in
-        // raw mode. Failure here just means cover-art rendering stays
-        // disabled — every other feature still works.
         {
             let probed = crate::ui::cover_art::CoverArtState::init();
             let mut guard = self.cover_art.lock().expect("cover_art poisoned");
             *guard = probed;
         }
 
-        // Load initial data if configured. In-process: directly check
-        // the local SubsonicClient. Split: skip — ferrosonicd already
-        // populated the library before the TUI connected (and the
-        // snapshot at boot delivered it).
+        // Split-build: ferrosonicd has already populated the library
+        // and the snapshot delivered it. In-process: fetch here.
         if let Some(ref core) = self.core {
             let has_client = core.subsonic.read().await.is_some();
             if has_client {
@@ -274,19 +228,14 @@ impl App {
             }
         }
 
-        // Main event loop
         let result = self.event_loop(&mut terminal).await;
 
-        // Cleanup cava
         self.stop_cava();
 
-        // Cleanup MPV (in-process only — ferrosonicd manages its own
-        // lifecycle for the split build).
         if let Some(ref core) = self.core {
             core.quit_mpv().await;
         }
 
-        // Cleanup terminal
         disable_raw_mode().map_err(UiError::TerminalInit)?;
         execute!(
             terminal.backend_mut(),
@@ -300,9 +249,6 @@ impl App {
         result
     }
 
-    /// Fetch an album's songs through the daemon. Works in both
-    /// in-process and split-build modes. Returns an empty `Vec` on
-    /// failure (the daemon logs + emits a notification event).
     pub(crate) async fn load_album(&self, album_id: &str) -> Vec<crate::subsonic::models::Child> {
         match self
             .client
@@ -314,8 +260,6 @@ impl App {
         }
     }
 
-    /// Fetch a playlist's songs through the daemon. Same shape as
-    /// `load_album`.
     pub(crate) async fn load_playlist(
         &self,
         playlist_id: &str,
@@ -330,12 +274,9 @@ impl App {
         }
     }
 
-    /// Subscribe to events first, then fetch the snapshot, then spawn
-    /// the pump. Subscribing first means any events the daemon emits
-    /// during the snapshot RPC are buffered in the receiver instead of
-    /// dropped (tokio broadcast only delivers events sent after
-    /// subscribe). The pump applies the snapshot then drains the
-    /// buffered events normally.
+    /// Subscribe BEFORE Snapshot RPC so daemon events emitted during
+    /// the RPC land in the receiver buffer instead of being lost
+    /// (tokio broadcast only delivers events after subscribe).
     async fn bootstrap_and_pump(&self) {
         let rx = self.client.subscribe();
 
@@ -363,9 +304,8 @@ impl App {
             );
         }
 
-        // Seed cover art for whatever's already playing in the snapshot,
-        // since no NowPlayingChanged event fires for an already-running
-        // daemon at TUI startup.
+        // No NowPlayingChanged fires for an already-running daemon,
+        // so seed cover art from the snapshot here.
         let (initial_cover_id, cover_art_enabled) = {
             let ds = self.daemon_state.read().await;
             let cs = self.client_state.read().await;
@@ -423,8 +363,6 @@ impl App {
     }
 
 
-    /// Load initial data from server. Delegates the library fetches to
-    /// `DaemonCore`; only the page-default selection is client state.
     pub(crate) async fn load_initial_data(&mut self) {
         {
             let mut cs = self.client_state.write().await;
@@ -435,25 +373,18 @@ impl App {
         let _ = self.client.request(DaemonRequest::RefreshPlaylists).await;
     }
 
-    /// Main event loop. After phase 2.5 it does only TUI-side work:
-    /// drawing, reading input, reading cava output, and notification
-    /// timeout. Playback tracking runs on the daemon-side polling
-    /// task spawned in `App::run`.
     async fn event_loop(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<(), Error> {
         loop {
-            // Determine tick rate based on whether cava is active
             let cava_active = self.cava_parser.is_some();
             let tick_rate = if cava_active {
-                Duration::from_millis(16) // ~60fps
+                Duration::from_millis(16)
             } else {
                 Duration::from_millis(100)
             };
 
-            // Draw UI — read on daemon, write on client. Daemon poll
-            // and other readers run in parallel with render.
             {
                 let ds = self.daemon_state.read().await;
                 let mut cs = self.client_state.write().await;
@@ -467,7 +398,6 @@ impl App {
                     .map_err(UiError::Render)?;
             }
 
-            // Check for quit
             {
                 let cs = self.client_state.read().await;
                 if cs.should_quit {
@@ -475,16 +405,13 @@ impl App {
                 }
             }
 
-            // Handle events with timeout
             if event::poll(tick_rate).map_err(UiError::Input)? {
                 let event = event::read().map_err(UiError::Input)?;
                 self.handle_event(event).await?;
             }
 
-            // Read cava output (non-blocking)
             self.read_cava_output().await;
 
-            // Check for notification auto-clear (after 2 seconds)
             {
                 let mut cs = self.client_state.write().await;
                 cs.check_notification_timeout();
@@ -539,9 +466,7 @@ async fn run_event_pump(
     }
 }
 
-/// Applies a `DaemonEvent` to local state. Acquires locks in the same
-/// order everywhere (daemon first, then client when needed) to avoid
-/// deadlock with other writers.
+/// Lock order: daemon, then client. Same everywhere — avoids deadlock.
 async fn apply_event(
     daemon_state: &SharedDaemonState,
     client_state: &SharedClientState,
@@ -608,7 +533,6 @@ async fn apply_event(
                     song.starred = marker.clone();
                 }
             };
-            // Daemon-side mirror first.
             {
                 let mut ds = daemon_state.write().await;
                 for song in ds.queue.iter_mut() { update(song); }
@@ -623,7 +547,6 @@ async fn apply_event(
                     if np.id == id { np.starred = marker.clone(); }
                 }
             }
-            // Then client-side per-page song caches.
             {
                 let mut cs = client_state.write().await;
                 for song in cs.artists.songs.iter_mut() { update(song); }
@@ -670,8 +593,6 @@ async fn apply_event(
                 let mut ds = daemon_state.write().await;
                 ds.config = cfg;
             }
-            // Mirror config-derived UI state into ClientState so the
-            // Settings page reflects what the daemon actually has.
             let mut cs = client_state.write().await;
             cs.settings_state.repeat_mode = repeat_mode;
             cs.settings_state.cover_art = cover_art;

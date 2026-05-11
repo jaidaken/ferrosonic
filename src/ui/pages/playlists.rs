@@ -12,11 +12,9 @@ use crate::app::state::AppState;
 use crate::ui::theme::ThemeColors;
 
 
-/// Render the playlists page
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
-    // Split into two panes: [Playlists] [Songs]
     let chunks =
         Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).split(area);
 
@@ -24,7 +22,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
-/// Render the playlists list
 fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     // `playlists` is the per-page UI state (selection, focus, scroll).
     // `library_playlists` is the actual list, owned by the daemon.
@@ -111,7 +108,6 @@ fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, col
     state.client.playlists.playlist_scroll_offset = list_state.offset();
 }
 
-/// Render the songs in selected playlist
 fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let playlists = &state.client.playlists;
 
@@ -156,7 +152,6 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
             let artist = song.artist.clone().unwrap_or_default();
             let duration = song.format_duration();
 
-            // Colors based on state
             let (title_color, artist_color, time_color) = if is_selected {
                 (
                     colors.highlight_fg,

@@ -1,61 +1,31 @@
-//! Length-prefixed JSON frame I/O over a Unix domain socket.
-//!
-//! Wire format: `u32 LE length || JSON body`. The body is a `Frame`
-//! tagged enum that multiplexes the three logical streams on one
-//! socket:
-//!
-//! - `Request { id, req }`: client → daemon. The `id` is a monotonic
-//!   per-connection counter the client allocates; the daemon echoes
-//!   it back on the matching response.
-//! - `Response { id, payload }`: daemon → client, paired with a
-//!   request `id`. `payload` is `Result<DaemonResponse, String>` so
-//!   daemon-side errors round-trip without the wire schema needing a
-//!   separate variant for every error type.
-//! - `Event(DaemonEvent)`: daemon → client, unsolicited. The client
-//!   side routes these into its local mirror update path.
-//!
-//! Why JSON over `bincode`? Debuggability with `socat -d -d
-//! UNIX-CONNECT:$socket -` matters more than throughput at this
-//! scale (tens of frames per second peak). JSON also tolerates
-//! protocol additions (new optional fields) without schema bumps.
-//!
-//! Why u32 length? More than 4GB of one frame is never sensible; u32
-//! gives a sharp cap that catches pathological deserialisation early.
-//! `MAX_FRAME_BYTES` enforces a much lower hard limit.
+//! Wire format: `u32 LE length || JSON body`. JSON over bincode for
+//! debuggability with `socat`; throughput is plenty at this scale.
 
-#![allow(dead_code)] // wired into SocketClient/SocketServer in subsequent commits
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ipc::protocol::{DaemonEvent, DaemonRequest, DaemonResponse};
 
-/// Hard cap on per-frame payload size. 16 MiB is generous for a
-/// `LoadAlbum` response carrying a full album's metadata; anything
-/// larger is almost certainly a bug or attack.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
-/// One wire message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Frame {
-    /// Client-to-daemon command. `id` correlates with the matching
-    /// `Response`.
     Request {
         id: u64,
         req: DaemonRequest,
     },
-    /// Daemon-to-client reply. `payload` carries the typed response or
-    /// a string-rendered error.
+    /// `payload` is `Result<DaemonResponse, String>` so daemon-side
+    /// errors round-trip without per-variant wire encoding.
     Response {
         id: u64,
         payload: Result<DaemonResponse, String>,
     },
-    /// Daemon-to-client server-pushed event.
     Event(DaemonEvent),
 }
 
-/// Errors from frame I/O. Distinct from `IpcError` because frame
-/// errors are lower-level (transport / encoding).
+
 #[derive(Debug, thiserror::Error)]
 pub enum FrameError {
     #[error("I/O error: {0}")]
@@ -68,10 +38,8 @@ pub enum FrameError {
     Closed,
 }
 
-/// Read one frame from `reader`. Returns `Closed` if the peer hung
-/// up cleanly before any bytes of a new frame arrived (clean EOF
-/// between frames is normal — this lets the caller distinguish
-/// "connection ended" from "connection broken mid-frame").
+/// `Closed` is clean EOF between frames; distinct from mid-frame
+/// disconnects which surface as `Io(UnexpectedEof)`.
 pub async fn read_frame<R>(reader: &mut R) -> Result<Frame, FrameError>
 where
     R: AsyncReadExt + Unpin,
@@ -94,8 +62,7 @@ where
     Ok(frame)
 }
 
-/// Write one frame to `writer`. Flushes the length and payload as
-/// a single buffer write so partial frames never appear on the wire.
+/// Single combined write so partial frames never reach the wire.
 pub async fn write_frame<W>(writer: &mut W, frame: &Frame) -> Result<(), FrameError>
 where
     W: AsyncWriteExt + Unpin,

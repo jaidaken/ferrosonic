@@ -1,5 +1,3 @@
-//! MPV controller via JSON IPC
-
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -86,7 +84,6 @@ impl MpvController {
             .map_err(AudioError::MpvSpawn)?;
         self.process = Some(child);
 
-        // Wait for socket to become available
         for _ in 0..50 {
             if self.socket_path.exists() {
                 sleep(Duration::from_millis(50)).await;
@@ -176,7 +173,7 @@ impl MpvController {
                     }
                 }
                 Ok(Err(e)) => return Err(AudioError::MpvIpc(e.to_string())),
-                Err(_) => continue, // Read timeout — keep waiting for a matching response
+                Err(_) => continue,
             }
         }
     }
@@ -362,8 +359,7 @@ impl MpvController {
         Ok(data.and_then(|v| v.as_bool()).unwrap_or(true))
     }
 
-    /// Sync teardown for the Drop path. Skips the graceful "quit" IPC
-    /// (would need async) — just kills the subprocess; mpv reaps fine.
+    /// Sync teardown for Drop. No graceful quit IPC (would need async).
     fn shutdown_sync(&mut self) {
         if let Some(mut child) = self.process.take() {
             let _ = child.kill();
@@ -375,7 +371,6 @@ impl MpvController {
         info!("MPV shut down");
     }
 
-    /// Send the graceful "quit" command then kill the subprocess.
     pub async fn quit(&mut self) -> Result<(), AudioError> {
         if self.writer.is_some() {
             let _ = self.send_command(vec![json!("quit")]).await;

@@ -9,10 +9,7 @@ use std::process::{Command, Stdio};
 
 use tracing::{info, warn};
 
-/// Locate the `ferrosonicd` binary. Tries:
-/// 1. Sibling of the running executable (typical install layout from
-///    a single `cargo install` or distro package).
-/// 2. `$PATH` lookup.
+/// Tries the running exe's sibling first, then `$PATH`.
 fn locate_ferrosonicd() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -36,13 +33,8 @@ fn which_in_path(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Spawn `ferrosonicd` detached from the current terminal. The child
-/// gets a fresh session via `setsid` so it survives `SIGHUP` when the
-/// parent terminal closes. stdin/stdout/stderr are routed to
-/// `/dev/null` so output doesn't bleed into the dying terminal.
-///
-/// Returns the spawned child's PID for logging. The parent does *not*
-/// wait on the child — that's the whole point.
+/// Spawn `ferrosonicd` detached via `setsid` so it survives SIGHUP
+/// when the parent terminal closes. Parent never reaps.
 pub fn spawn_daemon() -> std::io::Result<u32> {
     let Some(bin) = locate_ferrosonicd() else {
         return Err(std::io::Error::new(
@@ -58,8 +50,7 @@ pub fn spawn_daemon() -> std::io::Result<u32> {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
-    // SAFETY: setsid is async-signal-safe and standard for daemonising
-    // a child between fork and exec.
+    // SAFETY: setsid is async-signal-safe.
     unsafe {
         cmd.pre_exec(|| {
             if libc::setsid() == -1 {
@@ -71,11 +62,11 @@ pub fn spawn_daemon() -> std::io::Result<u32> {
 
     let child = cmd.spawn()?;
     let pid = child.id();
-    std::mem::forget(child); // do not wait, do not reap; let the daemon outlive us
+    // Forget: don't reap, daemon outlives us.
+    std::mem::forget(child);
     Ok(pid)
 }
 
-/// Spawn a daemon and wait up to `timeout` for its socket to come up.
 pub async fn spawn_and_wait(
     socket: &Path,
     timeout: std::time::Duration,

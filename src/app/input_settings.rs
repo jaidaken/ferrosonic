@@ -4,8 +4,6 @@ use crate::error::Error;
 
 use super::*;
 
-/// Which setting changed in this keystroke. Drives both the daemon
-/// request that gets sent and the client-side cava restart decision.
 #[derive(Clone, Copy)]
 enum SettingChange {
     Theme,
@@ -17,12 +15,9 @@ enum SettingChange {
     CoverArt,
 }
 
-/// Number of settings fields. Used as the upper bound for the down-key
-/// navigation (`selected_field < SETTINGS_FIELD_COUNT - 1`).
 const SETTINGS_FIELD_COUNT: usize = 7;
 
 impl App {
-    /// Handle settings page keys
     pub(super) async fn handle_settings_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let mut change: Option<SettingChange> = None;
 
@@ -33,7 +28,6 @@ impl App {
             let field = state.client.settings_state.selected_field;
 
             match key.code {
-                // Navigate between fields
                 KeyCode::Up | KeyCode::Char('k') => {
                     if field > 0 {
                         state.client.settings_state.selected_field = field - 1;
@@ -44,7 +38,6 @@ impl App {
                         state.client.settings_state.selected_field = field + 1;
                     }
                 }
-                // Left
                 KeyCode::Left | KeyCode::Char('h') => match field {
                     0 => {
                         state.client.settings_state.prev_theme();
@@ -97,7 +90,6 @@ impl App {
                         change = Some(SettingChange::AutoContinue);
                     }
                     5 => {
-                        // Left cycles backwards through repeat modes
                         let cur = state.client.settings_state.repeat_mode;
                         let new_mode = match cur {
                             crate::config::RepeatMode::Off => crate::config::RepeatMode::All,
@@ -121,7 +113,6 @@ impl App {
                     }
                     _ => {}
                 },
-                // Right / Enter / Space
                 KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Char(' ') => {
                     match field {
                         0 => {
@@ -202,8 +193,6 @@ impl App {
             return Ok(());
         };
 
-        // Snapshot the new client-side values, then dispatch the
-        // matching daemon request (it persists + emits ConfigChanged).
         let (
             theme_name,
             cava_enabled,
@@ -248,8 +237,7 @@ impl App {
             return Ok(());
         }
 
-        // Cava lifecycle stays client-side — start/stop/restart based
-        // on what changed. Daemon toggle does not affect cava.
+        // Cava lifecycle is client-side; daemon toggle doesn't affect it.
         let cava_running = self.cava_parser.is_some();
         let cava_h = cava_size as u32;
         match change {
@@ -266,7 +254,6 @@ impl App {
             }
             SettingChange::Theme | SettingChange::CavaSize => {
                 if cava_enabled {
-                    // Restart with new theme colors / size
                     self.start_cava(&gradient, &h_gradient, cava_h);
                 }
             }

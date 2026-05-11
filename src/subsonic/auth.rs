@@ -1,19 +1,12 @@
-//! Subsonic authentication helpers
-
 use rand::Rng;
 
-/// Generate authentication parameters for Subsonic API requests
-///
-/// Subsonic uses token-based authentication:
-/// - salt: random string
-/// - token: md5(password + salt)
+/// Returns `(salt, md5(password + salt))`.
 pub fn generate_auth_params(password: &str) -> (String, String) {
     let salt = generate_salt();
     let token = generate_token(password, &salt);
     (salt, token)
 }
 
-/// Generate a random salt string
 fn generate_salt() -> String {
     let mut rng = rand::thread_rng();
     (0..16)
@@ -28,7 +21,6 @@ fn generate_salt() -> String {
         .collect()
 }
 
-/// Generate authentication token: md5(password + salt)
 fn generate_token(password: &str, salt: &str) -> String {
     let input = format!("{}{}", password, salt);
     let digest = md5::compute(input.as_bytes());
@@ -41,7 +33,6 @@ mod tests {
 
     #[test]
     fn test_generate_token() {
-        // Test with known values
         let token = generate_token("sesame", "c19b2d");
         assert_eq!(token, "26719a1196d2a940705a59634eb18eab");
     }
@@ -56,6 +47,6 @@ mod tests {
     fn test_auth_params() {
         let (salt, token) = generate_auth_params("password");
         assert_eq!(salt.len(), 16);
-        assert_eq!(token.len(), 32); // MD5 hex is 32 chars
+        assert_eq!(token.len(), 32);
     }
 }

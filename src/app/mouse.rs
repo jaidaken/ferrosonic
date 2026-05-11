@@ -5,7 +5,6 @@ use crate::error::Error;
 use super::*;
 
 impl App {
-    /// Handle mouse input
     pub(super) async fn handle_mouse(&mut self, mouse: event::MouseEvent) -> Result<(), Error> {
         let x = mouse.column;
         let y = mouse.row;
@@ -18,7 +17,6 @@ impl App {
         }
     }
 
-    /// Handle left mouse click
     async fn handle_mouse_click(&mut self, x: u16, y: u16) -> Result<(), Error> {
         use crate::ui::header::{Header, HeaderRegion};
 
@@ -32,7 +30,6 @@ impl App {
         let duration = state.daemon.now_playing.duration;
         drop(state); drop(cs); drop(ds);
 
-        // Check header area
         if y >= layout.header.y && y < layout.header.y + layout.header.height {
             if let Some(region) = Header::region_at(layout.header, x, y) {
                 match region {
@@ -62,7 +59,6 @@ impl App {
             return Ok(());
         }
 
-        // Check now playing area (progress bar seeking)
         if y >= layout.now_playing.y && y < layout.now_playing.y + layout.now_playing.height {
             let inner_bottom = layout.now_playing.y + layout.now_playing.height - 2;
             if y == inner_bottom && duration > 0.0 {
@@ -85,7 +81,6 @@ impl App {
             return Ok(());
         }
 
-        // Check content area
         if y >= layout.content.y && y < layout.content.y + layout.content.height {
             return self.handle_content_click(x, y, page, &layout).await;
         }
@@ -93,7 +88,6 @@ impl App {
         Ok(())
     }
 
-    /// Handle click within the content area
     async fn handle_content_click(
         &mut self,
         x: u16,
@@ -194,14 +188,12 @@ impl App {
         Ok(())
     }
 
-    /// Handle click on queue page
     async fn handle_queue_click(&mut self, y: u16, layout: &LayoutAreas) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState { daemon: &*ds, client: &mut *cs };
         let content = layout.content;
 
-        // Account for border (1 row top)
         let row_in_viewport = y.saturating_sub(content.y + 1) as usize;
         let item_index = state.client.queue_state.scroll_offset + row_in_viewport;
 
@@ -225,7 +217,6 @@ impl App {
         Ok(())
     }
 
-    /// Handle mouse scroll up (move selection up in current list)
     async fn handle_mouse_scroll_up(&mut self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -282,7 +273,6 @@ impl App {
         Ok(())
     }
 
-    /// Handle mouse scroll down (move selection down in current list)
     async fn handle_mouse_scroll_down(&mut self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;

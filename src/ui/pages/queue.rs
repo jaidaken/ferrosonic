@@ -10,7 +10,6 @@ use ratatui::{
 
 use crate::app::state::AppState;
 
-/// Render the queue page
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
@@ -32,7 +31,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
         .iter()
         .enumerate()
         .map(|(i, song)| {
-            // TODO: update this code to use styled_lines
             let is_current = state.daemon.queue_position == Some(i);
             let is_selected = state.client.queue_state.selected == Some(i);
             let is_played = state.daemon.queue_position.map(|pos| i < pos).unwrap_or(false);
@@ -43,14 +41,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
 
             let artist = song.artist.clone().unwrap_or_default();
             let duration = song.format_duration();
-            // Show disc.track for songs with disc info
             let track_info = match (song.disc_number, song.track) {
                 (Some(d), Some(t)) if d > 1 => format!(" [{}.{}]", d, t),
                 (_, Some(t)) => format!(" [#{}]", t),
                 _ => String::new(),
             };
 
-            // Color scheme: played = muted, current = playing color, upcoming = song color
             let (title_style, artist_style, number_style) = if is_current {
                 (
                     Style::default()

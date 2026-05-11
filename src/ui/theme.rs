@@ -1,4 +1,5 @@
-//! Theme color definitions — file-based themes loaded from ~/.config/ferrosonic/themes/
+//! Themes — built-in `Default` plus TOML files from
+//! `~/.config/ferrosonic/themes/`.
 
 use std::path::Path;
 
@@ -8,55 +9,32 @@ use tracing::{error, info, warn};
 
 use crate::config::paths;
 
-/// Color palette for a theme
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeColors {
-    /// Primary highlight color (focused elements, selected tabs)
     pub primary: Color,
-    /// Secondary color (borders, less important elements)
     pub secondary: Color,
-    /// Accent color (currently playing, important highlights)
     pub accent: Color,
-    /// Artist names
     pub artist: Color,
-    /// Album names
     pub album: Color,
-    /// Song titles (default)
     pub song: Color,
-    /// Muted text (track numbers, durations, hints)
     pub muted: Color,
-    /// Selection/highlight background
     pub highlight_bg: Color,
-    /// Text on highlighted background
     pub highlight_fg: Color,
-    /// Success messages
     pub success: Color,
-    /// Error messages
     pub error: Color,
-    /// Playing indicator
     pub playing: Color,
-    /// Played songs in queue
     pub played: Color,
-    /// Border color (focused)
     pub border_focused: Color,
-    /// Border color (unfocused)
     pub border_unfocused: Color,
 }
 
-/// A loaded theme: display name + colors + cava gradients
 #[derive(Debug, Clone)]
 pub struct ThemeData {
-    /// Display name (e.g. "Catppuccin", "Default")
     pub name: String,
-    /// UI colors
     pub colors: ThemeColors,
-    /// Cava vertical gradient (8 hex strings)
     pub cava_gradient: [String; 8],
-    /// Cava horizontal gradient (8 hex strings)
     pub cava_horizontal_gradient: [String; 8],
 }
-
-// ── TOML deserialization structs ──────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct ThemeFile {
@@ -89,8 +67,6 @@ struct ThemeFileCava {
     horizontal_gradient: Option<Vec<String>>,
 }
 
-// ── Hex color parsing ─────────────────────────────────────────────────────────
-
 fn hex_to_color(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
     if hex.len() == 6 {
@@ -113,8 +89,6 @@ fn parse_gradient(values: &[String], fallback: &[&str; 8]) -> [String; 8] {
     }
     result
 }
-
-// ── ThemeData construction ────────────────────────────────────────────────────
 
 impl ThemeData {
     fn from_file_content(name: &str, content: &str) -> Result<Self, String> {
@@ -167,7 +141,6 @@ impl ThemeData {
         })
     }
 
-    /// The hardcoded Default theme
     pub fn default_theme() -> Self {
         ThemeData {
             name: "Default".to_string(),
@@ -200,9 +173,6 @@ impl ThemeData {
     }
 }
 
-// ── Loading ───────────────────────────────────────────────────────────────────
-
-/// Load all themes: Default (hardcoded) + TOML files from themes dir (sorted alphabetically)
 pub fn load_themes() -> Vec<ThemeData> {
     let mut themes = vec![ThemeData::default_theme()];
 
@@ -226,7 +196,6 @@ pub fn load_themes() -> Vec<ThemeData> {
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown");
-                // Capitalize first letter for display name
                 let name = titlecase_filename(stem);
 
                 match std::fs::read_to_string(&path) {
@@ -246,7 +215,7 @@ pub fn load_themes() -> Vec<ThemeData> {
     themes
 }
 
-/// Convert a filename stem like "tokyo-night" or "rose_pine" to "Tokyo Night" or "Rose Pine"
+/// `tokyo-night` → `Tokyo Night`, `rose_pine` → `Rose Pine`.
 fn titlecase_filename(s: &str) -> String {
     s.split(['-', '_'])
         .filter(|w| !w.is_empty())
@@ -264,10 +233,7 @@ fn titlecase_filename(s: &str) -> String {
         .join(" ")
 }
 
-// ── Seeding built-in themes ───────────────────────────────────────────────────
-
-/// Write the built-in themes as TOML files into the given directory.
-/// Only writes files that don't already exist.
+/// Writes the built-in TOML themes, skipping any that already exist.
 pub fn seed_default_themes(dir: &Path) {
     if let Err(e) = std::fs::create_dir_all(dir) {
         error!("Failed to create themes directory: {}", e);

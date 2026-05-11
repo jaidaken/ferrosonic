@@ -14,16 +14,12 @@ async fn run_pw_metadata(args: &[&str]) -> Result<std::process::Output, AudioErr
         .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))
 }
 
-/// PipeWire sample rate controller
 pub struct PipeWireController {
-    /// Original sample rate before ferrosonic started
     original_rate: Option<u32>,
-    /// Current forced sample rate
     current_rate: Option<u32>,
 }
 
 impl PipeWireController {
-    /// Create a new PipeWire controller
     pub fn new() -> Self {
         let original_rate = Self::get_current_rate_internal().ok();
         debug!("Original PipeWire sample rate: {:?}", original_rate);
@@ -34,7 +30,6 @@ impl PipeWireController {
         }
     }
 
-    /// Get current sample rate from PipeWire
     fn get_current_rate_internal() -> Result<u32, AudioError> {
         let output = Command::new("pw-metadata")
             .arg("-n")
@@ -46,7 +41,7 @@ impl PipeWireController {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        // Parse output like: "update: id:0 key:'clock.force-rate' value:'48000' type:''"
+        // Format: "update: id:0 key:'clock.force-rate' value:'48000' type:''"
         for line in stdout.lines() {
             if line.contains("clock.force-rate") && line.contains("value:") {
                 if let Some(start) = line.find("value:'") {
@@ -61,16 +56,13 @@ impl PipeWireController {
             }
         }
 
-        // No forced rate, return default
         Ok(0)
     }
 
-    /// Get the current forced sample rate
     pub fn get_current_rate(&self) -> Option<u32> {
         self.current_rate
     }
 
-    /// Set the sample rate
     pub async fn set_rate(&mut self, rate: u32) -> Result<(), AudioError> {
         if self.current_rate == Some(rate) {
             debug!("Sample rate already set to {}", rate);
@@ -94,8 +86,7 @@ impl PipeWireController {
         Ok(())
     }
 
-    /// Restore original sample rate (best-effort sync version used from Drop).
-    /// Process is exiting, so a brief blocking shell-out is acceptable.
+    /// Blocking shell-out from Drop — process is exiting.
     fn restore_original_blocking(&mut self) -> Result<(), AudioError> {
         if let Some(rate) = self.original_rate {
             if rate > 0 {
@@ -130,7 +121,6 @@ impl PipeWireController {
         Ok(())
     }
 
-    /// Clear the forced sample rate (let PipeWire use default)
     pub async fn clear_forced_rate(&mut self) -> Result<(), AudioError> {
         info!("Clearing PipeWire forced sample rate");
         let output = run_pw_metadata(&["-n", "settings", "0", "clock.force-rate", "0"]).await?;

@@ -1,8 +1,5 @@
-//! Error types for ferrosonic
-
 use thiserror::Error;
 
-/// Main error type for ferrosonic
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Configuration error: {0}")]
@@ -20,14 +17,10 @@ pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Daemon IPC failure surfaced to the TUI. Phase 2.4+ —
-    /// `DaemonClient::request` returns `IpcError`; this lets handler
-    /// code that returns `Result<_, Error>` use `?` directly.
     #[error("Daemon IPC error: {0}")]
     Ipc(#[from] crate::ipc::IpcError),
 }
 
-/// Configuration-related errors
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("Config file not found at {path}")]
@@ -49,7 +42,6 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
 }
 
-/// Subsonic API errors
 #[derive(Error, Debug)]
 pub enum SubsonicError {
     #[error("HTTP request failed: {0}")]
@@ -58,11 +50,11 @@ pub enum SubsonicError {
     #[error("API error {code}: {message}")]
     Api { code: i32, message: String },
 
-    #[allow(dead_code)] // reserved for future auth-failure surface
+    #[allow(dead_code)]
     #[error("Authentication failed")]
     AuthFailed,
 
-    #[allow(dead_code)] // reserved for future "no server configured" surface
+    #[allow(dead_code)]
     #[error("Server not configured")]
     NotConfigured,
 
@@ -73,7 +65,6 @@ pub enum SubsonicError {
     UrlParse(#[from] url::ParseError),
 }
 
-/// Audio playback errors
 #[derive(Error, Debug)]
 pub enum AudioError {
     #[error("MPV not running")]
@@ -91,11 +82,11 @@ pub enum AudioError {
     #[error("PipeWire command failed: {0}")]
     PipeWire(String),
 
-    #[allow(dead_code)] // reserved for queue-operation error paths
+    #[allow(dead_code)]
     #[error("Queue is empty")]
     QueueEmpty,
 
-    #[allow(dead_code)] // reserved for queue-operation error paths
+    #[allow(dead_code)]
     #[error("Invalid queue index: {index}")]
     InvalidIndex { index: usize },
 
@@ -106,7 +97,6 @@ pub enum AudioError {
     Io(#[from] std::io::Error),
 }
 
-/// UI-related errors
 #[derive(Error, Debug)]
 pub enum UiError {
     #[error("Terminal initialization failed: {0}")]
@@ -119,6 +109,5 @@ pub enum UiError {
     Input(std::io::Error),
 }
 
-/// Result type alias using our Error
-#[allow(dead_code)] // exported for downstream use; not yet referenced internally
+#[allow(dead_code)]
 pub type Result<T> = std::result::Result<T, Error>;

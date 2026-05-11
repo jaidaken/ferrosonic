@@ -1,5 +1,3 @@
-//! Now playing display widget
-
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Layout, Rect},
@@ -11,7 +9,6 @@ use ratatui::{
 use crate::app::state::NowPlaying;
 use crate::ui::theme::ThemeColors;
 
-/// Now playing panel widget
 pub struct NowPlayingWidget<'a> {
     now_playing: &'a NowPlaying,
     focused: bool,
@@ -36,7 +33,6 @@ impl<'a> NowPlayingWidget<'a> {
 
 impl Widget for NowPlayingWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Need at least 6 rows for full display
         if area.height < 4 || area.width < 20 {
             return;
         }
@@ -57,7 +53,6 @@ impl Widget for NowPlayingWidget<'_> {
             return;
         }
 
-        // Check if something is playing
         if self.now_playing.song.is_none() {
             let no_track = Paragraph::new("No track playing")
                 .style(Style::default().fg(self.colors.muted))
@@ -68,18 +63,10 @@ impl Widget for NowPlayingWidget<'_> {
 
         let song = self.now_playing.song.as_ref().unwrap();
 
-        // Build centered lines like Go version:
-        // Line 1: Artist (green)
-        // Line 2: Album (purple/magenta)
-        // Line 3: Title (white, bold)
-        // Line 4: Quality info (gray)
-        // Line 5: Progress bar
-
         let artist = song.artist.clone().unwrap_or_default();
         let album = song.album.clone().unwrap_or_default();
         let title = song.title.clone();
 
-        // Build quality string
         let mut quality_parts = Vec::new();
         if let Some(ref fmt) = self.now_playing.format {
             quality_parts.push(fmt.to_string().to_uppercase());
@@ -100,19 +87,16 @@ impl Widget for NowPlayingWidget<'_> {
         }
         let quality = quality_parts.join(" │ ");
 
-        // Layout based on available height
         if inner.height >= 5 {
-            // Full layout with separate lines
             let chunks = Layout::vertical([
-                Constraint::Length(1), // Artist
-                Constraint::Length(1), // Album
-                Constraint::Length(1), // Title
-                Constraint::Length(1), // Quality
-                Constraint::Length(1), // Progress
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
             ])
             .split(inner);
 
-            // Artist line (centered, artist color)
             let artist_line = Line::from(vec![Span::styled(
                 &artist,
                 Style::default().fg(self.colors.artist),
@@ -121,7 +105,6 @@ impl Widget for NowPlayingWidget<'_> {
                 .alignment(Alignment::Center)
                 .render(chunks[0], buf);
 
-            // Album line (centered, album color)
             let album_line = Line::from(vec![Span::styled(
                 &album,
                 Style::default().fg(self.colors.album),
@@ -130,7 +113,6 @@ impl Widget for NowPlayingWidget<'_> {
                 .alignment(Alignment::Center)
                 .render(chunks[1], buf);
 
-            // Title line (centered, bold)
             let title_line = Line::from(vec![Span::styled(
                 &title,
                 Style::default()
@@ -141,7 +123,6 @@ impl Widget for NowPlayingWidget<'_> {
                 .alignment(Alignment::Center)
                 .render(chunks[2], buf);
 
-            // Quality line (centered, muted)
             if !quality.is_empty() {
                 let quality_line = Line::from(vec![Span::styled(
                     &quality,
@@ -152,7 +133,6 @@ impl Widget for NowPlayingWidget<'_> {
                     .render(chunks[3], buf);
             }
 
-            // Progress bar
             render_progress_bar(
                 chunks[4],
                 buf,
@@ -162,15 +142,13 @@ impl Widget for NowPlayingWidget<'_> {
                 &self.colors,
             );
         } else if inner.height >= 3 {
-            // Compact layout
             let chunks = Layout::vertical([
-                Constraint::Length(1), // Artist - Title
-                Constraint::Length(1), // Album / Quality
-                Constraint::Length(1), // Progress
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
             ])
             .split(inner);
 
-            // Combined artist - title line
             let line1 = Line::from(vec![
                 Span::styled(
                     &title,
@@ -185,7 +163,6 @@ impl Widget for NowPlayingWidget<'_> {
                 .alignment(Alignment::Center)
                 .render(chunks[0], buf);
 
-            // Album line
             let line2 = Line::from(vec![Span::styled(
                 &album,
                 Style::default().fg(self.colors.album),
@@ -194,7 +171,6 @@ impl Widget for NowPlayingWidget<'_> {
                 .alignment(Alignment::Center)
                 .render(chunks[1], buf);
 
-            // Progress bar
             render_progress_bar(
                 chunks[2],
                 buf,
@@ -204,10 +180,9 @@ impl Widget for NowPlayingWidget<'_> {
                 &self.colors,
             );
         } else {
-            // Minimal layout
             let chunks = Layout::vertical([
-                Constraint::Length(1), // Title
-                Constraint::Length(1), // Progress
+                Constraint::Length(1),
+                Constraint::Length(1),
             ])
             .split(inner);
 
@@ -231,7 +206,6 @@ impl Widget for NowPlayingWidget<'_> {
     }
 }
 
-/// Render a simple progress bar
 fn render_progress_bar(
     area: Rect,
     buf: &mut Buffer,
@@ -244,16 +218,13 @@ fn render_progress_bar(
         return;
     }
 
-    // Format: "00:00 / 00:00  [════════════────────]"
     let time_str = format!("{} / {}", pos, dur);
     let time_width = time_str.len() as u16;
 
-    // Calculate positions - center the whole thing
-    let bar_width = area.width.saturating_sub(time_width + 3); // 2 spaces + some padding
+    let bar_width = area.width.saturating_sub(time_width + 3);
     let total_width = time_width + 2 + bar_width;
     let start_x = area.x + (area.width.saturating_sub(total_width)) / 2;
 
-    // Draw time string
     buf.set_string(
         start_x,
         area.y,
@@ -261,19 +232,16 @@ fn render_progress_bar(
         Style::default().fg(colors.highlight_fg),
     );
 
-    // Draw progress bar
     let bar_start = start_x + time_width + 2;
     if bar_width > 0 {
         let filled = (bar_width as f64 * progress) as u16;
 
-        // Draw filled portion (success color like Go version)
         for x in bar_start..(bar_start + filled) {
             buf[(x, area.y)]
                 .set_char('━')
                 .set_style(Style::default().fg(colors.success));
         }
 
-        // Draw empty portion
         for x in (bar_start + filled)..(bar_start + bar_width) {
             buf[(x, area.y)]
                 .set_char('─')

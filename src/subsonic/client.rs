@@ -8,26 +8,19 @@ use super::auth::generate_auth_params;
 use super::models::*;
 use crate::error::SubsonicError;
 
-/// Client name sent to Subsonic server
 const CLIENT_NAME: &str = "ferrosonic-rs";
-/// API version we support
 const API_VERSION: &str = "1.16.1";
 
-/// Subsonic API client
 #[derive(Clone)]
 pub struct SubsonicClient {
-    /// Base URL of the Subsonic server
     base_url: Url,
-    /// Username for authentication
     username: String,
-    /// Password for authentication (stored for stream URLs)
+    /// Held in plaintext for stream URL signing.
     password: String,
-    /// HTTP client
     http: Client,
 }
 
 impl SubsonicClient {
-    /// Create a new Subsonic client
     pub fn new(base_url: &str, username: &str, password: &str) -> Result<Self, SubsonicError> {
         let base_url = Url::parse(base_url)?;
 
@@ -44,7 +37,6 @@ impl SubsonicClient {
         })
     }
 
-    /// Build URL with authentication parameters
     fn build_url(&self, endpoint: &str) -> Result<Url, SubsonicError> {
         let mut url = self.base_url.join(&format!("rest/{}", endpoint))?;
 
@@ -61,7 +53,6 @@ impl SubsonicClient {
         Ok(url)
     }
 
-    /// Make an API request and parse the response
     async fn request_action(&self, endpoint: &str) -> Result<(), SubsonicError> {
         let url = self.build_url(endpoint)?;
         let response = self.http.get(url).send().await?;
@@ -79,9 +70,6 @@ impl SubsonicClient {
         Ok(())
     }
 
-    /// Server-side search across artists, albums, and songs via the
-    /// `search3` endpoint. Each count caps how many results of that
-    /// kind the server returns.
     pub async fn search3(
         &self,
         query: &str,
@@ -144,7 +132,6 @@ impl SubsonicClient {
             .ok_or_else(|| SubsonicError::Parse("Empty response data".to_string()))
     }
 
-    /// Test connection to the server
     pub async fn ping(&self) -> Result<(), SubsonicError> {
         let url = self.build_url("ping")?;
         debug!("Pinging server");
@@ -184,7 +171,6 @@ impl SubsonicClient {
         Ok(songs)
     }
 
-    /// Get all artists
     pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
         let data: ArtistsData = self.request("getArtists").await?;
 
@@ -199,7 +185,6 @@ impl SubsonicClient {
         Ok(artists)
     }
 
-    /// Get artist details with albums
     pub async fn get_artist(&self, id: &str) -> Result<(Artist, Vec<Album>), SubsonicError> {
         let url = self.build_url(&format!("getArtist?id={}", id))?;
         debug!("Fetching artist: {}", id);
@@ -240,7 +225,6 @@ impl SubsonicClient {
         Ok((artist, detail.album))
     }
 
-    /// Get album details with songs
     pub async fn get_album(&self, id: &str) -> Result<(Album, Vec<Child>), SubsonicError> {
         let url = self.build_url(&format!("getAlbum?id={}", id))?;
         debug!("Fetching album: {}", id);
@@ -286,7 +270,6 @@ impl SubsonicClient {
         Ok((album, detail.song))
     }
 
-    /// Get all playlists
     pub async fn get_playlists(&self) -> Result<Vec<Playlist>, SubsonicError> {
         let data: PlaylistsData = self.request("getPlaylists").await?;
         let playlists = data.playlists.playlist;
@@ -294,7 +277,6 @@ impl SubsonicClient {
         Ok(playlists)
     }
 
-    /// Get playlist details with songs
     pub async fn get_playlist(&self, id: &str) -> Result<(Playlist, Vec<Child>), SubsonicError> {
         let url = self.build_url(&format!("getPlaylist?id={}", id))?;
         debug!("Fetching playlist: {}", id);
@@ -340,10 +322,7 @@ impl SubsonicClient {
         Ok((playlist, detail.entry))
     }
 
-    /// Fetch cover-art bytes (JPEG or PNG, server's choice) for a
-    /// `coverArt` id at the requested longest-edge size in pixels.
-    /// Errors propagate; the caller is expected to fall back to no
-    /// art rather than failing the whole request.
+    /// `size` is the longest-edge in pixels.
     pub async fn get_cover_art(&self, id: &str, size: u32) -> Result<Vec<u8>, SubsonicError> {
         let mut url = self.base_url.join("rest/getCoverArt")?;
         let (salt, token) = generate_auth_params(&self.password);
@@ -367,9 +346,6 @@ impl SubsonicClient {
         Ok(bytes.to_vec())
     }
 
-    /// Get stream URL for a song
-    ///
-    /// Returns the full URL with authentication that can be passed to MPV
     pub fn get_stream_url(&self, song_id: &str) -> Result<String, SubsonicError> {
         let mut url = self.base_url.join("rest/stream")?;
 

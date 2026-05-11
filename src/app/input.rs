@@ -38,18 +38,14 @@ impl App {
         }
     }
 
-    /// Handle keyboard input
     pub(super) async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState { daemon: &*ds, client: &mut *cs };
 
-        // Clear notification on any keypress
         state.client.clear_notification();
 
-        // F-keys always switch pages, even while typing in a text input.
-        // Discard any unsaved edits on the way out so the form reverts
-        // to the saved config / filter state on return.
+        // F-keys switch pages while typing; unsaved edits revert.
         let is_function_key = matches!(key.code, KeyCode::F(_));
         if is_function_key {
             if state.client.page == Page::Server {
@@ -79,14 +75,11 @@ impl App {
             }
         }
 
-        // Global keybindings
         match (key.code, key.modifiers) {
-            // Quit
             (KeyCode::Char('q'), KeyModifiers::NONE) => {
                 state.client.should_quit = true;
                 return Ok(());
             }
-            // Page switching
             (KeyCode::F(1), _) => {
                 state.client.page = Page::Library;
                 return Ok(());
@@ -111,25 +104,18 @@ impl App {
                 state.client.page = Page::Settings;
                 return Ok(());
             }
-            // Playback controls (global)
             (KeyCode::Char('p'), KeyModifiers::NONE) | (KeyCode::Char(' '), KeyModifiers::NONE) => {
-                // Toggle pause
                 drop(state); drop(cs); drop(ds);
                 return self.client.request(DaemonRequest::TogglePause).await.map(|_| ()).map_err(Error::from);
             }
             (KeyCode::Char('l'), KeyModifiers::NONE) => {
-                // Next track
                 drop(state); drop(cs); drop(ds);
                 return self.client.request(DaemonRequest::Next).await.map(|_| ()).map_err(Error::from);
             }
             (KeyCode::Char('h'), KeyModifiers::NONE) => {
-                // Previous track
                 drop(state); drop(cs); drop(ds);
                 return self.client.request(DaemonRequest::Previous).await.map(|_| ()).map_err(Error::from);
             }
-            // Cycle theme moved to F6 Settings; freeing `t` for the
-            // per-page shuffle-context binding.
-            // Toggle star on currently-playing song
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 let song_id = state.daemon.now_playing.song.as_ref().map(|s| s.id.clone());
                 drop(state); drop(cs); drop(ds);
@@ -141,14 +127,12 @@ impl App {
                 }
                 return Ok(());
             }
-            // Shift+T: shuffle the entire library and play.
             (KeyCode::Char('T'), _) => {
                 state.client.notify("Shuffling library...");
                 drop(state); drop(cs); drop(ds);
                 let _ = self.client.request(DaemonRequest::ShuffleLibrary).await;
                 return Ok(());
             }
-            // r: cycle repeat mode (off → one → all)
             (KeyCode::Char('r'), m) if !m.contains(KeyModifiers::CONTROL) => {
                 let new_mode = state.client.settings_state.repeat_mode.cycle();
                 state.client.settings_state.repeat_mode = new_mode;
@@ -160,7 +144,6 @@ impl App {
                     .await;
                 return Ok(());
             }
-            // Ctrl+R to refresh data from server
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 state.client.notify("Refreshing...");
                 drop(state); drop(cs); drop(ds);
@@ -174,7 +157,6 @@ impl App {
             _ => {}
         }
 
-        // Page-specific keybindings
         let page = state.client.page;
         drop(state); drop(cs); drop(ds);
         match page {

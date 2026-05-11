@@ -3,7 +3,6 @@ use crate::error::Error;
 use super::*;
 
 impl App {
-    /// Handle click on playlists page
     pub(super) async fn handle_playlists_click(
         &mut self,
         x: u16,
@@ -17,7 +16,6 @@ impl App {
         let right = layout.content_right.unwrap_or(layout.content);
 
         if x >= left.x && x < left.x + left.width && y >= left.y && y < left.y + left.height {
-            // Playlists pane
             let row_in_viewport = y.saturating_sub(left.y + 1) as usize;
             let item_index = state.client.playlists.playlist_scroll_offset + row_in_viewport;
 
@@ -32,7 +30,6 @@ impl App {
                     });
 
                 if is_second_click {
-                    // Load playlist songs (same as Enter)
                     let playlist = state.daemon.library.playlists[item_index].clone();
                     let playlist_id = playlist.id.clone();
                     let playlist_name = playlist.name.clone();
@@ -52,7 +49,6 @@ impl App {
                 }
             }
         } else if x >= right.x && x < right.x + right.width && y >= right.y && y < right.y + right.height {
-            // Songs pane
             let row_in_viewport = y.saturating_sub(right.y + 1) as usize;
             let item_index = state.client.playlists.song_scroll_offset + row_in_viewport;
 
@@ -67,7 +63,6 @@ impl App {
                     });
 
                 if is_second_click {
-                    // Play selected song from playlist
                     let songs = state.client.playlists.songs.clone();
                     drop(state); drop(cs); drop(ds);
                     self.last_click = Some((x, y, std::time::Instant::now()));

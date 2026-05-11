@@ -6,7 +6,6 @@ use crate::error::Error;
 use super::*;
 
 impl App {
-    /// Handle server page keys
     pub(super) async fn handle_server_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -16,7 +15,6 @@ impl App {
         let is_text_field = field <= 2;
 
         match key.code {
-            // Navigation - always works
             KeyCode::Up => {
                 if field > 0 {
                     state.client.server_state.selected_field -= 1;
@@ -28,10 +26,8 @@ impl App {
                 }
             }
             KeyCode::Tab => {
-                // Tab moves to next field, wrapping around
                 state.client.server_state.selected_field = (field + 1) % 5;
             }
-            // Text input for text fields (0=URL, 1=Username, 2=Password)
             KeyCode::Char(c) if is_text_field => match field {
                 0 => state.client.server_state.base_url.push(c),
                 1 => state.client.server_state.username.push(c),
@@ -50,7 +46,6 @@ impl App {
                 }
                 _ => {}
             },
-            // Enter activates buttons, ignored on text fields
             KeyCode::Enter => {
                 match field {
                     3 => {

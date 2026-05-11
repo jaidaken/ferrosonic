@@ -1,4 +1,4 @@
-//! Artists page with tree browser and song list
+//! Library (artists) page.
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -12,9 +12,6 @@ use crate::subsonic::models::{Album, Artist, Child};
 use crate::ui::styled_lines::get_song_without_artist_line;
 use crate::ui::theme::ThemeColors;
 
-/// One row in the left-hand tree. Artist and Album come from the
-/// library cache; Song appears only when the filter scope is
-/// Songs and the daemon's search3 reply is in.
 #[derive(Clone)]
 pub enum TreeItem {
     Artist { artist: Artist, expanded: bool },
@@ -22,13 +19,8 @@ pub enum TreeItem {
     Song { song: Child },
 }
 
-/// Build flattened tree items from state.
-///
-/// Two modes:
-/// 1. No filter (or filter set but search reply hasn't landed yet):
-///    walk the library tree and substring-filter artist names.
-/// 2. Filter typed and search results present: render the slice of
-///    the search3 reply matching the current FilterScope.
+/// Search-results path takes over when the filter is non-empty and a
+/// reply has landed; otherwise walks the library tree.
 pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
     let ui = &state.client.artists;
     let albums_cache = &state.daemon.library.albums_cache;
@@ -56,8 +48,6 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
                     .collect(),
             };
         }
-        // Fall through to local artist-name filter while the
-        // server query is in flight.
     }
 
     let library_artists = &state.daemon.library.artists;
@@ -98,11 +88,9 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
     items
 }
 
-/// Render the artists page
 pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
-    // Split into two panes: [Tree Browser] [Song List]
     let chunks =
         Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).split(area);
 
@@ -110,7 +98,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
-/// Render the artist/album tree
 fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let artists = &state.client.artists;
 
@@ -137,7 +124,6 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
 
     let tree_items = build_tree_items(state);
 
-    // Build list items from tree
     let items: Vec<ListItem> = tree_items
         .iter()
         .enumerate()
@@ -168,9 +154,6 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
                         Style::default().fg(colors.album)
                     };
 
-                    // Albums get a tree connector when we're inside an
-                    // expanded artist; in album-scope search results
-                    // the artist is shown inline instead.
                     let year_str = album.year.map(|y| format!(" [{}]", y)).unwrap_or_default();
                     let text = if !artists.filter.is_empty()
                         && artists.search_results.is_some()
@@ -227,7 +210,6 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
     state.client.artists.tree_scroll_offset = list_state.offset();
 }
 
-/// Render the song list for selected album
 fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let artists = &state.client.artists;
 
@@ -261,13 +243,11 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
         return;
     }
 
-    // Check if album has multiple discs
     let has_multiple_discs = artists
         .songs
         .iter()
         .any(|s| s.disc_number.map(|d| d > 1).unwrap_or(false));
 
-    // Build song list items
     let items: Vec<ListItem> = artists
         .songs
         .iter()

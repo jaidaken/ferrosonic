@@ -3,7 +3,6 @@ use crate::error::Error;
 use super::*;
 
 impl App {
-    /// Handle click on artists page
     pub(super) async fn handle_artists_click(
         &mut self,
         x: u16,
@@ -21,7 +20,6 @@ impl App {
         let right = layout.content_right.unwrap_or(layout.content);
 
         if x >= left.x && x < left.x + left.width && y >= left.y && y < left.y + left.height {
-            // Tree pane click — account for border (1 row top)
             let row_in_viewport = y.saturating_sub(left.y + 1) as usize;
             let item_index = state.client.artists.tree_scroll_offset + row_in_viewport;
             let tree_items = build_tree_items(&state);
@@ -31,14 +29,12 @@ impl App {
                 state.client.artists.focus = 0;
                 state.client.artists.selected_index = Some(item_index);
 
-                // Second click = activate (same as Enter)
                 let is_second_click = was_selected
                     && self.last_click.is_some_and(|(lx, ly, t)| {
                         lx == x && ly == y && t.elapsed().as_millis() < 500
                     });
 
                 if is_second_click {
-                    // Activate: expand/collapse artist, or play album
                     match &tree_items[item_index] {
                         TreeItem::Artist { artist, expanded } => {
                             let artist_id = artist.id.clone();
@@ -55,11 +51,7 @@ impl App {
                                     .await;
                                 match albums_resp {
                                     Ok(crate::ipc::DaemonResponse::ArtistAlbums(_)) => {
-                                        // The daemon already inserted into the
-                                        // library cache and emitted AlbumsChanged;
-                                        // the event-pump task will mirror that
-                                        // into state.daemon.library.albums_cache.
-                                        // We just expand here.
+                                        // Cache + AlbumsChanged already emitted by daemon.
                                         let ds = self.daemon_state.read().await;
                                         let mut cs = self.client_state.write().await;
                                         let state = AppState { daemon: &*ds, client: &mut *cs };
@@ -138,7 +130,6 @@ impl App {
                         }
                     }
                 } else {
-                    // First click on album: preview songs in right pane
                     if let TreeItem::Album { album } = &tree_items[item_index] {
                         let album_id = album.id.clone();
                         drop(state); drop(cs); drop(ds);
@@ -156,7 +147,6 @@ impl App {
                 }
             }
         } else if x >= right.x && x < right.x + right.width && y >= right.y && y < right.y + right.height {
-            // Songs pane click
             let row_in_viewport = y.saturating_sub(right.y + 1) as usize;
             let item_index = state.client.artists.song_scroll_offset + row_in_viewport;
 
@@ -171,7 +161,6 @@ impl App {
                     });
 
                 if is_second_click {
-                    // Play selected song from album-songs pane
                     let songs = state.client.artists.songs.clone();
                     if let Some(song) = songs.get(item_index) {
                         state.client.notify(format!("Playing: {}", song.title));

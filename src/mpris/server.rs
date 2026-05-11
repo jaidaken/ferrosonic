@@ -1,4 +1,4 @@
-//! MPRIS2 D-Bus server implementation
+//! MPRIS2 D-Bus server.
 
 use std::sync::Arc;
 
@@ -16,12 +16,9 @@ use crate::ipc::{DaemonClient, DaemonRequest};
 use crate::subsonic::auth::generate_auth_params;
 use crate::subsonic::models::Child;
 
-/// API version for Subsonic
 const API_VERSION: &str = "1.16.1";
-/// Client name for Subsonic
 const CLIENT_NAME: &str = "ferrosonic";
 
-/// Build a cover art URL from config and cover art ID
 fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String> {
     if config.base_url.is_empty() || cover_art_id.is_empty() {
         return None;
@@ -41,10 +38,8 @@ fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String> {
     Some(url.to_string())
 }
 
-/// MPRIS server instance name
 const PLAYER_NAME: &str = "ferrosonic";
 
-/// MPRIS2 player implementation
 pub struct MprisPlayer {
     daemon_state: SharedDaemonState,
     client_state: SharedClientState,
@@ -75,7 +70,6 @@ impl MprisPlayer {
 
 impl RootInterface for MprisPlayer {
     async fn raise(&self) -> fdo::Result<()> {
-        // We're a terminal app, can't raise
         Ok(())
     }
 
@@ -132,11 +126,8 @@ impl RootInterface for MprisPlayer {
     }
 }
 
-/// Fire-and-forget a request from a synchronous (non-await) context.
-/// MPRIS handler futures must be `Send + Sync`, but our async-trait
-/// `DaemonClient::request` returns only `Send + !Sync`. Spawning the
-/// request onto the runtime sidesteps the bound mismatch and matches
-/// the prior fire-and-forget mpsc-send semantics MPRIS used.
+/// Spawn the request — MPRIS handler futures must be `Send + Sync`
+/// but `DaemonClient::request` returns only `Send`.
 fn fire(client: &Arc<dyn DaemonClient>, req: DaemonRequest) {
     let client = client.clone();
     tokio::spawn(async move {
@@ -188,7 +179,6 @@ impl PlayerInterface for MprisPlayer {
     }
 
     async fn open_uri(&self, _uri: String) -> fdo::Result<()> {
-        // Not supported for now
         Ok(())
     }
 
@@ -251,7 +241,6 @@ impl PlayerInterface for MprisPlayer {
                 metadata.set_disc_number(Some(disc));
             }
 
-            // Add cover art URL
             if let Some(ref cover_art_id) = song.cover_art {
                 if let Some(cover_url) = build_cover_art_url(&config, cover_art_id) {
                     metadata.set_art_url(Some(cover_url));
@@ -317,7 +306,6 @@ impl PlayerInterface for MprisPlayer {
     }
 }
 
-/// Start the MPRIS server
 pub async fn start_mpris_server(
     daemon_state: SharedDaemonState,
     client_state: SharedClientState,
@@ -335,15 +323,8 @@ pub async fn start_mpris_server(
     Ok(server)
 }
 
-/// Push `PropertiesChanged` to MPRIS subscribers. Called by the
-/// app-side MPRIS pump task on `NowPlayingChanged` / `QueueChanged`
-/// events so D-Bus clients (waybar, GNOME shell) see updates without
-/// polling.
-///
-/// Snapshots every value it needs from `state` under a short read
-/// lock, then releases the lock before any D-Bus `.await`. Holding a
-/// read across `properties_changed` would block the TUI's render
-/// (which takes a write lock each frame) if D-Bus is slow.
+/// Releases the daemon read lock before the D-Bus await so a slow
+/// D-Bus doesn't block the render-path write lock.
 pub async fn update_mpris_properties(
     server: &Server<MprisPlayer>,
     daemon_state: &SharedDaemonState,

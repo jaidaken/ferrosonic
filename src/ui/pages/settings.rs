@@ -1,4 +1,4 @@
-//! Settings page with app preferences and theming
+//! Settings page.
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -10,7 +10,6 @@ use ratatui::{
 use crate::app::state::AppState;
 use crate::ui::theme::ThemeColors;
 
-/// Render the settings page
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
@@ -28,27 +27,25 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
 
     let settings = &state.client.settings_state;
 
-    // Layout fields vertically with spacing
     let chunks = Layout::vertical([
-        Constraint::Length(1), // Spacing
-        Constraint::Length(2), // Theme selector
-        Constraint::Length(1), // Spacing
-        Constraint::Length(2), // Cava toggle
-        Constraint::Length(1), // Spacing
-        Constraint::Length(2), // Cava size
-        Constraint::Length(1), // Spacing
-        Constraint::Length(2), // Daemon toggle
-        Constraint::Length(1), // Spacing
-        Constraint::Length(2), // Auto-continue toggle
-        Constraint::Length(1), // Spacing
-        Constraint::Length(2), // Repeat mode
-        Constraint::Length(1), // Spacing
-        Constraint::Length(2), // Cover art toggle
-        Constraint::Min(1),    // Remaining space
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Min(1),
     ])
     .split(inner);
 
-    // Theme selector (field 0)
     render_option(
         frame,
         chunks[1],
@@ -58,7 +55,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Cava toggle (field 1)
     let cava_value = if !state.client.cava_available {
         "Off (cava not found)"
     } else if settings.cava_enabled {
@@ -76,7 +72,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Cava size (field 2)
     let cava_size_value = if !state.client.cava_available {
         "N/A (cava not found)".to_string()
     } else {
@@ -92,7 +87,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Daemon toggle (field 3)
     let daemon_value = if settings.daemon_enabled { "On" } else { "Off" };
     render_option(
         frame,
@@ -103,7 +97,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Auto-continue toggle (field 4)
     let auto_value = if settings.auto_continue { "On" } else { "Off" };
     render_option(
         frame,
@@ -114,7 +107,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Repeat mode (field 5)
     let repeat_value = match settings.repeat_mode {
         crate::config::RepeatMode::Off => "Off",
         crate::config::RepeatMode::One => "One",
@@ -129,7 +121,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Cover art toggle (field 6)
     let cover_value = if settings.cover_art { "On" } else { "Off" };
     render_option(
         frame,
@@ -140,7 +131,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Help text at bottom
     let help_text = match settings.selected_field {
         0 => "← → or Enter to change theme (auto-saves)",
         1 if state.client.cava_available => "← → or Enter to toggle cava visualizer (auto-saves)",
@@ -164,7 +154,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
     frame.render_widget(help, help_area);
 }
 
-/// Render an option selector
 fn render_option(
     frame: &mut Frame,
     area: Rect,
@@ -187,11 +176,9 @@ fn render_option(
         Style::default().fg(colors.muted)
     };
 
-    // Label
     let label_text = Paragraph::new(label).style(label_style);
     frame.render_widget(label_text, Rect::new(area.x, area.y, area.width, 1));
 
-    // Value with arrows
     let value_text = if selected {
         format!("  ◀ {} ▶", value)
     } else {

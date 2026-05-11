@@ -1,4 +1,4 @@
-//! Footer bar with keybind hints and status
+//! Footer keybind hints + status.
 
 use ratatui::{
     buffer::Buffer,
@@ -11,7 +11,6 @@ use ratatui::{
 use crate::app::state::{Notification, Page};
 use crate::ui::theme::ThemeColors;
 
-/// Footer bar widget
 pub struct Footer<'a> {
     page: Page,
     sample_rate: Option<u32>,
@@ -117,13 +116,10 @@ impl Widget for Footer<'_> {
             return;
         }
 
-        // Split horizontally: left for binds/notification, right for sample rate.
         let chunks = Layout::horizontal([Constraint::Min(40), Constraint::Length(30)]).split(area);
         let left = chunks[0];
         let right = chunks[1];
 
-        // Notification (when present) takes the whole left block and replaces
-        // the keybind hints temporarily.
         if let Some(notif) = self.notification {
             let style = if notif.is_error {
                 Style::default().fg(self.colors.error)
@@ -132,7 +128,6 @@ impl Widget for Footer<'_> {
             };
             buf.set_string(left.x, left.y, &notif.message, style);
         } else {
-            // Row 0: global binds. Row 1: page-specific binds.
             let global_line = render_binds(&self.global_keybinds(), &self.colors);
             buf.set_line(left.x, left.y, &global_line, left.width);
             if area.height >= 2 {
@@ -141,7 +136,6 @@ impl Widget for Footer<'_> {
             }
         }
 
-        // Sample rate, top-right corner.
         if let Some(rate) = self.sample_rate {
             let khz = rate as f64 / 1000.0;
             let rate_str = if khz == khz.floor() {

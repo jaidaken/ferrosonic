@@ -6,16 +6,13 @@ use tracing::{error, info};
 use super::*;
 
 impl App {
-    /// Start cava process in noncurses mode via a pty
     pub(super) fn start_cava(&mut self, cava_gradient: &[String; 8], cava_horizontal_gradient: &[String; 8], cava_size: u32) {
         self.stop_cava();
 
-        // Compute pty dimensions to match the cava widget area
         let (term_w, term_h) = crossterm::terminal::size().unwrap_or((80, 24));
         let cava_h = (term_h as u32 * cava_size / 100).max(4) as u16;
         let cava_w = term_w;
 
-        // Open a pty pair
         let mut master: libc::c_int = 0;
         let mut slave: libc::c_int = 0;
         unsafe {
@@ -31,7 +28,6 @@ impl App {
                 return;
             }
 
-            // Set pty size so cava knows its dimensions
             let ws = libc::winsize {
                 ws_row: cava_h,
                 ws_col: cava_w,
@@ -41,8 +37,7 @@ impl App {
             libc::ioctl(slave, libc::TIOCSWINSZ, &ws);
         }
 
-        // Generate themed cava config and write to temp file
-        // Dup slave fd before converting to File (from_raw_fd takes ownership)
+        // Dup before from_raw_fd takes ownership.
         let slave_stdin_fd = unsafe { libc::dup(slave) };
         let slave_stderr_fd = unsafe { libc::dup(slave) };
         let slave_stdout = unsafe { std::fs::File::from_raw_fd(slave) };
@@ -79,7 +74,6 @@ impl App {
 
         match cmd.spawn() {
             Ok(child) => {
-                // Set master to non-blocking
                 unsafe {
                     let flags = libc::fcntl(master, libc::F_GETFL);
                     libc::fcntl(master, libc::F_SETFL, flags | libc::O_NONBLOCK);
@@ -103,7 +97,6 @@ impl App {
         }
     }
 
-    /// Stop cava process and clean up
     pub(super) fn stop_cava(&mut self) {
         if let Some(ref mut child) = self.cava_process {
             let _ = child.kill();
@@ -115,7 +108,6 @@ impl App {
         self.cava_config = None;
     }
 
-    /// Read cava pty output and snapshot screen to state
     pub(super) async fn read_cava_output(&mut self) {
         let (Some(ref mut master), Some(ref mut parser)) =
             (&mut self.cava_pty_master, &mut self.cava_parser)
@@ -123,7 +115,6 @@ impl App {
                 return;
             };
 
-            // Read all available bytes from the pty master
             let mut buf = [0u8; 16384];
             let mut got_data = false;
             loop {
@@ -142,7 +133,6 @@ impl App {
                 return;
             }
 
-            // Snapshot the vt100 screen into shared state
             let screen = parser.screen();
             let (rows, cols) = screen.size();
             let mut cava_screen = Vec::with_capacity(rows as usize);
@@ -154,9 +144,6 @@ impl App {
                 let mut cur_bg = CavaColor::Default;
 
                 for col in 0..cols {
-                    // bounds come from screen.size() above so this should
-                    // always succeed, but defensively skip rather than panic
-                    // in the 60Hz render path if vt100 ever changes semantics.
                     let Some(cell) = screen.cell(row, col) else { continue };
                     let fg = vt100_color_to_cava(cell.fgcolor());
                     let bg = vt100_color_to_cava(cell.bgcolor());
@@ -195,7 +182,6 @@ impl App {
     }
 }
 
-/// Convert vt100 color to our CavaColor type
 fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
     match color {
         vt100::Color::Default => CavaColor::Default,
@@ -204,7 +190,6 @@ fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
     }
 }
 
-/// Generate a cava configuration string with theme-appropriate gradient colors
 pub(super) fn generate_cava_config(g: &[String; 8], h: &[String; 8]) -> String {
 
     format!(

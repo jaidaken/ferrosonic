@@ -1,5 +1,3 @@
-//! Progress bar widget with seek support
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -7,20 +5,13 @@ use ratatui::{
     widgets::Widget,
 };
 
-/// A horizontal progress bar with time display
 #[allow(dead_code)]
 pub struct ProgressBar<'a> {
-    /// Progress value (0.0 to 1.0)
     progress: f64,
-    /// Current position formatted
     position_text: &'a str,
-    /// Total duration formatted
     duration_text: &'a str,
-    /// Filled portion style
     filled_style: Style,
-    /// Empty portion style
     empty_style: Style,
-    /// Text style
     text_style: Style,
 }
 
@@ -52,11 +43,10 @@ impl<'a> ProgressBar<'a> {
         self
     }
 
-    /// Calculate position from x coordinate within the bar area
+    /// Maps mouse `x` to a 0.0–1.0 position; `None` outside the bar.
     pub fn position_from_x(area: Rect, x: u16) -> Option<f64> {
-        // Account for time text margins
-        let bar_start = area.x + 8; // "00:00 " prefix
-        let bar_end = area.x + area.width - 8; // " 00:00" suffix
+        let bar_start = area.x + 8;
+        let bar_end = area.x + area.width - 8;
 
         if x >= bar_start && x < bar_end {
             let bar_width = bar_end - bar_start;
@@ -74,18 +64,14 @@ impl Widget for ProgressBar<'_> {
             return;
         }
 
-        // Format: "00:00 [==========----------] 00:00"
         let pos_width = self.position_text.len();
         let dur_width = self.duration_text.len();
 
-        // Draw position text
         buf.set_string(area.x, area.y, self.position_text, self.text_style);
 
-        // Draw duration text
         let dur_x = area.x + area.width - dur_width as u16;
         buf.set_string(dur_x, area.y, self.duration_text, self.text_style);
 
-        // Calculate bar area
         let bar_x = area.x + pos_width as u16 + 1;
         let bar_width = area
             .width
@@ -94,12 +80,10 @@ impl Widget for ProgressBar<'_> {
         if bar_width > 0 {
             let filled_width = (bar_width as f64 * self.progress) as u16;
 
-            // Draw filled portion
             for x in bar_x..(bar_x + filled_width) {
                 buf[(x, area.y)].set_char('━').set_style(self.filled_style);
             }
 
-            // Draw empty portion
             for x in (bar_x + filled_width)..(bar_x + bar_width) {
                 buf[(x, area.y)].set_char('─').set_style(self.empty_style);
             }
@@ -107,14 +91,10 @@ impl Widget for ProgressBar<'_> {
     }
 }
 
-/// Vertical gauge (for volume, etc.)
 #[allow(dead_code)]
 pub struct VerticalBar {
-    /// Value (0.0 to 1.0)
     value: f64,
-    /// Filled style
     filled_style: Style,
-    /// Empty style
     empty_style: Style,
 }
 
@@ -148,14 +128,12 @@ impl Widget for VerticalBar {
         let filled_height = (area.height as f64 * self.value) as u16;
         let empty_start = area.y + area.height - filled_height;
 
-        // Draw empty portion (top)
         for y in area.y..empty_start {
             for x in area.x..(area.x + area.width) {
                 buf[(x, y)].set_char('░').set_style(self.empty_style);
             }
         }
 
-        // Draw filled portion (bottom)
         for y in empty_start..(area.y + area.height) {
             for x in area.x..(area.x + area.width) {
                 buf[(x, y)].set_char('█').set_style(self.filled_style);

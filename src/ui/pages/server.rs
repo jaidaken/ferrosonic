@@ -10,7 +10,6 @@ use ratatui::{
 use crate::app::state::AppState;
 use crate::ui::theme::ThemeColors;
 
-/// Render the server page
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
@@ -42,7 +41,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
     ])
     .split(inner);
 
-    // Server URL field - show cursor when selected (always editable)
     render_field(
         frame,
         chunks[1],
@@ -53,7 +51,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Username field
     render_field(
         frame,
         chunks[2],
@@ -64,7 +61,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Password field
     render_field(
         frame,
         chunks[3],
@@ -75,7 +71,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Test button
     render_button(
         frame,
         chunks[5],
@@ -84,7 +79,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Save button
     render_button(
         frame,
         chunks[6],
@@ -93,7 +87,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
         &colors,
     );
 
-    // Status message
     if let Some(ref status) = server.status {
         let style: Style = if status.contains("failed") || status.contains("error") {
             Style::default().fg(colors.error)
@@ -108,7 +101,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
     }
 }
 
-/// Render a form field
 fn render_field(
     frame: &mut Frame,
     area: Rect,
@@ -140,11 +132,9 @@ fn render_field(
         Style::default().fg(colors.border_unfocused)
     };
 
-    // Label on first line
     let label_text = Paragraph::new(label).style(label_style);
     frame.render_widget(label_text, Rect::new(area.x, area.y, area.width, 1));
 
-    // Value field with border on second line (height 3 = 1 top border + 1 content + 1 bottom border)
     let field_area = Rect::new(area.x, area.y + 1, area.width.min(60), 3);
 
     let display_value = if editing {
@@ -162,7 +152,6 @@ fn render_field(
     frame.render_widget(field, field_area);
 }
 
-/// Render a button
 fn render_button(frame: &mut Frame, area: Rect, label: &str, selected: bool, colors: &ThemeColors) {
     let style = if selected {
         Style::default()

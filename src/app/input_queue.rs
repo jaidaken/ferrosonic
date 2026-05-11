@@ -5,7 +5,6 @@ use crate::error::Error;
 use super::*;
 
 impl App {
-    /// Handle queue page keys
     pub(super) async fn handle_queue_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -32,7 +31,6 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                // Play selected song
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx < state.daemon.queue.len() {
                         drop(state); drop(cs); drop(ds);
@@ -46,8 +44,6 @@ impl App {
                 }
             }
             KeyCode::Char('d') => {
-                // Remove selected song. Daemon adjusts queue_position;
-                // client adjusts its own selection (a UI concern).
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx < state.daemon.queue.len() {
                         let removed_title = state
@@ -57,8 +53,6 @@ impl App {
                             .map(|s| s.title.clone())
                             .unwrap_or_default();
                         let queue_len = state.daemon.queue.len();
-                        // Adjust client-side selection toward the new
-                        // post-remove position.
                         if queue_len <= 1 {
                             state.client.queue_state.selected = None;
                         } else if idx >= queue_len - 1 {
@@ -75,7 +69,6 @@ impl App {
                 }
             }
             KeyCode::Char('J') => {
-                // Move down
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx + 1 < state.daemon.queue.len() {
                         state.client.queue_state.selected = Some(idx + 1);
@@ -92,7 +85,6 @@ impl App {
                 }
             }
             KeyCode::Char('K') => {
-                // Move up
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx > 0 {
                         state.client.queue_state.selected = Some(idx - 1);
@@ -109,14 +101,12 @@ impl App {
                 }
             }
             KeyCode::Char('t') => {
-                // Shuffle queue
                 state.client.notify("Queue shuffled");
                 drop(state); drop(cs); drop(ds);
                 let _ = self.client.request(DaemonRequest::ShuffleQueue).await;
                 return Ok(());
             }
             KeyCode::Char('c') => {
-                // Clear history (drain entries before queue_position)
                 let pos = state.daemon.queue_position;
                 let sel_before = state.client.queue_state.selected;
                 drop(state); drop(cs); drop(ds);
@@ -133,8 +123,7 @@ impl App {
                             state.client.notify("No history to clear");
                         } else {
                             state.client.notify(format!("Cleared {} played songs", removed));
-                            // Fix up client selection so it points at
-                            // the same song relative to the trimmed queue.
+                            // Re-anchor client selection to the same song post-trim.
                             if let (Some(p), Some(sel)) = (pos, sel_before) {
                                 state.client.queue_state.selected = Some(sel.saturating_sub(p));
                             }

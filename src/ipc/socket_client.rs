@@ -1,22 +1,7 @@
-//! `DaemonClient` implementation that talks to `ferrosonicd` over a
-//! Unix domain socket. The shape mirrors `InProcessClient` exactly —
-//! call sites in the TUI don't change between the two.
-//!
-//! Concurrency model: one writer task owns the write half of the
-//! socket; one reader task owns the read half. The reader demuxes
-//! incoming frames:
-//! - `Frame::Response { id, payload }` → look up the matching
-//!   one-shot in `pending` and resolve it.
-//! - `Frame::Event(_)` → push to the broadcast sender; subscribers
-//!   in the TUI consume from `subscribe()`.
-//! - `Frame::Request { .. }` → unexpected; logged + ignored.
-//!
-//! Cleanup: dropping `SocketClient` drops the writer mpsc, which
-//! ends the writer task; the writer dropping the write half closes
-//! the socket; the reader sees EOF and exits. All pending requests
-//! resolve to `IpcError::Disconnected`.
+//! `DaemonClient` over a Unix socket. Separate reader + writer tasks;
+//! the reader demuxes Response (resolves pending) vs Event (broadcasts).
 
-#![allow(dead_code)] // wired up in phase 5 binary split
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -33,17 +18,11 @@ use crate::ipc::frame::{read_frame, write_frame, Frame, FrameError};
 use crate::ipc::protocol::{DaemonEvent, DaemonRequest, DaemonResponse, IpcError};
 use crate::ipc::DaemonClient;
 
-/// Capacity of the broadcast channel for events forwarded to TUI
-/// subscribers. Matches `DaemonCore::EVENT_CHANNEL_CAPACITY`.
 const EVENT_CHANNEL_CAPACITY: usize = 256;
-
-/// Capacity of the writer mpsc. Generous because requests are tiny
-/// and the writer task drains promptly.
 const WRITER_QUEUE_DEPTH: usize = 256;
 
 type PendingMap = Mutex<HashMap<u64, oneshot::Sender<Result<DaemonResponse, IpcError>>>>;
 
-/// Socket-backed DaemonClient. Construct with `connect()`.
 pub struct SocketClient {
     next_id: AtomicU64,
     writer_tx: mpsc::Sender<Frame>,
@@ -52,8 +31,6 @@ pub struct SocketClient {
 }
 
 impl SocketClient {
-    /// Connect to `ferrosonicd` at `path`. Spawns the reader and writer
-    /// tasks; they run until the socket closes or the client is dropped.
     pub async fn connect(path: &Path) -> Result<Arc<Self>, IpcError> {
         let stream = UnixStream::connect(path).await?;
         let (read_half, mut write_half) = stream.into_split();
@@ -69,8 +46,6 @@ impl SocketClient {
             event_tx: event_tx.clone(),
         });
 
-        // Writer task: drain mpsc, write to socket. Exits cleanly when
-        // the mpsc is dropped (i.e., when the SocketClient is dropped).
         tokio::spawn(async move {
             while let Some(frame) = writer_rx.recv().await {
                 if let Err(e) = write_frame(&mut write_half, &frame).await {
@@ -78,12 +53,9 @@ impl SocketClient {
                     break;
                 }
             }
-            // Best-effort half-close so the daemon sees EOF on its read side.
             let _ = write_half.shutdown().await;
         });
 
-        // Reader task: demux incoming frames into pending responses
-        // and the event broadcast.
         let reader_pending = pending.clone();
         let reader_events = event_tx.clone();
         tokio::spawn(async move {
@@ -115,7 +87,6 @@ impl SocketClient {
                     }
                 }
             }
-            // Resolve everything pending so callers don't hang forever.
             let mut map = reader_pending.lock().await;
             for (_, tx) in map.drain() {
                 let _ = tx.send(Err(IpcError::Disconnected));
@@ -135,7 +106,6 @@ impl DaemonClient for SocketClient {
             let mut map = self.pending.lock().await;
             map.insert(id, tx);
         }
-        // Send the frame; on failure clean up the pending slot.
         if self
             .writer_tx
             .send(Frame::Request { id, req })
@@ -146,7 +116,6 @@ impl DaemonClient for SocketClient {
             map.remove(&id);
             return Err(IpcError::Disconnected);
         }
-        // Wait for the reader to resolve this request.
         match rx.await {
             Ok(result) => result,
             Err(_) => Err(IpcError::Disconnected),

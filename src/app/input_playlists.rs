@@ -5,7 +5,6 @@ use crate::error::Error;
 use super::*;
 
 impl App {
-    /// Handle playlists page keys
     pub(super) async fn handle_playlists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -28,7 +27,6 @@ impl App {
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if state.client.playlists.focus == 0 {
-                    // Playlist list
                     if let Some(sel) = state.client.playlists.selected_playlist {
                         if sel > 0 {
                             state.client.playlists.selected_playlist = Some(sel - 1);
@@ -37,7 +35,6 @@ impl App {
                         state.client.playlists.selected_playlist = Some(0);
                     }
                 } else {
-                    // Song list
                     if let Some(sel) = state.client.playlists.selected_song {
                         if sel > 0 {
                             state.client.playlists.selected_song = Some(sel - 1);
@@ -70,7 +67,6 @@ impl App {
             }
             KeyCode::Enter => {
                 if state.client.playlists.focus == 0 {
-                    // Load playlist songs
                     if let Some(idx) = state.client.playlists.selected_playlist {
                         if let Some(playlist) = state.daemon.library.playlists.get(idx) {
                             let playlist_id = playlist.id.clone();
@@ -94,7 +90,6 @@ impl App {
                         }
                     }
                 } else {
-                    // Play selected song from playlist
                     if let Some(idx) = state.client.playlists.selected_song {
                         if idx < state.client.playlists.songs.len() {
                             let songs = state.client.playlists.songs.clone();
@@ -115,7 +110,6 @@ impl App {
                 }
             }
             KeyCode::Char('e') => {
-                // Add to queue
                 if state.client.playlists.focus == 1 {
                     if let Some(idx) = state.client.playlists.selected_song {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
@@ -132,7 +126,6 @@ impl App {
                         }
                     }
                 } else {
-                    // Add whole playlist
                     if !state.client.playlists.songs.is_empty() {
                         let count = state.client.playlists.songs.len();
                         let songs = state.client.playlists.songs.clone();
@@ -149,7 +142,6 @@ impl App {
                 }
             }
             KeyCode::Char('i') => {
-                // Add next
                 let insert_pos = state.daemon.queue_position;
                 if state.client.playlists.focus == 1 {
                     if let Some(idx) = state.client.playlists.selected_song {
@@ -173,7 +165,6 @@ impl App {
                 }
             }
             KeyCode::Char('t') => {
-                // Shuffle play playlist
                 use rand::seq::SliceRandom;
                 if !state.client.playlists.songs.is_empty() {
                     let mut songs = state.client.playlists.songs.clone();

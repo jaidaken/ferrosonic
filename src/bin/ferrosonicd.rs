@@ -1,10 +1,4 @@
-//! Ferrosonicd — long-lived daemon that owns mpv, the queue, the
-//! library cache, and the MPRIS server. Accepts TUI clients over a
-//! Unix socket (path comes from `ferrosonic::ipc::path::socket_path`).
-//!
-//! Lifecycle: started either explicitly (`ferrosonicd`) or auto-spawned
-//! by the TUI client when the socket is missing (phase 7). Foreground
-//! by default; daemonisation under `--detach` is phase 7's job.
+//! Ferrosonicd binary entry point.
 
 use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
@@ -22,7 +16,6 @@ use ferrosonic::daemon::DaemonCore;
 use ferrosonic::ipc::path::socket_path;
 use ferrosonic::ipc::server::serve;
 
-/// Ferrosonicd - Background daemon for ferrosonic
 #[derive(Parser, Debug)]
 #[command(name = "ferrosonicd")]
 #[command(author, version, about, long_about = None)]
@@ -117,20 +110,14 @@ async fn main() -> anyhow::Result<()> {
     let daemon_state = new_shared_daemon_state(config.clone());
     let core = DaemonCore::new(daemon_state, &config);
 
-    // Start mpv (audio backend) up-front; clients connecting later
-    // expect a ready playback session.
     if let Err(e) = core.start_mpv().await {
         warn!("Failed to start mpv: {} - audio playback won't work", e);
     } else {
         info!("mpv started");
     }
 
-    // Spawn the playback poll task. Detached: the runtime takes care
-    // of cancellation at process exit.
     let _poll = core.spawn_polling_task();
 
-    // Background-load initial library data so first-connect clients
-    // see populated lists.
     if config.is_configured() {
         let bg = Arc::clone(&core);
         tokio::spawn(async move {

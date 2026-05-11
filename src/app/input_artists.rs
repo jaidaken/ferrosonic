@@ -9,7 +9,6 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 impl App {
-    /// Handle artists page keys
     pub(super) async fn handle_artists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         use crate::ui::pages::artists::{build_tree_items, TreeItem};
 
@@ -19,7 +18,6 @@ impl App {
 
         let state = AppState { daemon: &*ds, client: &mut *cs };
 
-        // Handle filter input mode
         if state.client.artists.filter_active {
             let mut scope_or_query_changed = false;
             match key.code {
@@ -41,9 +39,7 @@ impl App {
                     scope_or_query_changed = true;
                 }
                 KeyCode::Char('/') => {
-                    // Successive slashes cycle the scope when the
-                    // query is empty. Once the user has typed any
-                    // other character, '/' is appended literally.
+                    // Empty filter: cycle scope. Non-empty: append literal '/'.
                     if state.client.artists.filter.is_empty() {
                         let new_scope = state.client.artists.filter_scope.cycle();
                         state.client.artists.filter_scope = new_scope;
@@ -87,8 +83,7 @@ impl App {
                     .await;
                 if let Ok(crate::ipc::DaemonResponse::SearchResults(r)) = resp {
                     let mut cs = client_state.write().await;
-                    // Discard stale replies — only commit if the user
-                    // hasn't typed since this request was issued.
+                    // Stale: user typed again since this request was issued.
                     if cs.artists.search_gen == gen {
                         cs.artists.search_results = Some(r);
                     }
@@ -115,7 +110,6 @@ impl App {
                 state.client.artists.focus = 0;
             }
             KeyCode::Right => {
-                // Move focus to songs (right pane)
                 if !state.client.artists.songs.is_empty() {
                     state.client.artists.focus = 1;
                     if state.client.artists.selected_song.is_none() {
@@ -125,7 +119,6 @@ impl App {
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if state.client.artists.focus == 0 {
-                    // Tree navigation
                     let tree_items = build_tree_items(&state);
                     if let Some(sel) = state.client.artists.selected_index {
                         if sel > 0 {
@@ -134,7 +127,6 @@ impl App {
                     } else if !tree_items.is_empty() {
                         state.client.artists.selected_index = Some(0);
                     }
-                    // Preview album songs in right pane
                     let album_id = state.client
                         .artists
                         .selected_index
@@ -156,7 +148,6 @@ impl App {
                         return Ok(());
                     }
                 } else {
-                    // Song list
                     if let Some(sel) = state.client.artists.selected_song {
                         if sel > 0 {
                             state.client.artists.selected_song = Some(sel - 1);
@@ -168,7 +159,6 @@ impl App {
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if state.client.artists.focus == 0 {
-                    // Tree navigation
                     let tree_items = build_tree_items(&state);
                     let max = tree_items.len().saturating_sub(1);
                     if let Some(sel) = state.client.artists.selected_index {
@@ -178,7 +168,6 @@ impl App {
                     } else if !tree_items.is_empty() {
                         state.client.artists.selected_index = Some(0);
                     }
-                    // Preview album songs in right pane
                     let album_id = state.client
                         .artists
                         .selected_index
@@ -200,7 +189,6 @@ impl App {
                         return Ok(());
                     }
                 } else {
-                    // Song list
                     let max = state.client.artists.songs.len().saturating_sub(1);
                     if let Some(sel) = state.client.artists.selected_song {
                         if sel < max {
@@ -316,7 +304,6 @@ impl App {
                                         .map_err(Error::from);
                                 }
                                 TreeItem::Song { song } => {
-                                    // Single-song "shuffle" just plays the song.
                                     let song = song.clone();
                                     let title = song.title.clone();
                                     drop(state); drop(cs); drop(ds);
@@ -343,7 +330,6 @@ impl App {
             }
             KeyCode::Enter => {
                 if state.client.artists.focus == 0 {
-                    // Get current tree item
                     let tree_items = build_tree_items(&state);
                     if let Some(idx) = state.client.artists.selected_index {
                         if let Some(item) = tree_items.get(idx) {
@@ -363,9 +349,7 @@ impl App {
                                             .await
                                         {
                                             Ok(crate::ipc::DaemonResponse::ArtistAlbums(_)) => {
-                                                // Daemon already cached + emitted
-                                                // AlbumsChanged; the event-pump task
-                                                // mirrors that into our local cache.
+                                                // Cache + AlbumsChanged event already emitted by daemon.
                                                 let ds = self.daemon_state.read().await;
                                                 let mut cs = self.client_state.write().await;
                                                 let state = AppState { daemon: &*ds, client: &mut *cs };
@@ -445,7 +429,6 @@ impl App {
                         }
                     }
                 } else {
-                    // Play selected song from current position
                     if let Some(idx) = state.client.artists.selected_song {
                         if idx < state.client.artists.songs.len() {
                             let songs = state.client.artists.songs.clone();
@@ -492,8 +475,6 @@ impl App {
                     && !state.client.artists.filter.is_empty()
                     && state.client.artists.search_results.is_some()
                 {
-                    // In search-results mode, 'e' appends whatever's
-                    // selected (artist's all songs / album / single song).
                     let tree_items = build_tree_items(&state);
                     if let Some(idx) = state.client.artists.selected_index {
                         if let Some(item) = tree_items.get(idx).cloned() {
@@ -642,9 +623,6 @@ impl App {
         Ok(())
     }
 
-    /// Resolve a left-tree selection (Artist / Album / Song) into the
-    /// list of songs it represents. Used by 'e' (append) and 'i'
-    /// (play next) when operating on search results.
     async fn collect_songs_for(
         &mut self,
         item: &crate::ui::pages::artists::TreeItem,

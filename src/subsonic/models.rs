@@ -1,8 +1,7 @@
-//! Subsonic API response models
+//! Subsonic API response models.
 
 use serde::{Deserialize, Serialize};
 
-/// Wrapper for all Subsonic API responses
 #[derive(Debug, Deserialize)]
 pub struct SubsonicResponse<T> {
     #[serde(rename = "subsonic-response")]
@@ -12,7 +11,7 @@ pub struct SubsonicResponse<T> {
 #[derive(Debug, Deserialize)]
 pub struct SubsonicResponseInner<T> {
     pub status: String,
-    #[allow(dead_code)] // Present in API response, needed for deserialization
+    #[allow(dead_code)]
     pub version: String,
     #[serde(default)]
     pub error: Option<ApiError>,
@@ -20,7 +19,6 @@ pub struct SubsonicResponseInner<T> {
     pub data: Option<T>,
 }
 
-/// API error response
 #[derive(Debug, Deserialize)]
 pub struct ApiError {
     pub code: i32,
@@ -51,7 +49,6 @@ pub struct RandomSongs {
     pub song: Vec<Child>,
 }
 
-/// Artists response wrapper
 #[derive(Debug, Deserialize)]
 pub struct ArtistsData {
     pub artists: ArtistsIndex,
@@ -65,13 +62,12 @@ pub struct ArtistsIndex {
 
 #[derive(Debug, Deserialize)]
 pub struct ArtistIndex {
-    #[allow(dead_code)] // Present in API response, needed for deserialization
+    #[allow(dead_code)]
     pub name: String,
     #[serde(default)]
     pub artist: Vec<Artist>,
 }
 
-/// Artist
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Artist {
     pub id: String,
@@ -82,7 +78,6 @@ pub struct Artist {
     pub cover_art: Option<String>,
 }
 
-/// Artist detail with albums
 #[derive(Debug, Deserialize)]
 pub struct ArtistData {
     pub artist: ArtistDetail,
@@ -96,7 +91,6 @@ pub struct ArtistDetail {
     pub album: Vec<Album>,
 }
 
-/// Album
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Album {
     pub id: String,
@@ -117,7 +111,6 @@ pub struct Album {
     pub genre: Option<String>,
 }
 
-/// Album detail with songs
 #[derive(Debug, Deserialize)]
 pub struct AlbumData {
     pub album: AlbumDetail,
@@ -137,7 +130,7 @@ pub struct AlbumDetail {
     pub song: Vec<Child>,
 }
 
-/// Song/Media item (called "Child" in Subsonic API)
+/// Song / media item. Subsonic calls this `Child`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Child {
     pub id: String,
@@ -177,7 +170,6 @@ pub struct Child {
 }
 
 impl Child {
-    /// Format duration as MM:SS
     pub fn format_duration(&self) -> String {
         match self.duration {
             Some(d) => {
@@ -190,7 +182,6 @@ impl Child {
     }
 }
 
-/// Playlists response
 #[derive(Debug, Deserialize)]
 pub struct PlaylistsData {
     pub playlists: PlaylistsInner,
@@ -202,7 +193,6 @@ pub struct PlaylistsInner {
     pub playlist: Vec<Playlist>,
 }
 
-/// Playlist
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Playlist {
     pub id: String,
@@ -221,7 +211,6 @@ pub struct Playlist {
     pub comment: Option<String>,
 }
 
-/// Playlist detail with songs
 #[derive(Debug, Deserialize)]
 pub struct PlaylistData {
     pub playlist: PlaylistDetail,
@@ -241,19 +230,15 @@ pub struct PlaylistDetail {
     pub entry: Vec<Child>,
 }
 
-/// Ping response (for testing connection)
 #[derive(Debug, Deserialize)]
 pub struct PingData {}
 
-/// Subsonic `search3` response wrapper.
 #[derive(Debug, Deserialize)]
 pub struct Search3Data {
     #[serde(rename = "searchResult3", default)]
     pub result: SearchResult3,
 }
 
-/// Search results across all three Subsonic categories. Any list may
-/// be empty depending on what matched.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct SearchResult3 {
     #[serde(default)]

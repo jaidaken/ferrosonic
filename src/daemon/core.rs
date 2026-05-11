@@ -1,20 +1,5 @@
-//! Daemon core: owns the audio session and library cache.
-//!
-//! Lock structure:
-//!
-//! - `state`: `SharedDaemonState` (`Arc<RwLock<DaemonState>>`) — the
-//!   canonical daemon-side data. RwLock so MPRIS reads + render reads
-//!   can run in parallel with playback updates.
-//! - `mpv`: `Mutex<MpvController>` — mpv has only one IPC socket and
-//!   `send_command` requires &mut, so all access is serialised.
-//! - `pipewire`: `Mutex<PipeWireController>` — `set_rate` needs &mut and
-//!   shells out to `pw-metadata`; serialise.
-//! - `subsonic`: `RwLock<Option<SubsonicClient>>` — RwLock to allow many
-//!   concurrent reads (the underlying reqwest client is internally
-//!   thread-safe); write is rare (only on UpdateServerConfig).
-//! - `event_tx`: `broadcast::Sender<DaemonEvent>` — fan-out to subscribed
-//!   clients. Capacity 256; slow consumers see RecvError::Lagged and must
-//!   re-subscribe to resnapshot.
+//! Daemon core: owns mpv, the queue, the library cache, the event
+//! broadcast, and config persistence.
 
 use std::sync::Arc;
 
@@ -31,40 +16,22 @@ use crate::error::Error;
 use crate::ipc::protocol::DaemonEvent;
 use crate::subsonic::SubsonicClient;
 
-/// Capacity of the broadcast channel for daemon events. Slow consumers
-/// will see `Lagged` once they fall behind by this many events.
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 
-/// Centralised audio + library state. Single instance per daemon process.
-/// Cheap to clone the `Arc<DaemonCore>` to share across tasks.
 pub struct DaemonCore {
-    /// Daemon-side state. Owns the queue, library cache, now-playing,
-    /// and config. Shared with the TUI (in the in-process build) via
-    /// the same Arc so reads avoid a clone.
     pub state: SharedDaemonState,
-    /// MPV process + IPC socket controller.
     pub mpv: Mutex<MpvController>,
-    /// PipeWire sample-rate controller.
     pub pipewire: Mutex<PipeWireController>,
-    /// Subsonic API client (None when config is unconfigured).
     pub subsonic: RwLock<Option<SubsonicClient>>,
-    /// Fan-out channel for state-change events. Clients subscribe via
-    /// `event_tx.subscribe()` and consume the resulting `Receiver`.
     pub event_tx: broadcast::Sender<DaemonEvent>,
-    /// Trailing-edge debounce signal for the queue-persistence task.
-    /// `try_send(())` on every queue change; the task drains it, sleeps
-    /// briefly, then writes the latest queue to disk.
+    /// Trailing-edge debounce: `try_send(())` on every queue change;
+    /// the persistence task drains, sleeps briefly, writes once.
     queue_save_tx: tokio::sync::mpsc::Sender<()>,
-    /// Cover-art byte cache keyed by `"<coverArt-id>@<size>"`. Bounded
-    /// at 64 entries to keep RAM predictable; oldest dropped on insert.
+    /// Bounded at 64 entries, keyed `"<coverArt-id>@<size>"`.
     cover_art_cache: RwLock<std::collections::HashMap<String, Vec<u8>>>,
 }
 
 impl DaemonCore {
-    /// Build a new core wrapping the given `SharedDaemonState`. Creates an
-    /// `MpvController` (does not start mpv yet — call `start_mpv()` when
-    /// ready), a `PipeWireController`, and a `SubsonicClient` if the
-    /// config is configured.
     pub fn new(state: SharedDaemonState, config: &Config) -> Arc<Self> {
         let subsonic = if config.is_configured() {
             match SubsonicClient::new(&config.base_url, &config.username, &config.password) {
@@ -132,24 +99,17 @@ impl DaemonCore {
         })
     }
 
-    /// Start the mpv subprocess. Idempotent — no-ops if already running.
+    /// Idempotent — no-ops if mpv is already running.
     pub async fn start_mpv(&self) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         mpv.start().await.map_err(Into::into)
     }
 
-    /// Best-effort shutdown of mpv. Used at TUI exit (phase 2) and at
-    /// daemon shutdown (phase 7).
     pub async fn quit_mpv(&self) {
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.quit().await;
     }
 
-    /// Spawn the playback-info polling task. Runs `update_playback_info`
-    /// every 500ms on the tokio runtime. The returned `JoinHandle` is
-    /// detached by `App::run` (we don't await it; cancellation happens
-    /// at process exit). Phase 5 keeps this exact loop in the daemon
-    /// process — it is fully self-contained.
     pub fn spawn_polling_task(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         let core = self.clone();
         tokio::spawn(async move {
@@ -162,26 +122,15 @@ impl DaemonCore {
         })
     }
 
-    /// Subscribe to daemon events. Returns a `broadcast::Receiver` that
-    /// will receive every `DaemonEvent` broadcast after the call.
-    /// Used by the upcoming `DaemonClient` (phase 2.3) and the socket
-    /// server (phase 4); not yet wired in phase 2.2.
     #[allow(dead_code)]
     pub fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
         self.event_tx.subscribe()
     }
 
-    /// Internal: emit an event. Errors are logged and ignored — a slow or
-    /// disconnected subscriber shouldn't block the daemon.
     fn emit(&self, event: DaemonEvent) {
-        // `send` returns Err only if there are no subscribers, which is
-        // fine — events are best-effort fan-out.
         let _ = self.event_tx.send(event);
     }
 
-    /// Snapshot the current `NowPlaying` and emit it. Convenience for
-    /// the many call sites that mutated `state.now_playing` and
-    /// then dropped the lock — they now don't have to re-clone it.
     async fn emit_now_playing(&self) {
         let np = {
             let state = self.state.read().await;
@@ -190,8 +139,6 @@ impl DaemonCore {
         self.emit(DaemonEvent::NowPlayingChanged(np));
     }
 
-    /// Snapshot the current queue + position and emit. Same convenience
-    /// rationale as `emit_now_playing`.
     async fn emit_queue(&self) {
         let (queue, position) = {
             let state = self.state.read().await;
@@ -201,10 +148,8 @@ impl DaemonCore {
         self.emit(DaemonEvent::QueueChanged { queue, position });
     }
 
-    /// Build a snapshot of the daemon state for a connecting client.
-    /// The Subsonic password is scrubbed before sending — the TUI never
-    /// makes server requests directly, only the daemon does, so it
-    /// doesn't need the credential.
+    /// Snapshot for a connecting client. Password is scrubbed — the
+    /// TUI never talks to the Subsonic server directly.
     pub async fn snapshot(&self) -> DaemonState {
         let mut snap = {
             let state = self.state.read().await;
@@ -225,12 +170,6 @@ impl DaemonCore {
         self.emit(DaemonEvent::ConfigChanged(cfg));
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────
-// Library fetches (was App's repo.rs).
-// All methods read self.subsonic, write to self.state.library, emit
-// LibraryChanged events, push notifications on error.
-// ─────────────────────────────────────────────────────────────────────────
 
 impl DaemonCore {
     pub async fn refresh_starred(self: &Arc<Self>) {
@@ -305,7 +244,6 @@ impl DaemonCore {
             }
             Err(e) => {
                 error!("Failed to load playlists: {}", e);
-                // Don't show error for playlists if artists loaded
             }
         }
     }
@@ -372,15 +310,7 @@ impl DaemonCore {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Playback (was App's playback.rs).
-// All methods read/write self.state, drive self.mpv via locked access,
-// drive self.pipewire for sample-rate switching, emit NowPlayingChanged /
-// QueueChanged events.
-// ─────────────────────────────────────────────────────────────────────────
-
 impl DaemonCore {
-    /// Toggle play/pause. No-op if neither playing nor paused.
     pub async fn toggle_pause(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let snapshot = {
@@ -413,7 +343,6 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Pause playback. No-op if not playing.
     pub async fn pause_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         {
@@ -436,7 +365,6 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Resume playback. No-op if not paused.
     pub async fn resume_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         {
@@ -459,9 +387,7 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Skip to the next track in the queue. If at end, either stops
-    /// playback or, when `AutoContinue` is on, appends a fresh random
-    /// batch from the server and keeps playing.
+    /// Manual skip. Ignores `repeat=One` (user wants to move).
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
@@ -525,11 +451,7 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Advance the queue when the current track ends on its own. Honours
-    /// `repeat=One` (restart current) and `repeat=All` (wrap to head);
-    /// falls through to the auto-continue / stop path at the end of an
-    /// `Off`-mode queue. Distinct from `next_track`, which models a
-    /// manual user skip and ignores `repeat=One`.
+    /// Auto-end advance. Honours `repeat=One` and `repeat=All`.
     pub async fn advance_auto(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
@@ -593,8 +515,7 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Previous track in the queue, with the standard "restart current
-    /// track if more than 3s elapsed" behaviour.
+    /// Restarts current track if more than 3s in, else goes back one.
     pub async fn prev_track(self: &Arc<Self>) -> Result<(), Error> {
         let (queue_len, current_pos, position, repeat) = {
             let state = self.state.read().await;
@@ -613,8 +534,6 @@ impl DaemonCore {
                 if pos > 0 {
                     return self.play_queue_position(pos - 1).await;
                 }
-                // At track 0: wrap to last track if repeat=All/One,
-                // otherwise restart current.
                 if let Some(wrap_to) = repeat.prev_wrap(queue_len) {
                     return self.play_queue_position(wrap_to).await;
                 }
@@ -629,7 +548,6 @@ impl DaemonCore {
             }
             return Ok(());
         }
-        // Restart current track from 0
         let mut mpv = self.mpv.lock().await;
         if let Err(e) = mpv.seek(0.0).await {
             error!("Failed to restart track: {}", e);
@@ -641,9 +559,6 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Load and play the song at queue position `pos`. Replaces mpv's
-    /// playlist. Updates now_playing, queue_position. Preloads the next
-    /// track for gapless playback.
     pub async fn play_queue_position(self: &Arc<Self>, pos: usize) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let song = {
@@ -705,10 +620,8 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Pre-load the auto-advance target into mpv's playlist for
-    /// gapless playback. The target depends on the repeat mode:
-    /// `One` re-loads the current song; `All` wraps at queue end;
-    /// `Off` preloads the next song or nothing at the end.
+    /// Repeat-aware: loads current for One, wraps for All, no-ops
+    /// at the end for Off.
     pub async fn preload_next_track(self: &Arc<Self>, current_pos: usize) {
         let next_song = {
             let state = self.state.read().await;
@@ -744,7 +657,6 @@ impl DaemonCore {
         }
     }
 
-    /// Stop playback and clear the queue.
     pub async fn stop_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         {
@@ -770,9 +682,7 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Stop mpv and clear now-playing, but leave the queue intact. Used
-    /// when removing the currently-playing entry from a queue that
-    /// otherwise still has songs.
+    /// Stop mpv without touching the queue.
     pub async fn halt_keep_queue(self: &Arc<Self>) {
         use crate::app::state::PlaybackState;
         {
@@ -795,8 +705,6 @@ impl DaemonCore {
         self.emit_now_playing().await;
     }
 
-    /// Direct mpv seek by absolute position in seconds. Updates now_playing
-    /// position on success.
     pub async fn seek(self: &Arc<Self>, pos: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         if let Err(e) = mpv.seek(pos).await {
@@ -809,24 +717,20 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Direct mpv seek by relative offset.
     pub async fn seek_relative(self: &Arc<Self>, offset: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.seek_relative(offset).await;
         Ok(())
     }
 
-    /// Set mpv volume (0-100).
     pub async fn set_volume(self: &Arc<Self>, vol: i32) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.set_volume(vol).await;
         Ok(())
     }
 
-    /// Periodic poll: detect track advancement, update position and audio
-    /// properties, drive PipeWire sample-rate switching, emit events. Called
-    /// every 500ms by `App::event_loop` (phase 2.2c moves this to a
-    /// `tokio::spawn`'d task on the core itself).
+    /// Periodic poll (500ms): detect track advance, update position +
+    /// audio properties, drive PipeWire rate switching, emit events.
     pub async fn update_playback_info(self: &Arc<Self>) {
         use crate::app::state::PlaybackState;
 
@@ -848,7 +752,6 @@ impl DaemonCore {
         }
 
         if is_playing {
-            // Early advance: near end of track with no preloaded next.
             let (time_remaining, has_next) = {
                 let state = self.state.read().await;
                 let tr = state.now_playing.duration - state.now_playing.position;
@@ -873,7 +776,6 @@ impl DaemonCore {
                 }
             }
 
-            // Re-preload if mpv lost the appended track.
             let count_opt = {
                 let mut mpv = self.mpv.lock().await;
                 mpv.get_playlist_count().await.ok()
@@ -885,14 +787,10 @@ impl DaemonCore {
                 };
                 if let Some(pos) = cur_pos_opt {
                     debug!("Playlist count is 1, re-preloading next track");
-                    // preload_next_track is repeat-aware; if there's
-                    // no auto-advance target (queue end, repeat=Off)
-                    // it no-ops.
                     self.preload_next_track(pos).await;
                 }
             }
 
-            // Detect mpv's gapless advance to next track.
             let mpv_pos_opt = {
                 let mut mpv = self.mpv.lock().await;
                 mpv.get_playlist_pos().await.ok().flatten()
@@ -927,7 +825,6 @@ impl DaemonCore {
                 }
             }
 
-            // Track ended with no preload.
             let idle_opt = {
                 let mut mpv = self.mpv.lock().await;
                 mpv.is_idle().await.ok()
@@ -939,7 +836,6 @@ impl DaemonCore {
             }
         }
 
-        // Update position from mpv.
         let pos_opt = {
             let mut mpv = self.mpv.lock().await;
             mpv.get_time_pos().await.ok()
@@ -947,13 +843,10 @@ impl DaemonCore {
         if let Some(position) = pos_opt {
             let mut state = self.state.write().await;
             state.now_playing.position = position;
-            // Position-only update broadcasts cheaply via PositionTick;
-            // skip full NowPlayingChanged here to avoid re-render storm.
             drop(state);
             self.emit(DaemonEvent::PositionTick(position));
         }
 
-        // Pull duration if not set yet.
         let need_duration = {
             let state = self.state.read().await;
             state.now_playing.duration <= 0.0
@@ -971,7 +864,7 @@ impl DaemonCore {
             }
         }
 
-        // Pull audio properties — keep polling until valid.
+        // Audio properties: poll each tick until mpv returns valid values.
         let need_sr = {
             let state = self.state.read().await;
             state.now_playing.sample_rate.is_none()
@@ -1012,21 +905,13 @@ impl DaemonCore {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Queue ops (for IPC EnqueueSongs / RemoveFromQueue / ClearQueue / ShuffleQueue).
-// The phase 2.4 input handlers route here through `DaemonClient::request`.
-// ─────────────────────────────────────────────────────────────────────────
-
 impl DaemonCore {
-    /// Public emit hook for external mutators (e.g., `InProcessClient`
-    /// after a queue rewrite that touches `state.queue` directly).
     pub async fn broadcast_queue_changed(self: &Arc<Self>) {
         self.emit_queue().await;
     }
 
-    /// Move a queue item from `from` to `to`. Adjusts `queue_position`
-    /// so the currently-playing track continues to refer to the same
-    /// song after the reorder. No-op if either index is out of range.
+    /// Reorder; `queue_position` is adjusted to keep pointing at the
+    /// same song.
     pub async fn move_queue_item(self: &Arc<Self>, from: usize, to: usize) {
         let mut state = self.state.write().await;
         let len = state.queue.len();
@@ -1051,9 +936,7 @@ impl DaemonCore {
         self.emit_queue().await;
     }
 
-    /// Drain queue entries [0..queue_position]. Used by the "clear
-    /// history" key in the queue page. After this call, `queue_position`
-    /// becomes 0 (the currently-playing song is at the front).
+    /// Drain entries before `queue_position`. Returns count removed.
     pub async fn clear_queue_history(self: &Arc<Self>) -> usize {
         let mut state = self.state.write().await;
         let Some(pos) = state.queue_position else {
@@ -1070,9 +953,6 @@ impl DaemonCore {
         removed
     }
 
-    /// Fetch a fresh random-songs roll from the server and replace the
-    /// queue with it, starting playback at index 0. No-op when not
-    /// configured or the fetch fails.
     pub async fn shuffle_library(self: &Arc<Self>) -> Result<(), Error> {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Ok(());
@@ -1100,13 +980,10 @@ impl DaemonCore {
         self.play_queue_position(0).await
     }
 
-    /// Shuffle the queue, preserving the currently-playing track at its
-    /// position. No-op on an empty queue.
+    /// Shuffle preserving the currently-playing track in place.
     pub async fn shuffle_queue(self: &Arc<Self>) {
         use rand::seq::SliceRandom;
-        // Scope the !Send `thread_rng` so it's dropped before the
-        // `emit_queue().await` below; otherwise the resulting future
-        // is !Send and the broadcast server can't spawn it.
+        // Scope `thread_rng` (!Send) out of the await below.
         {
             let mut state = self.state.write().await;
             if state.queue.is_empty() {
@@ -1126,14 +1003,7 @@ impl DaemonCore {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Library lazy-load methods that return their data inline (for IPC
-// LoadAlbum / LoadPlaylist), as opposed to caching it like load_artist.
-// ─────────────────────────────────────────────────────────────────────────
-
 impl DaemonCore {
-    /// Fetch the songs for an album. Empty `Vec` if not configured or
-    /// fetch fails (the error is logged and pushed as a notification).
     pub async fn load_album_songs(self: &Arc<Self>, album_id: &str) -> Vec<crate::subsonic::models::Child> {
         let Some(client) = self.subsonic.read().await.clone() else { return Vec::new(); };
         match client.get_album(album_id).await {
@@ -1164,10 +1034,6 @@ impl DaemonCore {
         }
     }
 
-    /// Server-side search across artists, albums, and songs via the
-    /// Subsonic `search3` endpoint. Returns an empty result on error
-    /// or when unconfigured (logged, no notification — the TUI shows
-    /// "no matches" naturally).
     pub async fn search(
         self: &Arc<Self>,
         query: &str,
@@ -1190,8 +1056,6 @@ impl DaemonCore {
         }
     }
 
-    /// Fetch the songs for a playlist. Empty `Vec` if not configured or
-    /// fetch fails (the error is logged and pushed as a notification).
     pub async fn load_playlist_songs(self: &Arc<Self>, playlist_id: &str) -> Vec<crate::subsonic::models::Child> {
         let Some(client) = self.subsonic.read().await.clone() else { return Vec::new(); };
         match client.get_playlist(playlist_id).await {
@@ -1223,14 +1087,7 @@ impl DaemonCore {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Config / settings: server, theme, cava. Each persists the config file
-// and emits a `ConfigChanged` event so subscribers refresh their views.
-// ─────────────────────────────────────────────────────────────────────────
-
 impl DaemonCore {
-    /// Replace the Subsonic server config and persist. Reinitialises the
-    /// `SubsonicClient` and triggers the standard initial-data refresh.
     pub async fn update_server_config(
         self: &Arc<Self>,
         base_url: &str,
@@ -1245,12 +1102,10 @@ impl DaemonCore {
             state.config.save_default().map_err(Error::Config)?;
         }
 
-        // Build a fresh client and stash it.
         let new_client = SubsonicClient::new(base_url, username, password)
             .map_err(Error::Subsonic)?;
         *self.subsonic.write().await = Some(new_client);
 
-        // Refetch initial data on the new server.
         self.refresh_starred().await;
         self.refresh_artists().await;
         self.refresh_playlists().await;
@@ -1259,8 +1114,6 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Test a candidate Subsonic server config without persisting.
-    /// Returns `(ok, message)` for display in the Server page status.
     pub async fn test_server_connection(
         self: &Arc<Self>,
         base_url: &str,
@@ -1276,7 +1129,6 @@ impl DaemonCore {
         }
     }
 
-    /// Set the active theme by name and persist.
     pub async fn set_theme(self: &Arc<Self>, name: &str) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -1290,7 +1142,6 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Enable/disable cava and persist.
     pub async fn set_cava_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -1304,9 +1155,7 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Persist the daemon-mode preference. The setting controls whether
-    /// the *next* TUI launch will attempt to spawn/connect a daemon;
-    /// it does not affect the currently-running daemon.
+    /// Takes effect on the next TUI launch.
     pub async fn set_daemon_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -1320,9 +1169,6 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Persist the auto-continue preference. Daemon checks this when
-    /// the queue ends; if `true`, it fetches a fresh random batch and
-    /// keeps playing.
     pub async fn set_auto_continue(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -1333,9 +1179,8 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Persist the repeat mode. Re-preloads the auto-advance target so
-    /// the gapless pipeline picks up the new mode at the next track
-    /// boundary without waiting for a track change.
+    /// Re-preloads the new auto-advance target so gapless picks up
+    /// the mode change at the next track boundary.
     pub async fn set_repeat_mode(self: &Arc<Self>, mode: crate::config::RepeatMode) -> Result<(), Error> {
         let cur_pos = {
             let mut state = self.state.write().await;
@@ -1346,8 +1191,6 @@ impl DaemonCore {
         self.emit(DaemonEvent::RepeatModeChanged(mode));
         self.emit_config_changed().await;
         if let Some(pos) = cur_pos {
-            // Clear any previously-appended track so the next preload
-            // call writes the new target (same song for One, etc.).
             let mut mpv = self.mpv.lock().await;
             if let Ok(count) = mpv.get_playlist_count().await {
                 if count > 1 {
@@ -1360,7 +1203,6 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Persist the cover-art display preference.
     pub async fn set_cover_art_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -1371,10 +1213,7 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Fetch cover-art bytes for the given `coverArt` id. Cached per
-    /// (id, size) so repeated requests don't re-hit the server.
-    /// Returns empty on error so the TUI just renders no art instead
-    /// of bubbling an error through the protocol.
+    /// Returns empty on error so the caller renders no art.
     pub async fn get_cover_art(self: &Arc<Self>, id: &str, size: u32) -> Vec<u8> {
         let key = format!("{}@{}", id, size);
         {
@@ -1389,8 +1228,6 @@ impl DaemonCore {
         match client.get_cover_art(id, size).await {
             Ok(bytes) => {
                 let mut cache = self.cover_art_cache.write().await;
-                // Bound the cache; drop one random entry past 64 to keep
-                // memory predictable.
                 if cache.len() >= 64 {
                     if let Some(k) = cache.keys().next().cloned() {
                         cache.remove(&k);
@@ -1406,7 +1243,6 @@ impl DaemonCore {
         }
     }
 
-    /// Set cava size (10..=80) and persist.
     pub async fn set_cava_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
         let clamped = size.clamp(10, 80);
         {

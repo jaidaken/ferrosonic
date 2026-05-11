@@ -15,28 +15,23 @@ use ferrosonic::ipc::SocketClient;
 
 const DAEMON_SPAWN_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Ferrosonic - Terminal Subsonic Music Client
 #[derive(Parser, Debug)]
 #[command(name = "ferrosonic")]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Path to config file
     #[arg(short, long, value_name = "FILE")]
     config: Option<PathBuf>,
 
-    /// Enable verbose/debug logging
     #[arg(short, long)]
     verbose: bool,
 
-    /// Force in-process mode — don't try to connect to ferrosonicd.
-    /// Useful for testing or when a daemon connection is undesirable.
+    /// Skip ferrosonicd auto-spawn / connect; run in-process.
     #[arg(long)]
     standalone: bool,
 }
 
-/// Initialize file-based logging. Returns the worker guard which must
-/// be held for the duration of the program — dropping it shuts down
-/// the writer task and any in-flight log lines are lost.
+/// Returned guard must outlive the program; dropping it ends the
+/// non-blocking writer task.
 fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let log_dir = config_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
     if let Err(e) = fs::create_dir_all(&log_dir) {
@@ -76,8 +71,8 @@ fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerG
     Some(guard)
 }
 
-/// Restore the terminal on panic and log the panic location so the user
-/// isn't left in raw mode + alt screen + mouse-capture after a crash.
+/// Restore the terminal on panic so the user isn't left in raw mode
+/// after a crash.
 fn install_panic_hook() {
     let prev = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

@@ -1,20 +1,6 @@
-//! Client interface for talking to the daemon.
-//!
-//! Implementations:
-//! - [`InProcessClient`] — dispatches directly to an `Arc<DaemonCore>`.
-//!   Used by the single-binary build today and the in-tree tests.
-//! - `SocketClient` (phase 4) — round-trips requests over a Unix domain
-//!   socket. Same trait, no call-site changes when phase 5 splits the
-//!   binaries.
-//!
-//! Why a trait at all, this early? The TUI's input/mouse handlers need
-//! to call into the daemon thousands of times. By going through this
-//! trait now (phase 2.3) we can swap in `SocketClient` in phase 4
-//! without touching any handler. The cost is one async-fn-in-trait
-//! indirection per call, which is negligible compared to the network
-//! round-trip the socket version will introduce.
+//! `DaemonClient` trait + `InProcessClient` dispatch.
 
-#![allow(dead_code)] // wired into App in phase 2.4
+#![allow(dead_code)]
 
 use std::sync::Arc;
 
@@ -27,30 +13,15 @@ use crate::ipc::protocol::{
     DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError,
 };
 
-/// The TUI client's view of the daemon. Every command goes through
-/// `request`, every state-change subscription through `subscribe`.
-///
-/// Implementations must be `Send + Sync` so the trait can be stored
-/// behind an `Arc<dyn DaemonClient>` and shared across spawned tasks.
+/// TUI's view of the daemon: every command via `request`, every state
+/// subscription via `subscribe`.
 #[async_trait]
 pub trait DaemonClient: Send + Sync {
-    /// Send a command to the daemon and await its reply.
     async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError>;
-
-    /// Subscribe to the daemon's event broadcast. The returned receiver
-    /// observes every event from the moment of subscription onward.
-    /// Slow consumers may see `RecvError::Lagged`; they should drop the
-    /// receiver and resubscribe (which the upcoming `event_pump` task in
-    /// `App` does automatically).
+    /// Slow consumers may see `RecvError::Lagged`; resubscribe in that case.
     fn subscribe(&self) -> broadcast::Receiver<DaemonEvent>;
 }
 
-/// In-process implementation: a thin dispatch layer over `DaemonCore`.
-///
-/// All requests run on the caller's task — there is no message queue or
-/// background worker. This matches today's single-binary architecture
-/// exactly; the trait boundary exists so that phase 4's `SocketClient`
-/// can drop in without changing any handler.
 pub struct InProcessClient {
     core: Arc<DaemonCore>,
 }
@@ -60,9 +31,6 @@ impl InProcessClient {
         Self { core }
     }
 
-    /// Underlying core access. Phase 2 only — call sites that still
-    /// need direct core access during the migration use this. Phase 6
-    /// removes it; everything must go through `request()`/`subscribe()`.
     pub fn core(&self) -> &Arc<DaemonCore> {
         &self.core
     }
@@ -72,7 +40,6 @@ impl InProcessClient {
 impl DaemonClient for InProcessClient {
     async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError> {
         match req {
-            // ── Audio control ───────────────────────────────────────
             DaemonRequest::Pause => {
                 self.core.pause_playback().await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
@@ -110,7 +77,6 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Ok)
             }
 
-            // ── Queue operations ────────────────────────────────────
             DaemonRequest::EnqueueSongs { songs, mode } => {
                 self.enqueue_songs(songs, mode).await
             }
@@ -139,11 +105,8 @@ impl DaemonClient for InProcessClient {
                 }
                 if was_playing {
                     if pos < new_len {
-                        // Successor slid into the same index — play it.
                         self.core.play_queue_position(pos).await.map_err(err)?;
                     } else {
-                        // Removed the last song; stop mpv but keep the
-                        // remaining (now shorter) queue.
                         self.core.halt_keep_queue().await;
                         self.core.broadcast_queue_changed().await;
                     }
@@ -173,7 +136,6 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::HistoryCleared(removed))
             }
 
-            // ── Library operations ──────────────────────────────────
             DaemonRequest::RefreshStarred => {
                 self.core.refresh_starred().await;
                 Ok(DaemonResponse::Ok)
@@ -226,7 +188,6 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::SearchResults(results))
             }
 
-            // ── Config operations ───────────────────────────────────
             DaemonRequest::UpdateServerConfig {
                 base_url,
                 username,
@@ -282,11 +243,7 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::CoverArt(bytes))
             }
 
-            // ── Lifecycle ───────────────────────────────────────────
             DaemonRequest::Subscribe => {
-                // Subscription is via the separate `subscribe()` trait
-                // method, not the request channel. A spurious
-                // `Subscribe` request here is a no-op for back-compat.
                 warn!("Subscribe sent as request; use DaemonClient::subscribe instead");
                 Ok(DaemonResponse::Ok)
             }
@@ -347,9 +304,6 @@ impl InProcessClient {
     }
 }
 
-/// Convert a domain error into an `IpcError`. In-process the original
-/// `crate::error::Error` collapses into a string; phase 4's socket path
-/// will preserve more structure on the wire.
 fn err(e: crate::error::Error) -> IpcError {
     IpcError::Daemon(e.to_string())
 }
