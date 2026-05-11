@@ -2,6 +2,7 @@
 
 pub mod cava;
 pub mod client_state;
+pub mod event_source;
 mod input;
 mod input_library;
 mod input_playlists;
@@ -20,7 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture},
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -407,15 +408,28 @@ impl App {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<(), Error> {
+        let mut source = event_source::CrosstermEventSource;
+        self.run_with_source(terminal, &mut source).await
+    }
+
+    /// Generic loop: any Backend + any EventSource. Tests use TestBackend + ChannelEventSource.
+    pub async fn run_with_source<B, E>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+        source: &mut E,
+    ) -> Result<(), Error>
+    where
+        B: ratatui::backend::Backend,
+        E: event_source::EventSource,
+    {
         loop {
             let tick_rate = self.tick_rate();
             self.draw_once(terminal).await?;
             if self.should_quit().await {
                 break;
             }
-            if event::poll(tick_rate).map_err(UiError::Input)? {
-                let event = event::read().map_err(UiError::Input)?;
-                self.handle_event(event).await?;
+            if let Some(ev) = source.next(tick_rate).await {
+                self.handle_event(ev).await?;
             }
             self.read_cava_output().await;
             self.tick_post().await;
