@@ -19,7 +19,7 @@ use crate::subsonic::models::Child;
 const API_VERSION: &str = "1.16.1";
 const CLIENT_NAME: &str = "ferrosonic";
 
-fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String> {
+pub fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String> {
     if config.base_url.is_empty() || cover_art_id.is_empty() {
         return None;
     }
