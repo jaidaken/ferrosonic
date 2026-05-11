@@ -169,6 +169,28 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_error(&self, endpoint: &str, code: i32, message: &str) {
+        Mock::given(method("GET"))
+            .and(path(format!("/rest/{}", endpoint)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "subsonic-response": {
+                    "status": "failed",
+                    "version": "1.16.1",
+                    "error": { "code": code, "message": message }
+                }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_http_status(&self, endpoint: &str, status: u16) {
+        Mock::given(method("GET"))
+            .and(path(format!("/rest/{}", endpoint)))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_stream_for(&self, song_id: &str, body: Vec<u8>) {
         Mock::given(method("GET"))
             .and(path("/rest/stream"))
