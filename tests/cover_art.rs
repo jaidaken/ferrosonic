@@ -78,6 +78,25 @@ fn load_without_picker_clears_state() {
 }
 
 #[test]
+fn render_with_image_into_test_buffer_writes_cells() {
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+    use ratatui::Terminal;
+    use std::sync::Mutex;
+    let mut state = build_state_with_picker();
+    state.load("abc".into(), &tiny_png());
+    let mutex = Mutex::new(state);
+
+    let backend = TestBackend::new(40, 20);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| {
+            ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 10, 10), &mutex);
+        })
+        .unwrap();
+}
+
+#[test]
 fn clear_resets_all_image_state() {
     let mut state = build_state_with_picker();
     state.load("abc".into(), &tiny_png());
