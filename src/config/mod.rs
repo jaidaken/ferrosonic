@@ -298,10 +298,17 @@ impl Config {
         }
 
         let contents = toml::to_string_pretty(self)?;
-        // Write-temp-then-rename so a crash mid-write cannot leave a
-        // truncated config.toml and wipe the user's credentials.
         let tmp = path.with_extension("toml.tmp");
-        std::fs::write(&tmp, contents)?;
+        // sync_all so a crash between write and rename cannot lose data even though rename itself is atomic.
+        use std::io::Write as _;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&tmp)?;
+        f.write_all(contents.as_bytes())?;
+        f.sync_all()?;
+        drop(f);
         std::fs::rename(&tmp, path)?;
 
         info!("Config saved to {}", path.display());
@@ -353,16 +360,14 @@ pub fn write_password_file_atomic(
         }
     }
     let tmp = p.with_extension("tmp");
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(&tmp)?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true).write(true).truncate(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
     }
+    let mut f = opts.open(&tmp)?;
     f.write_all(password.as_bytes())?;
     f.write_all(b"\n")?;
     f.sync_all()?;

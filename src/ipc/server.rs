@@ -42,41 +42,35 @@ async fn try_send_resync(
     matches!(tx.try_send(queue), Ok(()))
 }
 
-/// Replace plaintext password/secret values in a JSON-ish body string
-/// with `***` before logging. Conservative: any key containing
-/// "password" or "secret" gets its quoted-string value redacted.
+/// Mask password/secret values via serde_json round-trip; on parse failure returns a placeholder so a malformed body containing a password is never logged raw.
 fn redact_secrets_in_body(body: &str) -> String {
-    let mut out = String::with_capacity(body.len());
-    let bytes = body.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let rest = &body[i..];
-        let maybe = ["password", "Password", "secret", "Secret"]
-            .iter()
-            .find_map(|key| rest.find(key).map(|p| (p, key.len())));
-        let Some((rel_pos, key_len)) = maybe else {
-            out.push_str(rest);
-            break;
-        };
-        out.push_str(&rest[..rel_pos + key_len]);
-        let after = &rest[rel_pos + key_len..];
-        if let Some(colon) = after.find(':') {
-            out.push_str(&after[..=colon]);
-            let val = &after[colon + 1..];
-            let trimmed = val.trim_start();
-            let leading = val.len() - trimmed.len();
-            out.push_str(&val[..leading]);
-            if trimmed.starts_with('"') {
-                if let Some(end) = trimmed[1..].find('"') {
-                    out.push_str("\"***\"");
-                    i += rel_pos + key_len + colon + 1 + leading + 1 + end + 1;
-                    continue;
+    let mut val: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => return "<unparseable; redacted>".to_string(),
+    };
+    redact_in_value(&mut val);
+    serde_json::to_string(&val).unwrap_or_else(|_| "<reserialize-failed; redacted>".to_string())
+}
+
+fn redact_in_value(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(map) => {
+            for (k, vv) in map.iter_mut() {
+                let lower = k.to_ascii_lowercase();
+                if lower.contains("password") || lower.contains("secret") {
+                    *vv = serde_json::Value::String("***".to_string());
+                } else {
+                    redact_in_value(vv);
                 }
             }
         }
-        i += rel_pos + key_len;
+        serde_json::Value::Array(arr) => {
+            for it in arr.iter_mut() {
+                redact_in_value(it);
+            }
+        }
+        _ => {}
     }
-    out
 }
 
 /// `Err` only on bind failure; per-connection errors are logged.
@@ -180,16 +174,22 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
     let event_core = core.clone();
     let event_task = tokio::spawn(async move {
         use tokio::sync::mpsc::error::TrySendError;
-        // try_send so a frozen TUI cannot block the broadcast pump.
-        // On Full or Lagged we set needs_resync, then deliver a single
-        // snapshot pair the next time the channel has room.
         let mut needs_resync = false;
+        let mut last_resync_at: Option<std::time::Instant> = None;
         loop {
             match events.recv().await {
                 Ok(ev) => match event_writer_tx.try_send(Frame::Event(ev)) {
                     Ok(()) => {
                         if needs_resync {
-                            needs_resync = !try_send_resync(&event_writer_tx, &event_core).await;
+                            let due = last_resync_at
+                                .map(|t| t.elapsed() >= std::time::Duration::from_millis(500))
+                                .unwrap_or(true);
+                            if due
+                                && try_send_resync(&event_writer_tx, &event_core).await
+                            {
+                                needs_resync = false;
+                                last_resync_at = Some(std::time::Instant::now());
+                            }
                         }
                     }
                     Err(TrySendError::Full(_)) => {

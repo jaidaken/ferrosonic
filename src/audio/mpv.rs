@@ -256,12 +256,12 @@ impl MpvController {
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(request_id, tx);
 
+        if self.writer.is_none() {
+            self.pending.lock().await.remove(&request_id);
+            return Err(AudioError::MpvNotRunning);
+        }
         {
-            let writer = self.writer.as_mut().ok_or_else(|| {
-                // Drop the pending entry so the reader task doesn't sit
-                // on a dead oneshot.
-                AudioError::MpvNotRunning
-            })?;
+            let writer = self.writer.as_mut().expect("checked Some above");
             if let Err(e) = writer.write_all(&json).await {
                 self.pending.lock().await.remove(&request_id);
                 return Err(AudioError::MpvIpc(e.to_string()));

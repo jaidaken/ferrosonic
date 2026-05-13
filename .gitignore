@@ -24,3 +24,6 @@ Thumbs.db
 
 # Config (may contain credentials)
 config.toml
+
+# rust-audit hook marker (per-checkout)
+.rust-audit-marker

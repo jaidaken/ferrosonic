@@ -263,12 +263,11 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::FetchCoverArt { id, size } => {
-                // Clamp size and bound id length so a hostile peer
-                // cannot ask for a 4 GB image or pump a huge id into
-                // the upstream URL.
                 const MAX_SIZE: u32 = 2048;
                 const MAX_ID_LEN: usize = 256;
-                if id.len() > MAX_ID_LEN {
+                if id.len() > MAX_ID_LEN
+                    || id.chars().any(|c| matches!(c, '/' | '?' | '#' | '\\') || c.is_control())
+                {
                     return Ok(DaemonResponse::CoverArt(Vec::new()));
                 }
                 let size = size.min(MAX_SIZE).max(1);
@@ -289,7 +288,11 @@ impl DaemonClient for InProcessClient {
                     .core
                     .event_tx
                     .send(crate::ipc::DaemonEvent::Shutdown);
-                self.core.quit_mpv().await;
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    self.core.quit_mpv(),
+                )
+                .await;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::Ping => Ok(DaemonResponse::Pong),

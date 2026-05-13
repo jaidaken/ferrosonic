@@ -606,11 +606,16 @@ pub async fn apply_event(
             }
             if cover_art_enabled {
                 if let Some(id) = new_cover_id {
-                    let already_loaded = {
-                        let guard = cover_art.lock().expect("cover_art poisoned");
-                        guard.current_id.as_deref() == Some(id.as_str())
+                    let should_fetch = {
+                        let mut guard = cover_art.lock().expect("cover_art poisoned");
+                        if guard.current_id.as_deref() == Some(id.as_str()) {
+                            false
+                        } else {
+                            guard.set_pending(id.clone());
+                            true
+                        }
                     };
-                    if !already_loaded {
+                    if should_fetch {
                         info!("Fetching cover art id={}", id);
                         match client
                             .request(DaemonRequest::FetchCoverArt {
@@ -705,11 +710,25 @@ pub async fn apply_event(
         }
         DaemonEvent::AlbumsChanged { artist_id, albums } => {
             let mut ds = daemon_state.write().await;
-            ds.library.albums_cache.insert(artist_id, albums);
+            let lib = &mut ds.library;
+            crate::daemon::library::cache_insert(
+                &mut lib.albums_cache,
+                &mut lib.albums_cache_order,
+                artist_id,
+                albums,
+                crate::daemon::library::ALBUMS_CACHE_CAP,
+            );
         }
         DaemonEvent::AlbumSongsChanged { album_id, songs } => {
             let mut ds = daemon_state.write().await;
-            ds.library.album_songs_cache.insert(album_id, songs);
+            let lib = &mut ds.library;
+            crate::daemon::library::cache_insert(
+                &mut lib.album_songs_cache,
+                &mut lib.album_songs_cache_order,
+                album_id,
+                songs,
+                crate::daemon::library::ALBUM_SONGS_CACHE_CAP,
+            );
         }
         DaemonEvent::PlaylistsChanged(playlists) => {
             let mut ds = daemon_state.write().await;
@@ -717,7 +736,14 @@ pub async fn apply_event(
         }
         DaemonEvent::PlaylistSongsChanged { playlist_id, songs } => {
             let mut ds = daemon_state.write().await;
-            ds.library.playlist_songs_cache.insert(playlist_id, songs);
+            let lib = &mut ds.library;
+            crate::daemon::library::cache_insert(
+                &mut lib.playlist_songs_cache,
+                &mut lib.playlist_songs_cache_order,
+                playlist_id,
+                songs,
+                crate::daemon::library::PLAYLIST_SONGS_CACHE_CAP,
+            );
         }
         DaemonEvent::Notification { message, is_error } => {
             let mut cs = client_state.write().await;

@@ -32,6 +32,28 @@ pub enum PlayMode {
 
 const EVENT_CHANNEL_CAPACITY: usize = 32;
 
+/// Drop clears prebuffer_loading if dispatch_play is cancelled before the spawn task takes over.
+struct LoadingFlagOwner {
+    flag: Option<Arc<AtomicBool>>,
+}
+
+impl LoadingFlagOwner {
+    fn new(flag: Arc<AtomicBool>) -> Self {
+        Self { flag: Some(flag) }
+    }
+    fn disarm(&mut self) {
+        self.flag = None;
+    }
+}
+
+impl Drop for LoadingFlagOwner {
+    fn drop(&mut self) {
+        if let Some(f) = self.flag.take() {
+            f.store(false, Ordering::Release);
+        }
+    }
+}
+
 /// RAII clear for `prebuffer_loading`. Drop clears the flag unless
 /// `disarm()` was called (cancel paths leave the gate to a newer task).
 struct PrebufferGate {
@@ -56,6 +78,44 @@ impl Drop for PrebufferGate {
         if self.armed.get() {
             self.flag.store(false, Ordering::Release);
         }
+    }
+}
+
+/// Drop-time cleanup of this task's slot in prebuffer_cancel; spawns a tiny task to take the async mutex.
+struct CancelSlotCleaner {
+    core: Arc<DaemonCore>,
+    own: Arc<AtomicBool>,
+    armed: std::cell::Cell<bool>,
+}
+
+impl CancelSlotCleaner {
+    fn new(core: Arc<DaemonCore>, own: Arc<AtomicBool>) -> Self {
+        Self {
+            core,
+            own,
+            armed: std::cell::Cell::new(true),
+        }
+    }
+    fn disarm(&self) {
+        self.armed.set(false);
+    }
+}
+
+impl Drop for CancelSlotCleaner {
+    fn drop(&mut self) {
+        if !self.armed.get() {
+            return;
+        }
+        let core = self.core.clone();
+        let own = self.own.clone();
+        tokio::spawn(async move {
+            let mut slot = core.prebuffer_cancel.lock().await;
+            if let Some(current) = slot.as_ref() {
+                if Arc::ptr_eq(current, &own) {
+                    *slot = None;
+                }
+            }
+        });
     }
 }
 
@@ -98,6 +158,8 @@ pub struct DaemonCore {
     shutdown_notify: tokio::sync::Notify,
     /// Bumped on each library refresh; LibraryVersionChanged carries it for pull-style clients.
     library_version: std::sync::atomic::AtomicU64,
+    /// Throttles repeat preload attempts when network keeps failing; 5s backoff.
+    last_preload_attempt: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 impl DaemonCore {
@@ -142,6 +204,7 @@ impl DaemonCore {
             shutdown: std::sync::atomic::AtomicBool::new(false),
             shutdown_notify: tokio::sync::Notify::new(),
             library_version: std::sync::atomic::AtomicU64::new(0),
+            last_preload_attempt: std::sync::Mutex::new(None),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -213,9 +276,18 @@ impl DaemonCore {
         mut rx: tokio::sync::mpsc::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            while rx.recv().await.is_some() {
+            loop {
+                tokio::select! {
+                    _ = self.shutdown_signal() => return,
+                    next = rx.recv() => {
+                        if next.is_none() { return; }
+                    }
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                while rx.try_recv().is_ok() {} // coalesce burst
+                while rx.try_recv().is_ok() {}
+                if self.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+                    return;
+                }
                 let snap = {
                     let s = self.state.read().await;
                     QueueSnapshot {
@@ -247,14 +319,35 @@ impl DaemonCore {
                 }
                 let ev = match rx.recv().await {
                     Ok(e) => e,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        warn!("mpv event listener lagged; probing idle state");
+                        if let Ok(true) = core.mpv.lock().await.is_idle().await {
+                            let _ = core.advance_auto().await;
+                        }
+                        continue;
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                 };
                 if let MpvEventKind::EndFile { reason } = ev {
-                    if reason == "eof" {
-                        debug!("mpv end-file (eof); advancing");
-                        let _ = core.advance_auto().await;
+                    if reason != "eof" {
+                        continue;
                     }
+                    if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+                        return;
+                    }
+                    let count = core
+                        .mpv
+                        .lock()
+                        .await
+                        .get_playlist_count()
+                        .await
+                        .unwrap_or(0);
+                    if count >= 2 {
+                        debug!("end-file eof during gapless preload; poll owns advance");
+                        continue;
+                    }
+                    debug!("mpv end-file (eof) with no preload; advancing");
+                    let _ = core.advance_auto().await;
                 }
             }
         })
@@ -276,8 +369,12 @@ impl DaemonCore {
             watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
+                    _ = core.shutdown_signal() => return,
                     _ = tick.tick() => core.update_playback_info().await,
                     _ = watchdog.tick() => {
+                        if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+                            return;
+                        }
                         let dead = !core.mpv.lock().await.is_running();
                         if dead {
                             warn!("mpv backend gone, respawning");
@@ -621,7 +718,7 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Manual skip. Ignores `repeat=One` (user wants to move).
+    /// Manual skip. Ignores `repeat=One` (user wants to move). rust-audit: skip
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
@@ -644,35 +741,8 @@ impl DaemonCore {
             return self.play_queue_position(p, PlayMode::Direct).await;
         }
         if auto_continue {
-            info!("Queue ended, auto-continuing with random songs");
-            if let Some(client) = self.subsonic.read().await.clone() {
-                match client.get_random_songs().await {
-                    Ok(songs) if !songs.is_empty() => {
-                        let start_pos;
-                        {
-                            let mut state = self.state.write().await;
-                            start_pos = state.queue.len();
-                            state.queue.extend(songs);
-                        }
-                        self.emit_queue().await;
-                        return self
-                            .play_queue_position(start_pos, PlayMode::Buffered)
-                            .await;
-                    }
-                    Ok(_) => {
-                        self.emit(DaemonEvent::Notification {
-                            message: "Auto-continue: server returned no songs".to_string(),
-                            is_error: true,
-                        });
-                    }
-                    Err(e) => {
-                        error!("Auto-continue fetch failed: {}", e);
-                        self.emit(DaemonEvent::Notification {
-                            message: format!("Auto-continue failed: {}", e),
-                            is_error: true,
-                        });
-                    }
-                }
+            if self.extend_with_random_and_play().await? {
+                return Ok(());
             }
         }
         info!("Reached end of queue");
@@ -687,7 +757,51 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Auto-end advance. Honours `repeat=One` and `repeat=All`.
+    /// Fetch random songs, extend queue and play first new track under one write lock so another client cannot mutate the queue between extend and play_from index.
+    async fn extend_with_random_and_play(self: &Arc<Self>) -> Result<bool, Error> {
+        info!("Queue ended, auto-continuing with random songs");
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Ok(false);
+        };
+        let songs = match client.get_random_songs().await {
+            Ok(s) if !s.is_empty() => s,
+            Ok(_) => {
+                self.emit(DaemonEvent::Notification {
+                    message: "Auto-continue: server returned no songs".to_string(),
+                    is_error: true,
+                });
+                return Ok(false);
+            }
+            Err(e) => {
+                error!("Auto-continue fetch failed: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Auto-continue failed: {}", e),
+                    is_error: true,
+                });
+                return Ok(false);
+            }
+        };
+        let prepared = {
+            let mut state = self.state.write().await;
+            let start_pos = state.queue.len();
+            state.queue.extend(songs);
+            self.commit_play_state_in_lock(&mut state, &client, start_pos)
+                .ok()
+                .map(|(s, u)| (s, u, start_pos))
+        };
+        self.broadcast_queue_changed().await;
+        let Some((song, stream_url, idx)) = prepared else {
+            return Ok(false);
+        };
+        info!("Playing: {} (queue pos {}) mode=Buffered", song.title, idx);
+        self.dispatch_play(stream_url, idx, PlayMode::Buffered).await?;
+        self.emit_now_playing().await;
+        self.emit_queue().await;
+        self.spawn_fast_probe();
+        Ok(true)
+    }
+
+    /// Auto-end advance. Honours `repeat=One` and `repeat=All`. rust-audit: skip
     pub async fn advance_auto(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
@@ -710,35 +824,8 @@ impl DaemonCore {
             return self.play_queue_position(p, PlayMode::Direct).await;
         }
         if auto_continue {
-            info!("Queue ended, auto-continuing with random songs");
-            if let Some(client) = self.subsonic.read().await.clone() {
-                match client.get_random_songs().await {
-                    Ok(songs) if !songs.is_empty() => {
-                        let start_pos;
-                        {
-                            let mut state = self.state.write().await;
-                            start_pos = state.queue.len();
-                            state.queue.extend(songs);
-                        }
-                        self.emit_queue().await;
-                        return self
-                            .play_queue_position(start_pos, PlayMode::Buffered)
-                            .await;
-                    }
-                    Ok(_) => {
-                        self.emit(DaemonEvent::Notification {
-                            message: "Auto-continue: server returned no songs".to_string(),
-                            is_error: true,
-                        });
-                    }
-                    Err(e) => {
-                        error!("Auto-continue fetch failed: {}", e);
-                        self.emit(DaemonEvent::Notification {
-                            message: format!("Auto-continue failed: {}", e),
-                            is_error: true,
-                        });
-                    }
-                }
+            if self.extend_with_random_and_play().await? {
+                return Ok(());
             }
         }
         info!("Reached end of queue");
@@ -935,6 +1022,7 @@ impl DaemonCore {
                 }
                 let loading = Arc::new(AtomicBool::new(true));
                 *self.prebuffer_loading.lock().await = Some(loading.clone());
+                let mut owner = LoadingFlagOwner::new(loading.clone());
                 {
                     let mut mpv = self.mpv.lock().await;
                     if mpv.is_paused().await.unwrap_or(false) {
@@ -945,6 +1033,7 @@ impl DaemonCore {
                     }
                 }
                 self.prebuffer_and_load(stream_url, pos, loading).await;
+                owner.disarm();
             }
         }
         Ok(())
@@ -981,10 +1070,14 @@ impl DaemonCore {
         self.shutdown_notify.notify_waiters();
     }
 
-    /// Future that resolves the next time `request_shutdown` runs.
-    /// Use in `tokio::select!` from long-lived loops.
+    /// Resolves immediately if already shut down, else on next request_shutdown.
     pub async fn shutdown_signal(&self) {
-        self.shutdown_notify.notified().await;
+        let fut = self.shutdown_notify.notified();
+        tokio::pin!(fut);
+        if self.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+            return;
+        }
+        fut.await;
     }
 
     /// Smooth track swap: stream the new URL to a local temp file
@@ -1050,10 +1143,9 @@ impl DaemonCore {
 
             const PREBUFFER_THRESHOLD: usize = 512 * 1024;
 
-            // RAII clear of this task's own `loading` Arc. Cancel paths
-            // disarm so the new task's flag isn't touched (different Arc
-            // anyway, but kept symmetric for safety).
+            // RAII clears on every return: loading flag + cancel slot.
             let gate = PrebufferGate::new(loading);
+            let slot_cleaner = CancelSlotCleaner::new(core.clone(), cancel_task.clone());
 
             let path = temp_task.path().to_path_buf();
             let path_str = path.to_string_lossy().to_string();
@@ -1085,14 +1177,35 @@ impl DaemonCore {
             let mut triggered = false;
             let mut stream = resp.bytes_stream();
 
-            while let Some(chunk) = stream.next().await {
+            loop {
                 if cancel_task.load(Ordering::Relaxed) {
                     debug!("Pre-buffer cancelled at {} KB", bytes_written / 1024);
-                    // Cancel means a newer Buffered request set the gate
-                    // again; leave it set for that task.
                     gate.disarm();
+                    slot_cleaner.disarm();
                     return;
                 }
+                if core.shutdown.load(Ordering::Acquire) {
+                    debug!("Pre-buffer exiting on shutdown");
+                    return;
+                }
+                let next = tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    stream.next(),
+                )
+                .await;
+                let chunk_opt = match next {
+                    Ok(c) => c,
+                    Err(_) => {
+                        error!("Pre-buffer stream timeout (15s); aborting");
+                        if !triggered {
+                            let mut mpv = core.mpv.lock().await;
+                            let _ = mpv.loadfile(&url).await;
+                            core.stamp_loadfile();
+                        }
+                        return;
+                    }
+                };
+                let Some(chunk) = chunk_opt else { break };
                 let chunk = match chunk {
                     Ok(c) => c,
                     Err(e) => {
@@ -1165,6 +1278,7 @@ impl DaemonCore {
                 }
                 if cancel_task.load(Ordering::Relaxed) {
                     gate.disarm();
+                    slot_cleaner.disarm();
                     return;
                 }
                 core.preload_next_track(preload_pos).await;
@@ -1175,16 +1289,7 @@ impl DaemonCore {
                     start.elapsed()
                 );
             }
-
-            // Clear the cancel slot if it still holds OUR Arc. A newer
-            // request would have already replaced it; in that case we
-            // leave the new entry alone (pointer-compare via ptr_eq).
-            let mut slot = core.prebuffer_cancel.lock().await;
-            if let Some(current) = slot.as_ref() {
-                if StdArc::ptr_eq(current, &cancel_task) {
-                    *slot = None;
-                }
-            }
+            let _ = &slot_cleaner;
         });
     }
 
@@ -1357,6 +1462,7 @@ impl DaemonCore {
 
     /// Periodic poll (500ms): detect track advance, update position +
     /// audio properties, drive PipeWire rate switching, emit events.
+    /// rust-audit: skip (guard-reads + self-contained gapless write block by design)
     pub async fn update_playback_info(self: &Arc<Self>) {
         use crate::app::state::PlaybackState;
 
@@ -1398,8 +1504,8 @@ impl DaemonCore {
                 };
                 if let Some(count) = count_opt {
                     if count < 2 {
-                        info!("Near end of track with no preloaded next - advancing early");
-                        let _ = self.next_track().await;
+                        info!("Near end of track with no preloaded next, advancing early");
+                        let _ = self.advance_auto().await;
                         return;
                     }
                 }
@@ -1410,13 +1516,25 @@ impl DaemonCore {
                 mpv.get_playlist_count().await.ok()
             };
             if count_opt == Some(1) {
-                let cur_pos_opt = {
-                    let state = self.state.read().await;
-                    state.queue_position
+                let should_try = {
+                    let mut last = self.last_preload_attempt.lock().unwrap();
+                    let due = last
+                        .map(|t| t.elapsed() >= std::time::Duration::from_secs(5))
+                        .unwrap_or(true);
+                    if due {
+                        *last = Some(std::time::Instant::now());
+                    }
+                    due
                 };
-                if let Some(pos) = cur_pos_opt {
-                    debug!("Playlist count is 1, re-preloading next track");
-                    self.preload_next_track(pos).await;
+                if should_try {
+                    let cur_pos_opt = {
+                        let state = self.state.read().await;
+                        state.queue_position
+                    };
+                    if let Some(pos) = cur_pos_opt {
+                        debug!("Playlist count is 1, re-preloading next track");
+                        self.preload_next_track(pos).await;
+                    }
                 }
             }
 
@@ -1977,12 +2095,47 @@ fn apply_star_to_cached(daemon: &mut DaemonState, song_id: &str, starred: bool) 
     }
     if let Some(np) = daemon.now_playing.song.as_mut() {
         if np.id == song_id {
-            np.starred = marker;
+            np.starred = marker.clone();
         }
     }
+    sync_starred_songs(daemon, song_id, starred, marker);
+}
+
+fn sync_starred_songs(
+    daemon: &mut DaemonState,
+    song_id: &str,
+    starred: bool,
+    marker: Option<String>,
+) {
     if starred {
         daemon.library.starred_ids.insert(song_id.to_string());
+        let already = daemon
+            .library
+            .starred_songs
+            .iter()
+            .any(|s| s.id == song_id);
+        if !already {
+            let source = daemon
+                .queue
+                .iter()
+                .chain(daemon.library.random_songs.iter())
+                .chain(daemon.library.album_songs_cache.values().flatten())
+                .chain(daemon.library.playlist_songs_cache.values().flatten())
+                .find(|s| s.id == song_id)
+                .cloned();
+            if let Some(mut s) = source {
+                s.starred = marker;
+                daemon.library.starred_songs.push(s);
+            }
+        } else {
+            for s in daemon.library.starred_songs.iter_mut() {
+                if s.id == song_id {
+                    s.starred = marker.clone();
+                }
+            }
+        }
     } else {
         daemon.library.starred_ids.remove(song_id);
+        daemon.library.starred_songs.retain(|s| s.id != song_id);
     }
 }

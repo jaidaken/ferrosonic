@@ -204,6 +204,14 @@ impl CoverArtState {
         self.chafa_cache = None;
     }
 
+    /// Reserve current_id ahead of an async fetch so concurrent NowPlayingChanged events for the same id don't double-fetch.
+    pub fn set_pending(&mut self, id: String) {
+        self.current_id = Some(id);
+        self.image = None;
+        self.protocol = None;
+        self.chafa_cache = None;
+    }
+
     /// Re-encode via chafa for the requested cell area, caching the
     /// result. Returns true if the cache is populated for that size.
     fn ensure_chafa(&mut self, width: u16, height: u16) -> bool {
