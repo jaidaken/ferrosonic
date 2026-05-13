@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -8,17 +10,19 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::UnixStream;
+use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::time::{sleep, timeout};
 use tracing::{debug, info, trace, warn};
 
 use crate::config::paths::mpv_socket_path;
 use crate::error::AudioError;
 
-const READ_TIMEOUT: Duration = Duration::from_millis(100);
 /// Overall deadline for a single `send_command`. Without this, a hung
 /// mpv would freeze every audio operation since the controller mutex
 /// serialises all IPC.
 const COMMAND_DEADLINE: Duration = Duration::from_secs(5);
+
+type PendingMap = Arc<TokioMutex<HashMap<u64, oneshot::Sender<Result<Option<Value>, AudioError>>>>>;
 
 #[derive(Debug, Serialize)]
 struct MpvCommand {
@@ -50,8 +54,12 @@ pub struct MpvController {
     socket_path: PathBuf,
     process: Option<Child>,
     request_id: AtomicU64,
-    reader: Option<BufReader<OwnedReadHalf>>,
     writer: Option<OwnedWriteHalf>,
+    /// Outstanding requests waiting for a response keyed by request_id.
+    /// The reader task fills these; send_command awaits via oneshot.
+    pending: PendingMap,
+    /// Background reader task; aborted on disconnect/shutdown.
+    reader_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl MpvController {
@@ -65,8 +73,9 @@ impl MpvController {
             socket_path,
             process: None,
             request_id: AtomicU64::new(1),
-            reader: None,
             writer: None,
+            pending: Arc::new(TokioMutex::new(HashMap::new())),
+            reader_handle: None,
         }
     }
 
@@ -90,18 +99,14 @@ impl MpvController {
                 Ok(None) => return Ok(()),
                 Ok(Some(status)) => {
                     warn!("mpv exited ({:?}), respawning", status);
-                    self.process = None;
-                    self.reader = None;
-                    self.writer = None;
+                    self.tear_down_connection().await;
                 }
                 Err(e) => {
                     // try_wait Err means the process state is unknown;
                     // treat as dead and respawn rather than silently
                     // returning Ok and leaving the daemon half-broken.
                     warn!("mpv try_wait failed ({}), forcing respawn", e);
-                    self.process = None;
-                    self.reader = None;
-                    self.writer = None;
+                    self.tear_down_connection().await;
                 }
             }
         }
@@ -157,33 +162,61 @@ impl MpvController {
             .await
             .map_err(AudioError::MpvSocket)?;
         let (read_half, write_half) = stream.into_split();
-        self.reader = Some(BufReader::new(read_half));
         self.writer = Some(write_half);
+
+        let pending = self.pending.clone();
+        let handle = tokio::spawn(reader_loop(BufReader::new(read_half), pending));
+        self.reader_handle = Some(handle);
+
         debug!("Connected to MPV socket");
         Ok(())
     }
 
+    async fn tear_down_connection(&mut self) {
+        if let Some(h) = self.reader_handle.take() {
+            h.abort();
+        }
+        self.writer = None;
+        self.process = None;
+        // Fail any in-flight requests so callers don't hang.
+        let mut p = self.pending.lock().await;
+        for (_, tx) in p.drain() {
+            let _ = tx.send(Err(AudioError::MpvIpc("connection torn down".to_string())));
+        }
+    }
+
     pub fn is_running(&mut self) -> bool {
-        if self.reader.is_none() {
+        if self.writer.is_none() {
             return false;
         }
+        // Reader task may have ended after a socket close; if so, drop
+        // the writer too so callers see a consistent dead state.
+        if let Some(h) = self.reader_handle.as_ref() {
+            if h.is_finished() {
+                self.reader_handle = None;
+                self.writer = None;
+                self.process = None;
+                return false;
+            }
+        }
         match self.process.as_mut() {
-            // Test seam: live IPC, no spawned child.
             None => self.writer.is_some(),
             Some(child) => match child.try_wait() {
                 Ok(None) => true,
                 Ok(Some(_)) => {
-                    self.reader = None;
                     self.writer = None;
                     self.process = None;
+                    if let Some(h) = self.reader_handle.take() {
+                        h.abort();
+                    }
                     false
                 }
                 Err(_) => {
-                    // Unknown state: callers use is_running to decide
-                    // whether to respawn, so failing closed is safer.
-                    self.reader = None;
                     self.writer = None;
                     self.process = None;
+                    if let Some(h) = self.reader_handle.take() {
+                        h.abort();
+                    }
                     false
                 }
             },
@@ -200,46 +233,37 @@ impl MpvController {
         json.push(b'\n');
         debug!("Sending MPV command (req {})", request_id);
 
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().await.insert(request_id, tx);
+
         {
-            let writer = self.writer.as_mut().ok_or(AudioError::MpvNotRunning)?;
-            writer
-                .write_all(&json)
-                .await
-                .map_err(|e| AudioError::MpvIpc(e.to_string()))?;
-            writer
-                .flush()
-                .await
-                .map_err(|e| AudioError::MpvIpc(e.to_string()))?;
+            let writer = self.writer.as_mut().ok_or_else(|| {
+                // Drop the pending entry so the reader task doesn't sit
+                // on a dead oneshot.
+                AudioError::MpvNotRunning
+            })?;
+            if let Err(e) = writer.write_all(&json).await {
+                self.pending.lock().await.remove(&request_id);
+                return Err(AudioError::MpvIpc(e.to_string()));
+            }
+            if let Err(e) = writer.flush().await {
+                self.pending.lock().await.remove(&request_id);
+                return Err(AudioError::MpvIpc(e.to_string()));
+            }
         }
 
-        let reader = self.reader.as_mut().ok_or(AudioError::MpvNotRunning)?;
-        let mut line = String::new();
-        let deadline = std::time::Instant::now() + COMMAND_DEADLINE;
-        loop {
-            if std::time::Instant::now() >= deadline {
-                return Err(AudioError::MpvIpc(format!(
+        match timeout(COMMAND_DEADLINE, rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => {
+                // Sender dropped without sending: reader task exited.
+                Err(AudioError::MpvIpc("reader task ended".to_string()))
+            }
+            Err(_) => {
+                self.pending.lock().await.remove(&request_id);
+                Err(AudioError::MpvIpc(format!(
                     "mpv command timeout after {:?} (req {})",
                     COMMAND_DEADLINE, request_id
-                )));
-            }
-            line.clear();
-            match timeout(READ_TIMEOUT, reader.read_line(&mut line)).await {
-                Ok(Ok(0)) => return Err(AudioError::MpvIpc("Socket closed".to_string())),
-                Ok(Ok(_)) => {
-                    if let Ok(resp) = serde_json::from_str::<MpvResponse>(&line) {
-                        if resp.request_id == Some(request_id) {
-                            if resp.error != "success" {
-                                return Err(AudioError::MpvIpc(resp.error));
-                            }
-                            return Ok(resp.data);
-                        }
-                    }
-                    if let Ok(event) = serde_json::from_str::<MpvEvent>(&line) {
-                        trace!("MPV event: {:?}", event);
-                    }
-                }
-                Ok(Err(e)) => return Err(AudioError::MpvIpc(e.to_string())),
-                Err(_) => continue,
+                )))
             }
         }
     }
@@ -432,7 +456,9 @@ impl MpvController {
             let _ = child.kill();
             let _ = child.wait();
         }
-        self.reader = None;
+        if let Some(h) = self.reader_handle.take() {
+            h.abort();
+        }
         self.writer = None;
         let _ = std::fs::remove_file(&self.socket_path);
         info!("MPV shut down");
@@ -456,5 +482,43 @@ impl Drop for MpvController {
 impl Default for MpvController {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Dedicated reader task: demuxes responses to their oneshots and
+/// trace-logs events. Ends when the socket closes; any oneshots left
+/// in `pending` resolve via the Sender being dropped on task exit.
+async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, pending: PendingMap) {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                debug!("mpv reader: socket closed");
+                break;
+            }
+            Ok(_) => {
+                if let Ok(resp) = serde_json::from_str::<MpvResponse>(&line) {
+                    if let Some(req_id) = resp.request_id {
+                        if let Some(tx) = pending.lock().await.remove(&req_id) {
+                            let payload = if resp.error == "success" {
+                                Ok(resp.data)
+                            } else {
+                                Err(AudioError::MpvIpc(resp.error))
+                            };
+                            let _ = tx.send(payload);
+                            continue;
+                        }
+                    }
+                }
+                if let Ok(event) = serde_json::from_str::<MpvEvent>(&line) {
+                    trace!("MPV event: {:?}", event);
+                }
+            }
+            Err(e) => {
+                debug!("mpv reader: read error: {}", e);
+                break;
+            }
+        }
     }
 }
