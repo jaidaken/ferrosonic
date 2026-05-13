@@ -116,7 +116,7 @@ impl App {
         self.cava_config = None;
     }
 
-    /// Drains cava pty into client_state.cava_screen for local render. rust-audit: skip
+    /// Drains cava pty into client_state.cava_screen for local render.
     pub async fn read_cava_output(&mut self) {
         let (Some(ref mut master), Some(ref mut parser)) =
             (&mut self.cava_pty_master, &mut self.cava_parser)

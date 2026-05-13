@@ -597,13 +597,11 @@ pub async fn apply_event(
         DaemonEvent::NowPlayingChanged(np) => {
             let new_cover_id = np.song.as_ref().and_then(|s| s.cover_art.clone());
             let cover_art_enabled = {
-                let cs = client_state.read().await;
-                cs.settings_state.cover_art
-            };
-            {
                 let mut ds = daemon_state.write().await;
+                let enabled = ds.config.cover_art;
                 ds.now_playing = np;
-            }
+                enabled
+            };
             if cover_art_enabled {
                 if let Some(id) = new_cover_id {
                     let should_fetch = {
