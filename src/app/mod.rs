@@ -771,22 +771,24 @@ pub async fn apply_event(
             }
 
             if cover_art_enabled {
-                let (current_id, already_loaded) = {
+                let current_id = {
                     let ds = daemon_state.read().await;
-                    let guard = cover_art.lock().expect("cover_art poisoned");
-                    let id = ds
-                        .now_playing
+                    ds.now_playing
                         .song
                         .as_ref()
-                        .and_then(|s| s.cover_art.clone());
-                    let loaded = match (&id, &guard.current_id) {
-                        (Some(i), Some(c)) => i == c,
-                        _ => false,
-                    };
-                    (id, loaded)
+                        .and_then(|s| s.cover_art.clone())
                 };
                 if let Some(id) = current_id {
-                    if !already_loaded {
+                    let should_fetch = {
+                        let mut guard = cover_art.lock().expect("cover_art poisoned");
+                        if guard.current_id.as_deref() == Some(id.as_str()) {
+                            false
+                        } else {
+                            guard.set_pending(id.clone());
+                            true
+                        }
+                    };
+                    if should_fetch {
                         info!("Cover art enabled; fetching current id={}", id);
                         if let Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) = client
                             .request(DaemonRequest::FetchCoverArt {

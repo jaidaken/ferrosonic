@@ -299,7 +299,6 @@ impl Config {
 
         let contents = toml::to_string_pretty(self)?;
         let tmp = path.with_extension("toml.tmp");
-        // sync_all so a crash between write and rename cannot lose data even though rename itself is atomic.
         use std::io::Write as _;
         let mut f = std::fs::OpenOptions::new()
             .create(true)
@@ -310,6 +309,7 @@ impl Config {
         f.sync_all()?;
         drop(f);
         std::fs::rename(&tmp, path)?;
+        fsync_parent_dir(path);
 
         info!("Config saved to {}", path.display());
         Ok(())
@@ -345,8 +345,16 @@ impl Config {
     }
 }
 
-/// Atomic password-file writer: temp + rename. Mode is set to 0600 on
-/// the temp file before rename so the secret is never world-readable.
+/// Best-effort parent-dir fsync after atomic rename so directory entry survives power loss on writeback filesystems. Silent on error since the rename itself succeeded.
+pub fn fsync_parent_dir(path: &Path) {
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+}
+
+/// Atomic password-file writer: temp + rename + 0600 + parent dir fsync.
 pub fn write_password_file_atomic(
     path: &str,
     password: &str,
@@ -373,6 +381,7 @@ pub fn write_password_file_atomic(
     f.sync_all()?;
     drop(f);
     std::fs::rename(&tmp, p)?;
+    fsync_parent_dir(p);
     Ok(())
 }
 

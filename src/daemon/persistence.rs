@@ -52,6 +52,7 @@ impl QueueSnapshot {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         std::fs::write(&tmp, body)?;
         std::fs::rename(&tmp, &path)?;
+        crate::config::fsync_parent_dir(&path);
         Ok(path)
     }
 }

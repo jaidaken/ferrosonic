@@ -161,11 +161,16 @@ impl CoverArtState {
         }
     }
 
-    /// Decode raw bytes into our held image + a ratatui-image protocol
-    /// fallback. Clears the chafa cache so the next render re-encodes.
+    /// Commit bytes only if id matches current_id (set_pending) or current_id is None; otherwise this fetch was superseded.
     pub fn load(&mut self, id: String, bytes: &[u8]) {
-        if self.current_id.as_deref() == Some(id.as_str()) && self.image.is_some() {
-            return;
+        match self.current_id.as_deref() {
+            Some(cur) if cur == id.as_str() => {
+                if self.image.is_some() {
+                    return;
+                }
+            }
+            Some(_) => return,
+            None => {}
         }
         let Some(picker) = self.picker.as_ref() else {
             self.image = None;

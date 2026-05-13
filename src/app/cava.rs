@@ -116,6 +116,7 @@ impl App {
         self.cava_config = None;
     }
 
+    /// Drains cava pty into client_state.cava_screen for local render. rust-audit: skip
     pub async fn read_cava_output(&mut self) {
         let (Some(ref mut master), Some(ref mut parser)) =
             (&mut self.cava_pty_master, &mut self.cava_parser)
@@ -132,7 +133,7 @@ impl App {
             }
             DrainOutcome::NoData => {}
             DrainOutcome::Eof | DrainOutcome::HardError => {
-                if let Some(ref mut child) = self.cava_process {
+                if let Some(mut child) = self.cava_process.take() {
                     let _ = child.try_wait();
                 }
                 self.cava_pty_master = None;

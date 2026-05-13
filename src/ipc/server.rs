@@ -22,24 +22,31 @@ use crate::ipc::DaemonClient;
 
 const EVENT_FORWARD_CAPACITY: usize = 256;
 
-/// Push a snapshot-derived NowPlayingChanged + QueueChanged pair when
-/// the per-conn writer has room. Returns true on success; on partial
-/// success or full channel, caller keeps `needs_resync` set.
+/// Reserve two slots so the snapshot pair is sent atomically or not at all; partial sends would leave the client desynced.
 async fn try_send_resync(
     tx: &tokio::sync::mpsc::Sender<Frame>,
     core: &Arc<DaemonCore>,
 ) -> bool {
-    use tokio::sync::mpsc::error::TrySendError;
+    let p1 = match tx.try_reserve() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let p2 = match tx.try_reserve() {
+        Ok(p) => p,
+        Err(_) => {
+            drop(p1);
+            return false;
+        }
+    };
     let snap = core.snapshot().await;
-    let now = Frame::Event(DaemonEvent::NowPlayingChanged(snap.now_playing.clone()));
-    let queue = Frame::Event(DaemonEvent::QueueChanged {
+    p1.send(Frame::Event(DaemonEvent::NowPlayingChanged(
+        snap.now_playing.clone(),
+    )));
+    p2.send(Frame::Event(DaemonEvent::QueueChanged {
         queue: snap.queue.clone(),
         position: snap.queue_position,
-    });
-    if let Err(TrySendError::Closed(_)) = tx.try_send(now) {
-        return false;
-    }
-    matches!(tx.try_send(queue), Ok(()))
+    }));
+    true
 }
 
 /// Mask password/secret values via serde_json round-trip; on parse failure returns a placeholder so a malformed body containing a password is never logged raw.
@@ -176,32 +183,44 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
         use tokio::sync::mpsc::error::TrySendError;
         let mut needs_resync = false;
         let mut last_resync_at: Option<std::time::Instant> = None;
+        let mut retry = tokio::time::interval(std::time::Duration::from_millis(500));
+        retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
-            match events.recv().await {
-                Ok(ev) => match event_writer_tx.try_send(Frame::Event(ev)) {
-                    Ok(()) => {
-                        if needs_resync {
-                            let due = last_resync_at
-                                .map(|t| t.elapsed() >= std::time::Duration::from_millis(500))
-                                .unwrap_or(true);
-                            if due
+            tokio::select! {
+                ev_res = events.recv() => match ev_res {
+                    Ok(ev) => match event_writer_tx.try_send(Frame::Event(ev)) {
+                        Ok(()) => {
+                            if needs_resync
                                 && try_send_resync(&event_writer_tx, &event_core).await
                             {
                                 needs_resync = false;
                                 last_resync_at = Some(std::time::Instant::now());
                             }
                         }
-                    }
-                    Err(TrySendError::Full(_)) => {
+                        Err(TrySendError::Full(_)) => {
+                            needs_resync = true;
+                        }
+                        Err(TrySendError::Closed(_)) => break,
+                    },
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("Event subscriber lagged by {}; will resync when room", n);
                         needs_resync = true;
                     }
-                    Err(TrySendError::Closed(_)) => break,
+                    Err(broadcast::error::RecvError::Closed) => break,
                 },
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("Event subscriber lagged by {}; will resync when room", n);
-                    needs_resync = true;
+                _ = retry.tick() => {
+                    if needs_resync {
+                        let due = last_resync_at
+                            .map(|t| t.elapsed() >= std::time::Duration::from_millis(500))
+                            .unwrap_or(true);
+                        if due
+                            && try_send_resync(&event_writer_tx, &event_core).await
+                        {
+                            needs_resync = false;
+                            last_resync_at = Some(std::time::Instant::now());
+                        }
+                    }
                 }
-                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
     });

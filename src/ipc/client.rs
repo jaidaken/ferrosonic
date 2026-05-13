@@ -84,9 +84,7 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::RemoveFromQueue(pos) => {
-                // Halt mpv inside the same write lock when the current
-                // track is removed with no follow-up, so position-tick
-                // cannot emit a tick referencing the removed index.
+                // State.write block sets the queue_position+state.Stopped sentinel before mpv touches, so position-tick poll sees state=Stopped and bails; lock order stays state-then-mpv with no overlap.
                 let was_playing;
                 let new_len;
                 let must_stop;
@@ -107,10 +105,6 @@ impl DaemonClient for InProcessClient {
                     }
                     must_stop = was_playing && pos >= new_len;
                     if must_stop {
-                        let mut mpv = self.core.mpv.lock().await;
-                        if let Err(e) = mpv.stop().await {
-                            tracing::error!("Failed to stop on remove: {}", e);
-                        }
                         state.now_playing.state =
                             crate::app::state::PlaybackState::Stopped;
                         state.now_playing.song = None;
@@ -120,6 +114,12 @@ impl DaemonClient for InProcessClient {
                         state.now_playing.bit_depth = None;
                         state.now_playing.format = None;
                         state.now_playing.channels = None;
+                    }
+                }
+                if must_stop {
+                    let mut mpv = self.core.mpv.lock().await;
+                    if let Err(e) = mpv.stop().await {
+                        tracing::error!("Failed to stop on remove: {}", e);
                     }
                 }
                 if was_playing && !must_stop {
