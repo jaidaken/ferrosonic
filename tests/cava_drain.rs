@@ -59,11 +59,13 @@ fn drain_returns_no_data_on_immediate_would_block() {
 }
 
 #[test]
-fn drain_returns_no_data_on_immediate_eof() {
+fn drain_returns_eof_on_immediate_eof() {
+    // Previously this returned NoData and froze the visualizer. Now
+    // Ok(0) is surfaced as Eof so the caller can re-spawn cava.
     let mut reader = Cursor::new(Vec::<u8>::new());
     let mut parser = vt100::Parser::new(1, 16, 0);
     let outcome = drain_into_parser(&mut reader, &mut parser);
-    assert_eq!(outcome, DrainOutcome::NoData);
+    assert_eq!(outcome, DrainOutcome::Eof);
 }
 
 #[test]

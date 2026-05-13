@@ -647,6 +647,7 @@ pub async fn apply_event(
         DaemonEvent::StarredChanged(songs) => {
             let mut ds = daemon_state.write().await;
             ds.library.starred_songs = songs;
+            ds.library.rebuild_starred_index();
         }
         DaemonEvent::SongStarChanged { id, starred } => {
             let marker = if starred { Some("1".to_string()) } else { None };
@@ -677,6 +678,11 @@ pub async fn apply_event(
                     if np.id == id {
                         np.starred = marker.clone();
                     }
+                }
+                if starred {
+                    ds.library.starred_ids.insert(id.clone());
+                } else {
+                    ds.library.starred_ids.remove(&id);
                 }
             }
             {

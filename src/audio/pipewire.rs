@@ -49,7 +49,16 @@ impl PipeWireController {
     }
 
     pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
-        let original_rate = Self::query_rate_via(&*runner).ok();
+        // The blocking pw-metadata fork+exec+wait would park a tokio
+        // worker for tens of ms; only use block_in_place on a multi-
+        // thread runtime since it panics on current_thread (tests).
+        let probe = || Self::query_rate_via(&*runner).ok();
+        let original_rate = match tokio::runtime::Handle::try_current() {
+            Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+                tokio::task::block_in_place(probe)
+            }
+            _ => probe(),
+        };
         debug!("Original PipeWire sample rate: {:?}", original_rate);
         Self {
             original_rate,

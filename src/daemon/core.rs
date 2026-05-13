@@ -68,8 +68,8 @@ pub struct DaemonCore {
     /// Trailing-edge debounce: `try_send(())` on every queue change;
     /// the persistence task drains, sleeps briefly, writes once.
     queue_save_tx: tokio::sync::mpsc::Sender<()>,
-    /// Bounded at 64 entries, keyed `"<coverArt-id>@<size>"`.
-    cover_art_cache: RwLock<std::collections::HashMap<String, Vec<u8>>>,
+    /// Bounded at `COVER_ART_CACHE_CAP`, keyed `"<coverArt-id>@<size>"`.
+    cover_art_cache: RwLock<crate::daemon::library::LruCache<Vec<u8>>>,
     /// Cancellation flag for the in-flight pre-buffer task. Replaced
     /// (and the old one flipped) on each new request so rapid track
     /// switches don't stack downloads.
@@ -90,6 +90,10 @@ pub struct DaemonCore {
     /// capture the gen at start and discard their result if it changed,
     /// preventing stale results from one server polluting the next.
     config_gen: std::sync::atomic::AtomicU64,
+    /// Flipped to true on shutdown so background spawn tasks (fast
+    /// probe, cava watchers) can exit promptly instead of holding
+    /// `Arc<Self>` alive until their own timers fire.
+    shutdown: std::sync::atomic::AtomicBool,
 }
 
 impl DaemonCore {
@@ -125,12 +129,13 @@ impl DaemonCore {
             subsonic: RwLock::new(subsonic),
             event_tx,
             queue_save_tx,
-            cover_art_cache: RwLock::new(std::collections::HashMap::new()),
+            cover_art_cache: RwLock::new(crate::daemon::library::LruCache::new()),
             prebuffer_cancel: Mutex::new(None),
             prebuffer_files: Mutex::new(Vec::new()),
             prebuffer_loading: Mutex::new(None),
             last_loadfile: std::sync::Mutex::new(None),
             config_gen: std::sync::atomic::AtomicU64::new(0),
+            shutdown: std::sync::atomic::AtomicBool::new(false),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -226,6 +231,7 @@ impl DaemonCore {
     }
 
     pub async fn quit_mpv(&self) {
+        self.request_shutdown();
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.quit().await;
     }
@@ -262,6 +268,10 @@ impl DaemonCore {
 
     fn emit(&self, event: DaemonEvent) {
         let _ = self.event_tx.send(event);
+    }
+
+    pub async fn broadcast_now_playing(&self) {
+        self.emit_now_playing().await;
     }
 
     async fn emit_now_playing(&self) {
@@ -318,6 +328,7 @@ impl DaemonCore {
                 }
                 let mut state = self.state.write().await;
                 state.library.starred_songs = songs.clone();
+                state.library.rebuild_starred_index();
                 drop(state);
                 self.emit(DaemonEvent::StarredChanged(songs));
             }
@@ -453,8 +464,10 @@ impl DaemonCore {
             Ok((_artist, albums)) => {
                 let mut state = self.state.write().await;
                 let count = albums.len();
+                let lib = &mut state.library;
                 crate::daemon::library::cache_insert(
-                    &mut state.library.albums_cache,
+                    &mut lib.albums_cache,
+                    &mut lib.albums_cache_order,
                     artist_id.to_string(),
                     albums.clone(),
                     crate::daemon::library::ALBUMS_CACHE_CAP,
@@ -901,6 +914,9 @@ impl DaemonCore {
         let core = self.clone();
         tokio::spawn(async move {
             for _ in 0..80 {
+                if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+                    return;
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 let still_missing = {
                     let state = core.state.read().await;
@@ -914,6 +930,12 @@ impl DaemonCore {
                 }
             }
         });
+    }
+
+    /// Signal background spawn tasks to exit.
+    pub fn request_shutdown(&self) {
+        self.shutdown
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Smooth track swap: stream the new URL to a local temp file
@@ -1103,6 +1125,16 @@ impl DaemonCore {
                     bytes_written / 1024,
                     start.elapsed()
                 );
+            }
+
+            // Clear the cancel slot if it still holds OUR Arc. A newer
+            // request would have already replaced it; in that case we
+            // leave the new entry alone (pointer-compare via ptr_eq).
+            let mut slot = core.prebuffer_cancel.lock().await;
+            if let Some(current) = slot.as_ref() {
+                if StdArc::ptr_eq(current, &cancel_task) {
+                    *slot = None;
+                }
             }
         });
     }
@@ -1576,8 +1608,10 @@ impl DaemonCore {
             Ok((_album, songs)) => {
                 {
                     let mut state = self.state.write().await;
+                    let lib = &mut state.library;
                     crate::daemon::library::cache_insert(
-                        &mut state.library.album_songs_cache,
+                        &mut lib.album_songs_cache,
+                        &mut lib.album_songs_cache_order,
                         album_id.to_string(),
                         songs.clone(),
                         crate::daemon::library::ALBUM_SONGS_CACHE_CAP,
@@ -1633,8 +1667,10 @@ impl DaemonCore {
             Ok((_pl, songs)) => {
                 {
                     let mut state = self.state.write().await;
+                    let lib = &mut state.library;
                     crate::daemon::library::cache_insert(
-                        &mut state.library.playlist_songs_cache,
+                        &mut lib.playlist_songs_cache,
+                        &mut lib.playlist_songs_cache_order,
                         playlist_id.to_string(),
                         songs.clone(),
                         crate::daemon::library::PLAYLIST_SONGS_CACHE_CAP,
@@ -1810,7 +1846,7 @@ impl DaemonCore {
     pub async fn get_cover_art(self: &Arc<Self>, id: &str, size: u32) -> Vec<u8> {
         let key = format!("{}@{}", id, size);
         {
-            let cache = self.cover_art_cache.read().await;
+            let mut cache = self.cover_art_cache.write().await;
             if let Some(bytes) = cache.get(&key) {
                 return bytes.clone();
             }
@@ -1821,12 +1857,11 @@ impl DaemonCore {
         match client.get_cover_art(id, size).await {
             Ok(bytes) => {
                 let mut cache = self.cover_art_cache.write().await;
-                if cache.len() >= 64 {
-                    if let Some(k) = cache.keys().next().cloned() {
-                        cache.remove(&k);
-                    }
-                }
-                cache.insert(key, bytes.clone());
+                cache.insert(
+                    key,
+                    bytes.clone(),
+                    crate::daemon::library::COVER_ART_CACHE_CAP,
+                );
                 bytes
             }
             Err(e) => {
@@ -1849,26 +1884,16 @@ impl DaemonCore {
 }
 
 fn song_is_starred(daemon: &DaemonState, song_id: &str) -> bool {
-    if let Some(s) = daemon
+    if daemon.library.starred_ids.contains(song_id) {
+        return true;
+    }
+    // Fallback when callers mutated starred_songs without rebuilding
+    // the index. O(N) but only on cache miss.
+    daemon
         .library
         .starred_songs
         .iter()
-        .find(|s| s.id == song_id)
-    {
-        return s.starred.is_some();
-    }
-    let all_cached = daemon
-        .queue
-        .iter()
-        .chain(daemon.library.random_songs.iter())
-        .chain(daemon.library.album_songs_cache.values().flatten())
-        .chain(daemon.library.playlist_songs_cache.values().flatten());
-    for s in all_cached {
-        if s.id == song_id {
-            return s.starred.is_some();
-        }
-    }
-    false
+        .any(|s| s.id == song_id && s.starred.is_some())
 }
 
 fn apply_star_to_cached(daemon: &mut DaemonState, song_id: &str, starred: bool) {
@@ -1900,5 +1925,10 @@ fn apply_star_to_cached(daemon: &mut DaemonState, song_id: &str, starred: bool) 
         if np.id == song_id {
             np.starred = marker;
         }
+    }
+    if starred {
+        daemon.library.starred_ids.insert(song_id.to_string());
+    } else {
+        daemon.library.starred_ids.remove(song_id);
     }
 }

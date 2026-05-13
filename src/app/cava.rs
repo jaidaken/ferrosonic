@@ -131,7 +131,10 @@ impl App {
                 cs.cava_screen = cava_screen;
             }
             DrainOutcome::NoData => {}
-            DrainOutcome::HardError => {
+            DrainOutcome::Eof | DrainOutcome::HardError => {
+                if let Some(ref mut child) = self.cava_process {
+                    let _ = child.try_wait();
+                }
                 self.cava_pty_master = None;
                 self.cava_parser = None;
             }
@@ -143,21 +146,26 @@ impl App {
 pub enum DrainOutcome {
     Bytes,
     NoData,
+    /// Slave end closed; the cava subprocess has exited.
+    Eof,
     HardError,
 }
 
-/// Pure logic: drain `reader` into `parser`. Returns whether bytes
-/// arrived, none arrived (WouldBlock / EOF), or the read errored
-/// permanently. Caller resets cava state on HardError.
+/// Drain `reader` into `parser`. Caller resets state on `Eof` or
+/// `HardError`; `NoData` (WouldBlock) is normal between frames.
 pub fn drain_into_parser<R: std::io::Read>(
     reader: &mut R,
     parser: &mut vt100::Parser,
 ) -> DrainOutcome {
     let mut buf = [0u8; 16384];
     let mut got_data = false;
+    let mut saw_eof = false;
     loop {
         match reader.read(&mut buf) {
-            Ok(0) => break,
+            Ok(0) => {
+                saw_eof = true;
+                break;
+            }
             Ok(n) => {
                 parser.process(&buf[..n]);
                 got_data = true;
@@ -168,6 +176,8 @@ pub fn drain_into_parser<R: std::io::Read>(
     }
     if got_data {
         DrainOutcome::Bytes
+    } else if saw_eof {
+        DrainOutcome::Eof
     } else {
         DrainOutcome::NoData
     }

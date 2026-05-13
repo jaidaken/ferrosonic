@@ -84,8 +84,12 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::RemoveFromQueue(pos) => {
+                // Halt mpv inside the same write lock when the current
+                // track is removed with no follow-up, so position-tick
+                // cannot emit a tick referencing the removed index.
                 let was_playing;
                 let new_len;
+                let must_stop;
                 {
                     let mut state = self.core.state.write().await;
                     if pos >= state.queue.len() {
@@ -101,17 +105,31 @@ impl DaemonClient for InProcessClient {
                             state.queue_position = None;
                         }
                     }
-                }
-                if was_playing {
-                    if pos < new_len {
-                        self.core
-                            .play_queue_position(pos, crate::daemon::core::PlayMode::Direct)
-                            .await
-                            .map_err(err)?;
-                    } else {
-                        self.core.halt_keep_queue().await;
-                        self.core.broadcast_queue_changed().await;
+                    must_stop = was_playing && pos >= new_len;
+                    if must_stop {
+                        let mut mpv = self.core.mpv.lock().await;
+                        if let Err(e) = mpv.stop().await {
+                            tracing::error!("Failed to stop on remove: {}", e);
+                        }
+                        state.now_playing.state =
+                            crate::app::state::PlaybackState::Stopped;
+                        state.now_playing.song = None;
+                        state.now_playing.position = 0.0;
+                        state.now_playing.duration = 0.0;
+                        state.now_playing.sample_rate = None;
+                        state.now_playing.bit_depth = None;
+                        state.now_playing.format = None;
+                        state.now_playing.channels = None;
                     }
+                }
+                if was_playing && !must_stop {
+                    self.core
+                        .play_queue_position(pos, crate::daemon::core::PlayMode::Direct)
+                        .await
+                        .map_err(err)?;
+                } else if must_stop {
+                    self.core.broadcast_now_playing().await;
+                    self.core.broadcast_queue_changed().await;
                 } else {
                     self.core.broadcast_queue_changed().await;
                 }

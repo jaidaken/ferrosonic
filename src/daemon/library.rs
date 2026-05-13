@@ -1,6 +1,6 @@
 //! Daemon-side cache of Subsonic library data.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
@@ -9,27 +9,123 @@ use crate::subsonic::models::{Album, Artist, Child, Playlist};
 pub const ALBUMS_CACHE_CAP: usize = 50;
 pub const ALBUM_SONGS_CACHE_CAP: usize = 100;
 pub const PLAYLIST_SONGS_CACHE_CAP: usize = 50;
+pub const COVER_ART_CACHE_CAP: usize = 64;
 
-/// Insert with eviction. HashMap iteration order is not strict FIFO
-/// but is acceptable for bounding memory growth.
-pub fn cache_insert<V>(map: &mut HashMap<String, V>, key: String, val: V, cap: usize) {
-    if !map.contains_key(&key) && map.len() >= cap {
-        if let Some(evict_key) = map.keys().next().cloned() {
-            map.remove(&evict_key);
+/// True LRU cache: most-recently-used end is the back of `order`. The
+/// previous `HashMap::keys().next()` eviction was randomized and
+/// thrashed hot keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LruCache<V> {
+    map: HashMap<String, V>,
+    order: VecDeque<String>,
+}
+
+impl<V: Clone> LruCache<V> {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
         }
     }
+    pub fn get(&mut self, key: &str) -> Option<&V> {
+        if !self.map.contains_key(key) {
+            return None;
+        }
+        // Touch to MRU end. Linear scan is fine for the small caps
+        // used in this codebase (50-100).
+        if let Some(pos) = self.order.iter().position(|k| k == key) {
+            if let Some(k) = self.order.remove(pos) {
+                self.order.push_back(k);
+            }
+        }
+        self.map.get(key)
+    }
+    pub fn insert(&mut self, key: String, val: V, cap: usize) {
+        if self.map.contains_key(&key) {
+            if let Some(pos) = self.order.iter().position(|k| k == &key) {
+                if let Some(k) = self.order.remove(pos) {
+                    self.order.push_back(k);
+                }
+            }
+            self.map.insert(key, val);
+            return;
+        }
+        while self.map.len() >= cap {
+            if let Some(evict) = self.order.pop_front() {
+                self.map.remove(&evict);
+            } else {
+                break;
+            }
+        }
+        self.order.push_back(key.clone());
+        self.map.insert(key, val);
+    }
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+}
+
+/// Compatibility shim while the rest of the codebase still uses a
+/// bare `HashMap`. New code should use `LruCache` directly.
+pub fn cache_insert<V: Clone>(
+    map: &mut HashMap<String, V>,
+    order: &mut VecDeque<String>,
+    key: String,
+    val: V,
+    cap: usize,
+) {
+    if map.contains_key(&key) {
+        if let Some(pos) = order.iter().position(|k| k == &key) {
+            if let Some(k) = order.remove(pos) {
+                order.push_back(k);
+            }
+        }
+        map.insert(key, val);
+        return;
+    }
+    while map.len() >= cap {
+        if let Some(evict) = order.pop_front() {
+            map.remove(&evict);
+        } else {
+            break;
+        }
+    }
+    order.push_back(key.clone());
     map.insert(key, val);
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LibraryCache {
     pub starred_songs: Vec<Child>,
+    /// O(1) lookup index over `starred_songs`. Rebuild via
+    /// `rebuild_starred_index` after mutating `starred_songs`.
+    #[serde(default)]
+    pub starred_ids: HashSet<String>,
     pub random_songs: Vec<Child>,
     pub artists: Vec<Artist>,
     pub albums_cache: HashMap<String, Vec<Album>>,
+    #[serde(default)]
+    pub albums_cache_order: VecDeque<String>,
     #[allow(dead_code)]
     pub album_songs_cache: HashMap<String, Vec<Child>>,
+    #[serde(default)]
+    pub album_songs_cache_order: VecDeque<String>,
     pub playlists: Vec<Playlist>,
     #[allow(dead_code)]
     pub playlist_songs_cache: HashMap<String, Vec<Child>>,
+    #[serde(default)]
+    pub playlist_songs_cache_order: VecDeque<String>,
+}
+
+impl LibraryCache {
+    /// Rebuild `starred_ids` from `starred_songs`. Call after any
+    /// mutation to `starred_songs` so `song_is_starred` stays correct.
+    pub fn rebuild_starred_index(&mut self) {
+        self.starred_ids = self
+            .starred_songs
+            .iter()
+            .filter(|s| s.starred.is_some())
+            .map(|s| s.id.clone())
+            .collect();
+    }
 }
