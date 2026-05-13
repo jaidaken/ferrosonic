@@ -92,33 +92,6 @@ impl PipeWireController {
         Ok(())
     }
 
-    /// Blocking shell-out from Drop. Process is exiting.
-    fn restore_original_blocking(&mut self) -> Result<(), AudioError> {
-        if let Some(rate) = self.original_rate {
-            let rate_str = if rate > 0 {
-                info!("Restoring original sample rate: {} Hz", rate);
-                rate.to_string()
-            } else {
-                info!("Clearing forced sample rate");
-                "0".to_string()
-            };
-            let output = self.runner.run_blocking(&[
-                "-n",
-                "settings",
-                "0",
-                "clock.force-rate",
-                &rate_str,
-            ])?;
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(AudioError::PipeWire(format!(
-                    "pw-metadata failed: {}",
-                    stderr
-                )));
-            }
-        }
-        Ok(())
-    }
 
     pub async fn clear_forced_rate(&mut self) -> Result<(), AudioError> {
         info!("Clearing PipeWire forced sample rate");
@@ -163,8 +136,32 @@ impl Default for PipeWireController {
 
 impl Drop for PipeWireController {
     fn drop(&mut self) {
-        if let Err(e) = self.restore_original_blocking() {
-            error!("Failed to restore sample rate: {}", e);
+        // Spawn a worker thread with a 3s join timeout so a hung
+        // pw-metadata (pipewire daemon dead) can't block process exit.
+        let original_rate = self.original_rate;
+        let runner = self.runner.clone();
+        let handle = std::thread::spawn(move || {
+            if let Some(rate) = original_rate {
+                let rate_str = if rate > 0 {
+                    rate.to_string()
+                } else {
+                    "0".to_string()
+                };
+                let _ = runner.run_blocking(&[
+                    "-n",
+                    "settings",
+                    "0",
+                    "clock.force-rate",
+                    &rate_str,
+                ]);
+            }
+        });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while !handle.is_finished() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        if !handle.is_finished() {
+            error!("PipeWire restore-on-drop timed out; abandoning worker thread");
         }
     }
 }

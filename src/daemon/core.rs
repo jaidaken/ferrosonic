@@ -135,7 +135,42 @@ impl DaemonCore {
 
         core.clone().spawn_queue_persistence(queue_save_rx);
         core.clone().restore_queue_blocking();
+        Self::sweep_orphan_prebuffer_files();
         core
+    }
+
+    /// Best-effort cleanup of `/tmp/ferrosonic-prebuf-*.dat` left
+    /// behind by previous crashes (spawn task panics never run the
+    /// NamedTempFile destructor).
+    fn sweep_orphan_prebuffer_files() {
+        let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+            return;
+        };
+        // Only files older than 5 min: avoids racing a concurrent
+        // ferrosonic instance whose prebuffer task is still alive.
+        let cutoff = std::time::Duration::from_secs(300);
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name_str) = name.to_str() else {
+                continue;
+            };
+            if !name_str.starts_with("ferrosonic-prebuf-") || !name_str.ends_with(".dat") {
+                continue;
+            }
+            let path = entry.path();
+            let Ok(meta) = std::fs::metadata(&path) else {
+                continue;
+            };
+            let Ok(mtime) = meta.modified() else {
+                continue;
+            };
+            let Ok(age) = std::time::SystemTime::now().duration_since(mtime) else {
+                continue;
+            };
+            if age > cutoff {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
     }
 
     fn stamp_loadfile(&self) {

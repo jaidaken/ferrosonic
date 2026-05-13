@@ -15,8 +15,29 @@ pub struct QueueSnapshot {
 impl QueueSnapshot {
     pub fn load() -> Option<Self> {
         let path = crate::config::paths::queue_file()?;
-        let bytes = std::fs::read(&path).ok()?;
-        serde_json::from_slice(&bytes).ok()
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(e) => {
+                tracing::warn!("queue snapshot read failed: {}", e);
+                return None;
+            }
+        };
+        match serde_json::from_slice(&bytes) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(
+                    "queue snapshot at {} is corrupt ({}); ignoring",
+                    path.display(),
+                    e
+                );
+                let bad = path.with_extension("json.bad");
+                if let Err(rename_err) = std::fs::rename(&path, &bad) {
+                    tracing::warn!("could not preserve corrupt snapshot: {}", rename_err);
+                }
+                None
+            }
+        }
     }
 
     /// Atomic write via temp-file + rename. Returns the path written.

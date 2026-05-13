@@ -94,7 +94,15 @@ impl MpvController {
                     self.reader = None;
                     self.writer = None;
                 }
-                Err(_) => return Ok(()),
+                Err(e) => {
+                    // try_wait Err means the process state is unknown;
+                    // treat as dead and respawn rather than silently
+                    // returning Ok and leaving the daemon half-broken.
+                    warn!("mpv try_wait failed ({}), forcing respawn", e);
+                    self.process = None;
+                    self.reader = None;
+                    self.writer = None;
+                }
             }
         }
         let _ = std::fs::remove_file(&self.socket_path);
@@ -170,7 +178,14 @@ impl MpvController {
                     self.process = None;
                     false
                 }
-                Err(_) => true,
+                Err(_) => {
+                    // Unknown state: callers use is_running to decide
+                    // whether to respawn, so failing closed is safer.
+                    self.reader = None;
+                    self.writer = None;
+                    self.process = None;
+                    false
+                }
             },
         }
     }
