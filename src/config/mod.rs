@@ -32,8 +32,12 @@ pub struct Config {
     #[serde(rename = "Username", default)]
     pub username: String,
 
-    /// Resolved at load-time from `FERROSONIC_PASSWORD` env, then `PasswordFile`, then this inline value.
-    #[serde(rename = "Password", default)]
+    /// Resolved at load-time from env, PasswordFile, then this inline value. Custom serializer masks the value so any accidental Serialize path emits "***" instead of leaking; save_to_file routes through ConfigOnDisk to write the real value.
+    #[serde(
+        rename = "Password",
+        default,
+        serialize_with = "serialize_password_redacted"
+    )]
     pub password: String,
 
     #[serde(
@@ -70,6 +74,65 @@ pub struct Config {
     /// 3 (2 border rows + 1 progress bar row).
     #[serde(rename = "CoverArtSize", default = "Config::default_cover_art_size")]
     pub cover_art_size: u8,
+}
+
+fn serialize_password_redacted<S: serde::Serializer>(
+    p: &str,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    let masked = if p.is_empty() { "" } else { "***" };
+    ser.serialize_str(masked)
+}
+
+#[derive(Serialize)]
+struct ConfigOnDisk<'a> {
+    #[serde(rename = "BaseURL")]
+    base_url: &'a str,
+    #[serde(rename = "Username")]
+    username: &'a str,
+    #[serde(rename = "Password", skip_serializing_if = "str::is_empty")]
+    password: &'a str,
+    #[serde(rename = "PasswordFile", skip_serializing_if = "Option::is_none")]
+    password_file: Option<&'a str>,
+    #[serde(rename = "Theme")]
+    theme: &'a str,
+    #[serde(rename = "Cava")]
+    cava: bool,
+    #[serde(rename = "CavaSize")]
+    cava_size: u8,
+    #[serde(rename = "Daemon")]
+    daemon: bool,
+    #[serde(rename = "AutoContinue")]
+    auto_continue: bool,
+    #[serde(rename = "RepeatMode")]
+    repeat_mode: RepeatMode,
+    #[serde(rename = "CoverArt")]
+    cover_art: bool,
+    #[serde(rename = "CoverArtSize")]
+    cover_art_size: u8,
+}
+
+impl Config {
+    fn as_on_disk(&self) -> ConfigOnDisk<'_> {
+        let pw_file_set = self
+            .password_file
+            .as_ref()
+            .is_some_and(|s| !s.is_empty());
+        ConfigOnDisk {
+            base_url: &self.base_url,
+            username: &self.username,
+            password: if pw_file_set { "" } else { &self.password },
+            password_file: self.password_file.as_deref(),
+            theme: &self.theme,
+            cava: self.cava,
+            cava_size: self.cava_size,
+            daemon: self.daemon,
+            auto_continue: self.auto_continue,
+            repeat_mode: self.repeat_mode,
+            cover_art: self.cover_art,
+            cover_art_size: self.cover_art_size,
+        }
+    }
 }
 
 impl std::fmt::Debug for Config {
@@ -298,20 +361,8 @@ impl Config {
             }
         }
 
-        // Defensive: if password_file is set, never serialize inline plaintext, even if the caller forgot to clear it. update_server_config already does this for the standard path; this protects every other future caller.
-        let to_serialize = if self
-            .password_file
-            .as_ref()
-            .is_some_and(|s| !s.is_empty())
-            && !self.password.is_empty()
-        {
-            let mut scrubbed = self.clone();
-            scrubbed.password.clear();
-            std::borrow::Cow::Owned(scrubbed)
-        } else {
-            std::borrow::Cow::Borrowed(self)
-        };
-        let contents = toml::to_string_pretty(&*to_serialize)?;
+        // ConfigOnDisk uses the real password and obeys password_file indirection so neither the redacted-serializer nor a caller mistake can leak or omit the secret.
+        let contents = toml::to_string_pretty(&self.as_on_disk())?;
         let tmp = path.with_extension("toml.tmp");
         use std::io::Write as _;
         let mut f = std::fs::OpenOptions::new()

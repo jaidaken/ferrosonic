@@ -271,7 +271,7 @@ impl App {
 
         {
             let probed = crate::ui::cover_art::CoverArtState::init();
-            let mut guard = self.cover_art.lock().expect("cover_art poisoned");
+            let mut guard = self.cover_art.lock().unwrap_or_else(|p| p.into_inner());
             *guard = probed;
         }
 
@@ -365,7 +365,7 @@ impl App {
             .await
         {
             if !bytes.is_empty() {
-                let mut guard = self.cover_art.lock().expect("cover_art poisoned");
+                let mut guard = self.cover_art.lock().unwrap_or_else(|p| p.into_inner());
                 guard.load(id, &bytes);
             }
         }
@@ -605,7 +605,7 @@ pub async fn apply_event(
             if cover_art_enabled {
                 if let Some(id) = new_cover_id {
                     let should_fetch = {
-                        let mut guard = cover_art.lock().expect("cover_art poisoned");
+                        let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
                         if guard.current_id.as_deref() == Some(id.as_str()) {
                             false
                         } else {
@@ -625,7 +625,7 @@ pub async fn apply_event(
                             Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) => {
                                 info!("Cover art bytes received: {} bytes", bytes.len());
                                 if !bytes.is_empty() {
-                                    let mut guard = cover_art.lock().expect("cover_art poisoned");
+                                    let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
                                     guard.load(id, &bytes);
                                 }
                             }
@@ -638,7 +638,7 @@ pub async fn apply_event(
                         }
                     }
                 } else {
-                    let mut guard = cover_art.lock().expect("cover_art poisoned");
+                    let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
                     guard.clear();
                 }
             }
@@ -778,7 +778,7 @@ pub async fn apply_event(
                 };
                 if let Some(id) = current_id {
                     let should_fetch = {
-                        let mut guard = cover_art.lock().expect("cover_art poisoned");
+                        let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
                         if guard.current_id.as_deref() == Some(id.as_str()) {
                             false
                         } else {
@@ -796,14 +796,14 @@ pub async fn apply_event(
                             .await
                         {
                             if !bytes.is_empty() {
-                                let mut guard = cover_art.lock().expect("cover_art poisoned");
+                                let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
                                 guard.load(id, &bytes);
                             }
                         }
                     }
                 }
             } else {
-                let mut guard = cover_art.lock().expect("cover_art poisoned");
+                let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
                 guard.clear();
             }
         }

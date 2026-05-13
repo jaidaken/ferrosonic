@@ -243,8 +243,10 @@ impl CoverArtState {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &Mutex<CoverArtState>) {
-    let Ok(mut guard) = state.try_lock() else {
-        return;
+    // Block briefly on contention rather than silently blank the frame; the lock is never held across .await so wait is microseconds. Recover from a poisoned lock by taking the inner state.
+    let mut guard = match state.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
     };
 
     let use_chafa = matches!(guard.protocol_type, Some(ProtocolType::Halfblocks))
@@ -252,16 +254,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &Mutex<CoverArtState>) {
         && guard.image.is_some();
 
     if use_chafa && guard.ensure_chafa(area.width, area.height) {
-        let cache = guard
-            .chafa_cache
-            .as_ref()
-            .expect("ensure_chafa returned true but cache is empty");
-        blit_cells(frame.buffer_mut(), area, cache);
+        if let Some(cache) = guard.chafa_cache.as_ref() {
+            blit_cells(frame.buffer_mut(), area, cache);
+        }
         return;
     }
 
-    // Fallback: ratatui-image's StatefulImage (handles sixel / kitty /
-    // iTerm2 and its own halfblocks if our chafa path isn't usable).
     if let Some(protocol) = guard.protocol.as_mut() {
         let widget = StatefulImage::default();
         frame.render_stateful_widget(widget, area, protocol);
