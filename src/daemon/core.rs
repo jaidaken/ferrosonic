@@ -86,6 +86,10 @@ pub struct DaemonCore {
     /// still report idle-active for a short window after loadfile, so
     /// the idle-advance branch ignores idle within ~1.5s of this.
     last_loadfile: std::sync::Mutex<Option<std::time::Instant>>,
+    /// Bumped on every `update_server_config`; library refresh handlers
+    /// capture the gen at start and discard their result if it changed,
+    /// preventing stale results from one server polluting the next.
+    config_gen: std::sync::atomic::AtomicU64,
 }
 
 impl DaemonCore {
@@ -126,6 +130,7 @@ impl DaemonCore {
             prebuffer_files: Mutex::new(Vec::new()),
             prebuffer_loading: Mutex::new(None),
             last_loadfile: std::sync::Mutex::new(None),
+            config_gen: std::sync::atomic::AtomicU64::new(0),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -269,8 +274,13 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
         };
+        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_starred_songs().await {
             Ok(songs) => {
+                if self.config_gen_changed(gen_at_start) {
+                    debug!("refresh_starred: config changed mid-request, discarding");
+                    return;
+                }
                 let mut state = self.state.write().await;
                 state.library.starred_songs = songs.clone();
                 drop(state);
@@ -290,8 +300,13 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
         };
+        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_random_songs().await {
             Ok(songs) => {
+                if self.config_gen_changed(gen_at_start) {
+                    debug!("refresh_random: config changed mid-request, discarding");
+                    return;
+                }
                 let mut state = self.state.write().await;
                 state.library.random_songs = songs.clone();
                 drop(state);
@@ -311,8 +326,13 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
         };
+        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_artists().await {
             Ok(artists) => {
+                if self.config_gen_changed(gen_at_start) {
+                    debug!("refresh_artists: config changed mid-request, discarding");
+                    return;
+                }
                 let mut state = self.state.write().await;
                 let count = artists.len();
                 state.library.artists = artists.clone();
@@ -334,8 +354,13 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
         };
+        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_playlists().await {
             Ok(playlists) => {
+                if self.config_gen_changed(gen_at_start) {
+                    debug!("refresh_playlists: config changed mid-request, discarding");
+                    return;
+                }
                 let mut state = self.state.write().await;
                 let count = playlists.len();
                 state.library.playlists = playlists.clone();
@@ -347,6 +372,10 @@ impl DaemonCore {
                 error!("Failed to load playlists: {}", e);
             }
         }
+    }
+
+    fn config_gen_changed(&self, snapshot: u64) -> bool {
+        self.config_gen.load(std::sync::atomic::Ordering::Acquire) != snapshot
     }
 
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
@@ -1625,6 +1654,10 @@ impl DaemonCore {
         let new_client =
             SubsonicClient::new(base_url, username, password).map_err(Error::Subsonic)?;
         *self.subsonic.write().await = Some(new_client);
+        // Bump after the new client is installed so in-flight refreshes
+        // started with the old client discard their results.
+        self.config_gen
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
 
         self.refresh_starred().await;
         self.refresh_artists().await;
