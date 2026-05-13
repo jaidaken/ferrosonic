@@ -19,6 +19,63 @@ use crate::ipc::DaemonClient;
 
 const EVENT_FORWARD_CAPACITY: usize = 256;
 
+/// Push a snapshot-derived NowPlayingChanged + QueueChanged pair when
+/// the per-conn writer has room. Returns true on success; on partial
+/// success or full channel, caller keeps `needs_resync` set.
+async fn try_send_resync(
+    tx: &tokio::sync::mpsc::Sender<Frame>,
+    core: &Arc<DaemonCore>,
+) -> bool {
+    use tokio::sync::mpsc::error::TrySendError;
+    let snap = core.snapshot().await;
+    let now = Frame::Event(DaemonEvent::NowPlayingChanged(snap.now_playing.clone()));
+    let queue = Frame::Event(DaemonEvent::QueueChanged {
+        queue: snap.queue.clone(),
+        position: snap.queue_position,
+    });
+    if let Err(TrySendError::Closed(_)) = tx.try_send(now) {
+        return false;
+    }
+    matches!(tx.try_send(queue), Ok(()))
+}
+
+/// Replace plaintext password/secret values in a JSON-ish body string
+/// with `***` before logging. Conservative: any key containing
+/// "password" or "secret" gets its quoted-string value redacted.
+fn redact_secrets_in_body(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let bytes = body.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let rest = &body[i..];
+        let maybe = ["password", "Password", "secret", "Secret"]
+            .iter()
+            .find_map(|key| rest.find(key).map(|p| (p, key.len())));
+        let Some((rel_pos, key_len)) = maybe else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..rel_pos + key_len]);
+        let after = &rest[rel_pos + key_len..];
+        if let Some(colon) = after.find(':') {
+            out.push_str(&after[..=colon]);
+            let val = &after[colon + 1..];
+            let trimmed = val.trim_start();
+            let leading = val.len() - trimmed.len();
+            out.push_str(&val[..leading]);
+            if trimmed.starts_with('"') {
+                if let Some(end) = trimmed[1..].find('"') {
+                    out.push_str("\"***\"");
+                    i += rel_pos + key_len + colon + 1 + leading + 1 + end + 1;
+                    continue;
+                }
+            }
+        }
+        i += rel_pos + key_len;
+    }
+    out
+}
+
 /// `Err` only on bind failure; per-connection errors are logged.
 pub async fn serve(core: Arc<DaemonCore>, path: &Path) -> std::io::Result<()> {
     ensure_parent_dir(path)?;
@@ -28,19 +85,26 @@ pub async fn serve(core: Arc<DaemonCore>, path: &Path) -> std::io::Result<()> {
     info!("ferrosonicd listening on {}", path.display());
 
     loop {
-        match listener.accept().await {
-            Ok((stream, _addr)) => {
-                let core = core.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_connection(core, stream).await {
-                        warn!("Client connection ended with error: {}", e);
-                    }
-                });
+        tokio::select! {
+            biased;
+            _ = core.shutdown_signal() => {
+                info!("shutdown signalled; IPC accept loop exiting");
+                return Ok(());
             }
-            Err(e) => {
-                error!("Accept failed: {}", e);
-                // Backoff: avoid spinning on EMFILE.
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            accepted = listener.accept() => match accepted {
+                Ok((stream, _addr)) => {
+                    let core = core.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_connection(core, stream).await {
+                            warn!("Client connection ended with error: {}", e);
+                        }
+                    });
+                }
+                Err(e) => {
+                    error!("Accept failed: {}", e);
+                    // Backoff: avoid spinning on EMFILE.
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
             }
         }
     }
@@ -88,31 +152,27 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
     let event_writer_tx = writer_tx.clone();
     let event_core = core.clone();
     let event_task = tokio::spawn(async move {
+        use tokio::sync::mpsc::error::TrySendError;
+        // try_send so a frozen TUI cannot block the broadcast pump.
+        // On Full or Lagged we set needs_resync, then deliver a single
+        // snapshot pair the next time the channel has room.
+        let mut needs_resync = false;
         loop {
             match events.recv().await {
-                Ok(ev) => {
-                    if event_writer_tx.send(Frame::Event(ev)).await.is_err() {
-                        break;
+                Ok(ev) => match event_writer_tx.try_send(Frame::Event(ev)) {
+                    Ok(()) => {
+                        if needs_resync {
+                            needs_resync = !try_send_resync(&event_writer_tx, &event_core).await;
+                        }
                     }
-                }
+                    Err(TrySendError::Full(_)) => {
+                        needs_resync = true;
+                    }
+                    Err(TrySendError::Closed(_)) => break,
+                },
                 Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("Event subscriber lagged by {}; resyncing from snapshot", n);
-                    // Push current state so the client can recover the
-                    // events it just missed instead of silently drifting.
-                    let snap = event_core.snapshot().await;
-                    let resync_now = Frame::Event(DaemonEvent::NowPlayingChanged(
-                        snap.now_playing.clone(),
-                    ));
-                    let resync_queue = Frame::Event(DaemonEvent::QueueChanged {
-                        queue: snap.queue.clone(),
-                        position: snap.queue_position,
-                    });
-                    if event_writer_tx.send(resync_now).await.is_err() {
-                        break;
-                    }
-                    if event_writer_tx.send(resync_queue).await.is_err() {
-                        break;
-                    }
+                    warn!("Event subscriber lagged by {}; will resync when room", n);
+                    needs_resync = true;
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
             }
@@ -149,13 +209,17 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
                 warn!("Client sent an Event frame, ignoring");
             }
             FrameRead::UnknownRequest { id, body } => {
+                // Bodies may carry password fields if an UpdateServerConfig
+                // payload fails to deserialize for any reason; scrub
+                // before logging.
+                let redacted = redact_secrets_in_body(&body);
                 warn!(
                     "Unknown request variant from client (id={}); replying with Err: {}",
-                    id, body
+                    id, redacted
                 );
                 let resp = Frame::Response {
                     id,
-                    payload: Err(format!("unknown request variant: {}", body)),
+                    payload: Err(format!("unknown request variant: {}", redacted)),
                 };
                 let _ = writer_tx.send(resp).await;
             }

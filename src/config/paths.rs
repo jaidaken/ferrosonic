@@ -22,7 +22,17 @@ pub fn log_file() -> Option<PathBuf> {
 }
 
 pub fn mpv_socket_path() -> PathBuf {
-    std::env::temp_dir().join("ferrosonic-mpv.sock")
+    // Prefer $XDG_RUNTIME_DIR (per-user, mode 0700) when present;
+    // otherwise UID-scope the /tmp path so two users on the same host
+    // do not collide on the shared socket.
+    if let Some(rt) = std::env::var_os("XDG_RUNTIME_DIR") {
+        let rt = PathBuf::from(rt);
+        if rt.exists() {
+            return rt.join("ferrosonic-mpv.sock");
+        }
+    }
+    let uid = unsafe { libc::getuid() };
+    std::env::temp_dir().join(format!("ferrosonic-mpv-{}.sock", uid))
 }
 
 pub fn queue_file() -> Option<PathBuf> {

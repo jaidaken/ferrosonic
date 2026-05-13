@@ -94,6 +94,9 @@ pub struct DaemonCore {
     /// probe, cava watchers) can exit promptly instead of holding
     /// `Arc<Self>` alive until their own timers fire.
     shutdown: std::sync::atomic::AtomicBool,
+    /// Wakes futures awaiting shutdown (the IPC accept loop, future
+    /// per-connection cancellable handlers).
+    shutdown_notify: tokio::sync::Notify,
 }
 
 impl DaemonCore {
@@ -136,6 +139,7 @@ impl DaemonCore {
             last_loadfile: std::sync::Mutex::new(None),
             config_gen: std::sync::atomic::AtomicU64::new(0),
             shutdown: std::sync::atomic::AtomicBool::new(false),
+            shutdown_notify: tokio::sync::Notify::new(),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -936,6 +940,13 @@ impl DaemonCore {
     pub fn request_shutdown(&self) {
         self.shutdown
             .store(true, std::sync::atomic::Ordering::Release);
+        self.shutdown_notify.notify_waiters();
+    }
+
+    /// Future that resolves the next time `request_shutdown` runs.
+    /// Use in `tokio::select!` from long-lived loops.
+    pub async fn shutdown_signal(&self) {
+        self.shutdown_notify.notified().await;
     }
 
     /// Smooth track swap: stream the new URL to a local temp file
@@ -1887,12 +1898,17 @@ fn song_is_starred(daemon: &DaemonState, song_id: &str) -> bool {
     if daemon.library.starred_ids.contains(song_id) {
         return true;
     }
-    // Fallback when callers mutated starred_songs without rebuilding
-    // the index. O(N) but only on cache miss.
+    // Fallback to a full scan when the per-song `starred` marker
+    // lives only in a different cache (queue, random, album_songs,
+    // playlist_songs) or tests mutated starred_songs directly.
     daemon
         .library
         .starred_songs
         .iter()
+        .chain(daemon.queue.iter())
+        .chain(daemon.library.random_songs.iter())
+        .chain(daemon.library.album_songs_cache.values().flatten())
+        .chain(daemon.library.playlist_songs_cache.values().flatten())
         .any(|s| s.id == song_id && s.starred.is_some())
 }
 

@@ -6,6 +6,24 @@ use tracing::{debug, info, warn};
 
 use crate::error::ConfigError;
 
+/// All top-level TOML keys we expect. Anything not in this list is
+/// warned on load so a typo like `RepeateMode` is visible instead of
+/// silently reverting to the default.
+pub const KNOWN_CONFIG_KEYS: &[&str] = &[
+    "BaseURL",
+    "Username",
+    "Password",
+    "PasswordFile",
+    "Theme",
+    "Cava",
+    "CavaSize",
+    "Daemon",
+    "AutoContinue",
+    "RepeatMode",
+    "CoverArt",
+    "CoverArtSize",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(rename = "BaseURL", default)]
@@ -188,6 +206,17 @@ impl Config {
         let contents = std::fs::read_to_string(path)?;
         let mut config: Config = toml::from_str(&contents)?;
         config.resolve_password();
+        // Warn on unknown top-level keys so typos like `RepeateMode`
+        // don't silently revert to the default.
+        if let Ok(val) = toml::from_str::<toml::Value>(&contents) {
+            if let Some(table) = val.as_table() {
+                for k in table.keys() {
+                    if !KNOWN_CONFIG_KEYS.contains(&k.as_str()) {
+                        warn!("Unknown config key: {} (typo? value ignored)", k);
+                    }
+                }
+            }
+        }
 
         debug!("Config loaded successfully");
         Ok(config)
