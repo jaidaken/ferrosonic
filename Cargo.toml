@@ -113,3 +113,19 @@ lto = true
 codegen-units = 1
 strip = true
 
+# Correctness lints learned from the 2026-05-13 audit. Tightened over
+# time as warnings are cleaned up. See docs/AUDIT-2026-05-13.md.
+[lints.clippy]
+# Holding std::sync::Mutex across .await is a classic deadlock trap;
+# the audit found patterns close to this so we deny it outright.
+await_holding_lock = "deny"
+# Dropping a future is almost always a bug.
+let_underscore_future = "deny"
+# Soft enforcement on panic-prone idioms; promote to deny once src/ is
+# clean of legacy unwrap/expect/panic call-sites.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+# A Mutex<bool> can usually be an AtomicBool with less contention.
+mutex_atomic = "warn"
+
