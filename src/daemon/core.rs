@@ -30,7 +30,7 @@ pub enum PlayMode {
     Buffered,
 }
 
-const EVENT_CHANNEL_CAPACITY: usize = 256;
+const EVENT_CHANNEL_CAPACITY: usize = 32;
 
 /// RAII clear for `prebuffer_loading`. Drop clears the flag unless
 /// `disarm()` was called (cancel paths leave the gate to a newer task).
@@ -94,9 +94,10 @@ pub struct DaemonCore {
     /// probe, cava watchers) can exit promptly instead of holding
     /// `Arc<Self>` alive until their own timers fire.
     shutdown: std::sync::atomic::AtomicBool,
-    /// Wakes futures awaiting shutdown (the IPC accept loop, future
-    /// per-connection cancellable handlers).
+    /// Wakes futures awaiting shutdown; consumers select on shutdown_signal().
     shutdown_notify: tokio::sync::Notify,
+    /// Bumped on each library refresh; LibraryVersionChanged carries it for pull-style clients.
+    library_version: std::sync::atomic::AtomicU64,
 }
 
 impl DaemonCore {
@@ -140,6 +141,7 @@ impl DaemonCore {
             config_gen: std::sync::atomic::AtomicU64::new(0),
             shutdown: std::sync::atomic::AtomicBool::new(false),
             shutdown_notify: tokio::sync::Notify::new(),
+            library_version: std::sync::atomic::AtomicU64::new(0),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -232,6 +234,30 @@ impl DaemonCore {
     pub async fn start_mpv(&self) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         mpv.start().await.map_err(Into::into)
+    }
+
+    pub async fn spawn_mpv_event_listener(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        let core = self.clone();
+        let mut rx = core.mpv.lock().await.subscribe_events();
+        tokio::spawn(async move {
+            use crate::audio::mpv::MpvEventKind;
+            loop {
+                if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+                    return;
+                }
+                let ev = match rx.recv().await {
+                    Ok(e) => e,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                };
+                if let MpvEventKind::EndFile { reason } = ev {
+                    if reason == "eof" {
+                        debug!("mpv end-file (eof); advancing");
+                        let _ = core.advance_auto().await;
+                    }
+                }
+            }
+        })
     }
 
     pub async fn quit_mpv(&self) {
@@ -335,6 +361,7 @@ impl DaemonCore {
                 state.library.rebuild_starred_index();
                 drop(state);
                 self.emit(DaemonEvent::StarredChanged(songs));
+                self.bump_library_version();
             }
             Err(e) => {
                 error!("Failed to load starred songs: {}", e);
@@ -361,6 +388,7 @@ impl DaemonCore {
                 state.library.random_songs = songs.clone();
                 drop(state);
                 self.emit(DaemonEvent::RandomChanged(songs));
+                self.bump_library_version();
             }
             Err(e) => {
                 error!("Failed to load random songs: {}", e);
@@ -389,6 +417,7 @@ impl DaemonCore {
                 drop(state);
                 info!("Loaded {} artists", count);
                 self.emit(DaemonEvent::ArtistsChanged(artists));
+                self.bump_library_version();
             }
             Err(e) => {
                 error!("Failed to load artists: {}", e);
@@ -417,6 +446,7 @@ impl DaemonCore {
                 drop(state);
                 info!("Loaded {} playlists", count);
                 self.emit(DaemonEvent::PlaylistsChanged(playlists));
+                self.bump_library_version();
             }
             Err(e) => {
                 error!("Failed to load playlists: {}", e);
@@ -426,6 +456,14 @@ impl DaemonCore {
 
     fn config_gen_changed(&self, snapshot: u64) -> bool {
         self.config_gen.load(std::sync::atomic::Ordering::Acquire) != snapshot
+    }
+
+    fn bump_library_version(&self) {
+        let v = self
+            .library_version
+            .fetch_add(1, std::sync::atomic::Ordering::Release)
+            + 1;
+        self.emit(DaemonEvent::LibraryVersionChanged(v));
     }
 
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {

@@ -12,7 +12,10 @@ use tracing::{debug, error, info, warn};
 
 use crate::daemon::DaemonCore;
 use crate::ipc::client::InProcessClient;
-use crate::ipc::frame::{read_frame_lenient, write_frame, Frame, FrameError, FrameRead};
+use crate::ipc::frame::{
+    read_frame_lenient_with_cap, write_frame, Frame, FrameError, FrameRead,
+    MAX_REQUEST_FRAME_BYTES,
+};
 use crate::ipc::path::ensure_parent_dir;
 use crate::ipc::protocol::DaemonEvent;
 use crate::ipc::DaemonClient;
@@ -79,6 +82,7 @@ fn redact_secrets_in_body(body: &str) -> String {
 /// `Err` only on bind failure; per-connection errors are logged.
 pub async fn serve(core: Arc<DaemonCore>, path: &Path) -> std::io::Result<()> {
     ensure_parent_dir(path)?;
+    let _lock = acquire_socket_lock(path)?;
     handle_stale_socket(path).await?;
 
     let listener = UnixListener::bind(path)?;
@@ -110,8 +114,31 @@ pub async fn serve(core: Arc<DaemonCore>, path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Connect-and-fail probes for a live daemon at the socket path;
-/// success means another daemon owns it, failure means it's stale.
+/// Holds lock for daemon lifetime so two daemons cannot race past handle_stale_socket.
+fn acquire_socket_lock(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::io::AsRawFd;
+    let lock_path = path.with_extension("lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)?;
+    let r = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if r != 0 {
+        let err = std::io::Error::last_os_error();
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AddrInUse,
+            format!(
+                "daemon already running (lock {} held: {})",
+                lock_path.display(),
+                err
+            ),
+        ));
+    }
+    Ok(file)
+}
+
+/// Connect-probe to detect a stale socket; flock above already serialised access.
 async fn handle_stale_socket(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());
@@ -180,7 +207,7 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
     });
 
     loop {
-        let read = match read_frame_lenient(&mut reader).await {
+        let read = match read_frame_lenient_with_cap(&mut reader, MAX_REQUEST_FRAME_BYTES).await {
             Ok(r) => r,
             Err(FrameError::Closed) => {
                 debug!("Client closed connection");

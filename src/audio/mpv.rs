@@ -23,6 +23,7 @@ use crate::error::AudioError;
 const COMMAND_DEADLINE: Duration = Duration::from_secs(5);
 
 type PendingMap = Arc<TokioMutex<HashMap<u64, oneshot::Sender<Result<Option<Value>, AudioError>>>>>;
+const EVENT_CHANNEL_CAP: usize = 64;
 
 #[derive(Debug, Serialize)]
 struct MpvCommand {
@@ -48,6 +49,17 @@ struct MpvEvent {
     name: Option<String>,
     #[serde(default)]
     data: Option<Value>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// Typed mpv event surface for daemon consumers; raw event fields stay private.
+#[derive(Debug, Clone)]
+pub enum MpvEventKind {
+    EndFile { reason: String },
+    StartFile,
+    FileLoaded,
+    Other(String),
 }
 
 pub struct MpvController {
@@ -55,11 +67,12 @@ pub struct MpvController {
     process: Option<Child>,
     request_id: AtomicU64,
     writer: Option<OwnedWriteHalf>,
-    /// Outstanding requests waiting for a response keyed by request_id.
-    /// The reader task fills these; send_command awaits via oneshot.
+    /// Outstanding requests keyed by request_id; reader task resolves.
     pending: PendingMap,
     /// Background reader task; aborted on disconnect/shutdown.
     reader_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Broadcast of typed mpv events to daemon consumers.
+    event_tx: tokio::sync::broadcast::Sender<MpvEventKind>,
 }
 
 impl MpvController {
@@ -69,6 +82,7 @@ impl MpvController {
 
     /// Test seam: point the controller at a specific socket path.
     pub fn with_socket_path(socket_path: PathBuf) -> Self {
+        let (event_tx, _) = tokio::sync::broadcast::channel(EVENT_CHANNEL_CAP);
         Self {
             socket_path,
             process: None,
@@ -76,7 +90,12 @@ impl MpvController {
             writer: None,
             pending: Arc::new(TokioMutex::new(HashMap::new())),
             reader_handle: None,
+            event_tx,
         }
+    }
+
+    pub fn subscribe_events(&self) -> tokio::sync::broadcast::Receiver<MpvEventKind> {
+        self.event_tx.subscribe()
     }
 
     /// Test seam: connect to an mpv socket that's already listening.
@@ -165,7 +184,8 @@ impl MpvController {
         self.writer = Some(write_half);
 
         let pending = self.pending.clone();
-        let handle = tokio::spawn(reader_loop(BufReader::new(read_half), pending));
+        let events = self.event_tx.clone();
+        let handle = tokio::spawn(reader_loop(BufReader::new(read_half), pending, events));
         self.reader_handle = Some(handle);
 
         debug!("Connected to MPV socket");
@@ -485,10 +505,12 @@ impl Default for MpvController {
     }
 }
 
-/// Dedicated reader task: demuxes responses to their oneshots and
-/// trace-logs events. Ends when the socket closes; any oneshots left
-/// in `pending` resolve via the Sender being dropped on task exit.
-async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, pending: PendingMap) {
+/// Demuxes responses to oneshots; forwards typed events to subscribers.
+async fn reader_loop(
+    mut reader: BufReader<OwnedReadHalf>,
+    pending: PendingMap,
+    events: tokio::sync::broadcast::Sender<MpvEventKind>,
+) {
     let mut line = String::new();
     loop {
         line.clear();
@@ -513,6 +535,8 @@ async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, pending: PendingMap) 
                 }
                 if let Ok(event) = serde_json::from_str::<MpvEvent>(&line) {
                     trace!("MPV event: {:?}", event);
+                    let kind = classify_event(&event);
+                    let _ = events.send(kind);
                 }
             }
             Err(e) => {
@@ -520,5 +544,16 @@ async fn reader_loop(mut reader: BufReader<OwnedReadHalf>, pending: PendingMap) 
                 break;
             }
         }
+    }
+}
+
+fn classify_event(ev: &MpvEvent) -> MpvEventKind {
+    match ev.event.as_str() {
+        "end-file" => MpvEventKind::EndFile {
+            reason: ev.reason.clone().unwrap_or_else(|| "unknown".into()),
+        },
+        "start-file" => MpvEventKind::StartFile,
+        "file-loaded" => MpvEventKind::FileLoaded,
+        other => MpvEventKind::Other(other.to_string()),
     }
 }

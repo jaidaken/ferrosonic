@@ -113,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let _poll = core.spawn_polling_task();
+    let _mpv_events = core.spawn_mpv_event_listener().await;
 
     if config.is_configured() {
         let bg = Arc::clone(&core);

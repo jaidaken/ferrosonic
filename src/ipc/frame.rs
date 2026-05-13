@@ -11,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::ipc::protocol::{DaemonEvent, DaemonRequest, DaemonResponse};
 
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_REQUEST_FRAME_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Frame {
@@ -76,11 +77,22 @@ pub async fn read_frame_lenient<R>(reader: &mut R) -> Result<FrameRead, FrameErr
 where
     R: AsyncReadExt + Unpin,
 {
-    let body = read_frame_body(reader).await?;
+    read_frame_lenient_with_cap(reader, MAX_FRAME_BYTES).await
+}
 
-    if let Ok(frame) = serde_json::from_slice::<Frame>(&body) {
-        return Ok(FrameRead::Ok(frame));
-    }
+pub async fn read_frame_lenient_with_cap<R>(
+    reader: &mut R,
+    cap: usize,
+) -> Result<FrameRead, FrameError>
+where
+    R: AsyncReadExt + Unpin,
+{
+    let body = read_frame_body_with_cap(reader, cap).await?;
+
+    let typed_err = match serde_json::from_slice::<Frame>(&body) {
+        Ok(frame) => return Ok(FrameRead::Ok(frame)),
+        Err(e) => e,
+    };
 
     let raw: serde_json::Value = serde_json::from_slice(&body)?;
 
@@ -108,13 +120,17 @@ where
         });
     }
 
-    // Doesn't even look like a Frame envelope — fatal.
-    Err(FrameError::Serialize(
-        serde_json::from_slice::<Frame>(&body).unwrap_err(),
-    ))
+    Err(FrameError::Serialize(typed_err))
 }
 
 async fn read_frame_body<R>(reader: &mut R) -> Result<Vec<u8>, FrameError>
+where
+    R: AsyncReadExt + Unpin,
+{
+    read_frame_body_with_cap(reader, MAX_FRAME_BYTES).await
+}
+
+async fn read_frame_body_with_cap<R>(reader: &mut R, cap: usize) -> Result<Vec<u8>, FrameError>
 where
     R: AsyncReadExt + Unpin,
 {
@@ -127,7 +143,7 @@ where
         Err(e) => return Err(FrameError::Io(e)),
     }
     let len = u32::from_le_bytes(len_buf) as usize;
-    if len > MAX_FRAME_BYTES {
+    if len > cap {
         return Err(FrameError::TooLarge(len));
     }
     let mut body = vec![0u8; len];

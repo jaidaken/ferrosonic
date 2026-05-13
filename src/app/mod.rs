@@ -51,7 +51,7 @@ pub struct App {
     /// removes it on drop / `stop_cava`.
     pub(crate) cava_config: Option<tempfile::NamedTempFile>,
     pub(crate) last_click: Option<(u16, u16, std::time::Instant)>,
-    /// `picker` is `None` until `run()` probes the terminal.
+    /// Guard must never span an .await; clippy::await_holding_lock enforces.
     pub(crate) cover_art: std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
 }
 
@@ -791,8 +791,9 @@ pub async fn apply_event(
         }
         DaemonEvent::Shutdown => {
             let mut cs = client_state.write().await;
-            cs.notify_error("Daemon shut down — disconnecting");
+            cs.notify_error("Daemon shut down, disconnecting");
             cs.should_quit = true;
         }
+        DaemonEvent::LibraryVersionChanged(_) => {}
     }
 }

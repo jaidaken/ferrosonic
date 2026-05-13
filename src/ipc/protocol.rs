@@ -144,6 +144,8 @@ pub enum DaemonEvent {
     RepeatModeChanged(RepeatMode),
     ConfigChanged(Config),
     Shutdown,
+    /// Opt-in pull-style alternative to the bulk ArtistsChanged etc events.
+    LibraryVersionChanged(u64),
 }
 
 #[derive(Debug, thiserror::Error)]

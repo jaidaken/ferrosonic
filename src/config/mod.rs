@@ -24,7 +24,7 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "CoverArtSize",
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(rename = "BaseURL", default)]
     pub base_url: String,
@@ -32,8 +32,7 @@ pub struct Config {
     #[serde(rename = "Username", default)]
     pub username: String,
 
-    /// Resolved at load-time from `FERROSONIC_PASSWORD` env, then
-    /// `PasswordFile`, then this inline value.
+    /// Resolved at load-time from `FERROSONIC_PASSWORD` env, then `PasswordFile`, then this inline value.
     #[serde(rename = "Password", default)]
     pub password: String,
 
@@ -71,6 +70,28 @@ pub struct Config {
     /// 3 (2 border rows + 1 progress bar row).
     #[serde(rename = "CoverArtSize", default = "Config::default_cover_art_size")]
     pub cover_art_size: u8,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("base_url", &self.base_url)
+            .field("username", &self.username)
+            .field(
+                "password",
+                &if self.password.is_empty() { "" } else { "***" },
+            )
+            .field("password_file", &self.password_file)
+            .field("theme", &self.theme)
+            .field("cava", &self.cava)
+            .field("cava_size", &self.cava_size)
+            .field("daemon", &self.daemon)
+            .field("auto_continue", &self.auto_continue)
+            .field("repeat_mode", &self.repeat_mode)
+            .field("cover_art", &self.cover_art)
+            .field("cover_art_size", &self.cover_art_size)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
