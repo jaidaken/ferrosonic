@@ -170,6 +170,14 @@ impl MpvController {
         if !self.socket_path.exists() {
             return Err(AudioError::MpvIpc("Socket not created".to_string()));
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(
+                &self.socket_path,
+                std::fs::Permissions::from_mode(0o600),
+            );
+        }
 
         self.connect().await?;
         info!("MPV started successfully");

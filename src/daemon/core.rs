@@ -1151,7 +1151,12 @@ impl DaemonCore {
             let path_str = path.to_string_lossy().to_string();
             let start = std::time::Instant::now();
 
-            let resp = match reqwest::Client::new().get(&url).send().await {
+            let client = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+            let resp = match client.get(&url).send().await {
                 Ok(r) => r,
                 Err(e) => {
                     error!("Pre-buffer fetch failed: {}", e);
@@ -1241,6 +1246,7 @@ impl DaemonCore {
                         if cancel_task.load(Ordering::Relaxed) {
                             debug!("Pre-buffer cancelled before loadfile");
                             gate.disarm();
+                            slot_cleaner.disarm();
                             return;
                         }
                         if let Err(e) = mpv.loadfile(&path_str).await {
@@ -1251,6 +1257,7 @@ impl DaemonCore {
                     }
                     if cancel_task.load(Ordering::Relaxed) {
                         gate.disarm();
+                        slot_cleaner.disarm();
                         return;
                     }
                     core.preload_next_track(preload_pos).await;
@@ -1268,6 +1275,7 @@ impl DaemonCore {
                     if cancel_task.load(Ordering::Relaxed) {
                         debug!("Pre-buffer cancelled before final loadfile");
                         gate.disarm();
+                        slot_cleaner.disarm();
                         return;
                     }
                     if let Err(e) = mpv.loadfile(&path_str).await {

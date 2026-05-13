@@ -31,7 +31,11 @@ impl QueueSnapshot {
                     path.display(),
                     e
                 );
-                let bad = path.with_extension("json.bad");
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let bad = path.with_extension(format!("json.bad.{}", stamp));
                 if let Err(rename_err) = std::fs::rename(&path, &bad) {
                     tracing::warn!("could not preserve corrupt snapshot: {}", rename_err);
                 }

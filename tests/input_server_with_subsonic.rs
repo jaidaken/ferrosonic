@@ -102,7 +102,10 @@ async fn enter_on_save_field_with_bad_url_sets_save_failed() {
     let cs = app.client_state.read().await;
     let status = cs.server_state.status.clone().unwrap_or_default();
     assert!(
-        status.contains("failed") || status.contains("Save") || status.contains("Saving"),
+        status.contains("failed")
+            || status.contains("Save")
+            || status.contains("Saving")
+            || status.contains("Invalid"),
         "status: {}",
         status
     );

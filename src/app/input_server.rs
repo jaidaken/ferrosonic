@@ -5,6 +5,8 @@ use crate::error::Error;
 
 use super::*;
 
+const MAX_FIELD_LEN: usize = 1024;
+
 impl App {
     pub(super) async fn handle_server_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
@@ -27,12 +29,17 @@ impl App {
             KeyCode::Tab => {
                 state.client.server_state.selected_field = (field + 1) % 5;
             }
-            KeyCode::Char(c) if is_text_field => match field {
-                0 => state.client.server_state.base_url.push(c),
-                1 => state.client.server_state.username.push(c),
-                2 => state.client.server_state.password.push(c),
-                _ => {}
-            },
+            KeyCode::Char(c) if is_text_field => {
+                let target: &mut String = match field {
+                    0 => &mut state.client.server_state.base_url,
+                    1 => &mut state.client.server_state.username,
+                    2 => &mut state.client.server_state.password,
+                    _ => return Ok(()),
+                };
+                if target.len() < MAX_FIELD_LEN {
+                    target.push(c);
+                }
+            }
             KeyCode::Backspace if is_text_field => match field {
                 0 => {
                     state.client.server_state.base_url.pop();
@@ -48,10 +55,14 @@ impl App {
             KeyCode::Enter => {
                 match field {
                     3 => {
-                        // Test connection — daemon does the ping.
                         let base_url = state.client.server_state.base_url.clone();
                         let username = state.client.server_state.username.clone();
                         let password = state.client.server_state.password.clone();
+                        if url::Url::parse(&base_url).is_err() {
+                            state.client.server_state.status =
+                                Some("Invalid URL (must start with http:// or https://)".to_string());
+                            return Ok(());
+                        }
                         state.client.server_state.status =
                             Some("Testing connection...".to_string());
                         drop(state);
@@ -107,8 +118,6 @@ impl App {
                         return Ok(());
                     }
                     4 => {
-                        // Save config and reconnect — daemon persists +
-                        // refetches starred/artists/playlists.
                         info!(
                             "Saving config: url='{}', user='{}'",
                             state.client.server_state.base_url, state.client.server_state.username
@@ -116,6 +125,11 @@ impl App {
                         let base_url = state.client.server_state.base_url.clone();
                         let username = state.client.server_state.username.clone();
                         let password = state.client.server_state.password.clone();
+                        if url::Url::parse(&base_url).is_err() {
+                            state.client.server_state.status =
+                                Some("Invalid URL (must start with http:// or https://)".to_string());
+                            return Ok(());
+                        }
                         state.client.server_state.status = Some("Saving...".to_string());
                         drop(state);
                         drop(cs);
