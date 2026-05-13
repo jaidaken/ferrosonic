@@ -1,6 +1,7 @@
 //! Daemon core: owns mpv, the queue, the library cache, the event
 //! broadcast, and config persistence.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, Mutex, RwLock};
@@ -31,6 +32,33 @@ pub enum PlayMode {
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 
+/// RAII clear for `prebuffer_loading`. Drop clears the flag unless
+/// `disarm()` was called (cancel paths leave the gate to a newer task).
+struct PrebufferGate {
+    flag: Arc<AtomicBool>,
+    armed: std::cell::Cell<bool>,
+}
+
+impl PrebufferGate {
+    fn new(flag: Arc<AtomicBool>) -> Self {
+        Self {
+            flag,
+            armed: std::cell::Cell::new(true),
+        }
+    }
+    fn disarm(&self) {
+        self.armed.set(false);
+    }
+}
+
+impl Drop for PrebufferGate {
+    fn drop(&mut self) {
+        if self.armed.get() {
+            self.flag.store(false, Ordering::Release);
+        }
+    }
+}
+
 pub struct DaemonCore {
     pub state: SharedDaemonState,
     pub mpv: Mutex<MpvController>,
@@ -50,6 +78,10 @@ pub struct DaemonCore {
     /// stays alive while mpv still has it open. Bounded so old files
     /// eventually get unlinked.
     prebuffer_files: Mutex<Vec<std::sync::Arc<tempfile::NamedTempFile>>>,
+    /// Per-Buffered-request flag, true between `mpv.stop()` and the
+    /// task's `mpv.loadfile`. Suppresses idle-advance during the gap.
+    /// Per-task Arc so a stale task's Drop clears only its own flag.
+    prebuffer_loading: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl DaemonCore {
@@ -88,6 +120,7 @@ impl DaemonCore {
             cover_art_cache: RwLock::new(std::collections::HashMap::new()),
             prebuffer_cancel: Mutex::new(None),
             prebuffer_files: Mutex::new(Vec::new()),
+            prebuffer_loading: Mutex::new(None),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -699,31 +732,28 @@ impl DaemonCore {
                 self.preload_next_track(pos).await;
             }
             PlayMode::Buffered => {
-                // Cancel any in-flight prebuffer FIRST. If a previous
-                // task is about to call `mpv.loadfile`, this races with
-                // our `mpv.stop` below — by setting the cancel flag
-                // first the task has a chance to bail before reaching
-                // the mpv lock.
-                use std::sync::atomic::Ordering;
+                // Cancel any in-flight prebuffer first; setting the flag
+                // before `mpv.stop` gives the prior task a chance to bail
+                // before its own `mpv.loadfile` races us.
                 if let Some(prev) = self.prebuffer_cancel.lock().await.take() {
                     prev.store(true, Ordering::Relaxed);
                 }
+                // Per-request loading flag; the task's Drop only clears
+                // this one Arc, so an older task can't clear ours.
+                let loading = Arc::new(AtomicBool::new(true));
+                *self.prebuffer_loading.lock().await = Some(loading.clone());
                 {
                     let mut mpv = self.mpv.lock().await;
                     if mpv.is_paused().await.unwrap_or(false) {
                         let _ = mpv.resume().await;
                     }
-                    // Stop current audio immediately. Audio device
-                    // stays open (audio-stream-silence=yes) so the user
-                    // hears actual silence, not a hardware re-init.
+                    // audio-stream-silence=yes keeps the device open so
+                    // the user hears silence, not a re-init click.
                     if mpv.is_running() && !mpv.is_idle().await.unwrap_or(true) {
                         let _ = mpv.stop().await;
                     }
                 }
-                // Pre-buffer in background; preload-next deferred to
-                // the same task so we don't append to a soon-to-be-
-                // replaced playlist.
-                self.prebuffer_and_load(stream_url, pos).await;
+                self.prebuffer_and_load(stream_url, pos, loading).await;
             }
         }
 
@@ -760,8 +790,12 @@ impl DaemonCore {
     /// small file), point mpv at the local file via `loadfile`. Old
     /// audio stays continuous up to the loadfile moment; mpv reads
     /// from disk and starts decoding immediately.
-    async fn prebuffer_and_load(self: &Arc<Self>, url: String, preload_pos: usize) {
-        use std::sync::atomic::{AtomicBool, Ordering};
+    async fn prebuffer_and_load(
+        self: &Arc<Self>,
+        url: String,
+        preload_pos: usize,
+        loading: Arc<AtomicBool>,
+    ) {
         use std::sync::Arc as StdArc;
 
         // Cancel any prior pre-buffer so we don't leave parallel
@@ -786,6 +820,7 @@ impl DaemonCore {
                 );
                 let mut mpv = self.mpv.lock().await;
                 let _ = mpv.loadfile(&url).await;
+                loading.store(false, Ordering::Release);
                 return;
             }
         };
@@ -810,6 +845,11 @@ impl DaemonCore {
             use std::io::Write;
 
             const PREBUFFER_THRESHOLD: usize = 512 * 1024;
+
+            // RAII clear of this task's own `loading` Arc. Cancel paths
+            // disarm so the new task's flag isn't touched (different Arc
+            // anyway, but kept symmetric for safety).
+            let gate = PrebufferGate::new(loading);
 
             let path = temp_task.path().to_path_buf();
             let path_str = path.to_string_lossy().to_string();
@@ -842,6 +882,9 @@ impl DaemonCore {
             while let Some(chunk) = stream.next().await {
                 if cancel_task.load(Ordering::Relaxed) {
                     debug!("Pre-buffer cancelled at {} KB", bytes_written / 1024);
+                    // Cancel means a newer Buffered request set the gate
+                    // again; leave it set for that task.
+                    gate.disarm();
                     return;
                 }
                 let chunk = match chunk {
@@ -872,11 +915,12 @@ impl DaemonCore {
                     );
                     {
                         let mut mpv = core.mpv.lock().await;
-                        // Re-check cancel with the mpv lock held —
-                        // a newer switch may have set it between the
-                        // top-of-loop check and now.
+                        // Re-check cancel with the mpv lock held; a newer
+                        // switch may have set it between the loop check
+                        // and now.
                         if cancel_task.load(Ordering::Relaxed) {
                             debug!("Pre-buffer cancelled before loadfile");
+                            gate.disarm();
                             return;
                         }
                         if let Err(e) = mpv.loadfile(&path_str).await {
@@ -885,10 +929,9 @@ impl DaemonCore {
                         }
                     }
                     if cancel_task.load(Ordering::Relaxed) {
+                        gate.disarm();
                         return;
                     }
-                    // Now that the new file is the current entry,
-                    // queue up the gapless preload for the song after.
                     core.preload_next_track(preload_pos).await;
                 }
             }
@@ -903,6 +946,7 @@ impl DaemonCore {
                     let mut mpv = core.mpv.lock().await;
                     if cancel_task.load(Ordering::Relaxed) {
                         debug!("Pre-buffer cancelled before final loadfile");
+                        gate.disarm();
                         return;
                     }
                     if let Err(e) = mpv.loadfile(&path_str).await {
@@ -911,6 +955,7 @@ impl DaemonCore {
                     }
                 }
                 if cancel_task.load(Ordering::Relaxed) {
+                    gate.disarm();
                     return;
                 }
                 core.preload_next_track(preload_pos).await;
@@ -1199,6 +1244,20 @@ impl DaemonCore {
                 mpv.is_idle().await.ok()
             };
             if idle_opt == Some(true) {
+                // Buffered switch may have stopped mpv with state still
+                // Playing while the prebuffer downloads. Don't treat
+                // that gap as a finished track.
+                let loading = self
+                    .prebuffer_loading
+                    .lock()
+                    .await
+                    .as_ref()
+                    .map(|a| a.load(Ordering::Acquire))
+                    .unwrap_or(false);
+                if loading {
+                    debug!("mpv idle but prebuffer in flight; deferring advance");
+                    return;
+                }
                 info!("Track ended, advancing to next");
                 let _ = self.advance_auto().await;
                 return;
