@@ -278,18 +278,14 @@ impl InProcessClient {
     ) -> Result<DaemonResponse, IpcError> {
         match mode {
             EnqueueMode::Replace { play_from } => {
-                {
-                    let mut state = self.core.state.write().await;
-                    state.queue = songs;
-                    state.queue_position = None;
-                }
-                self.core.broadcast_queue_changed().await;
-                if let Some(idx) = play_from {
-                    self.core
-                        .play_queue_position(idx, crate::daemon::core::PlayMode::Buffered)
-                        .await
-                        .map_err(err)?;
-                }
+                self.core
+                    .replace_queue_and_play(
+                        songs,
+                        play_from,
+                        crate::daemon::core::PlayMode::Buffered,
+                    )
+                    .await
+                    .map_err(err)?;
             }
             EnqueueMode::Append => {
                 {

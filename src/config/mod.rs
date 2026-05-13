@@ -193,6 +193,16 @@ impl Config {
         Ok(config)
     }
 
+    /// Expand `~/` if present in a password-file path.
+    pub fn expand_tilde(path: &str) -> String {
+        if let Some(rest) = path.strip_prefix("~/") {
+            if let Ok(home) = std::env::var("HOME") {
+                return format!("{}/{}", home, rest);
+            }
+        }
+        path.to_string()
+    }
+
     fn resolve_password(&mut self) {
         if let Ok(env) = std::env::var("FERROSONIC_PASSWORD") {
             if !env.is_empty() {
@@ -202,15 +212,7 @@ impl Config {
             }
         }
         if let Some(pf) = self.password_file.as_ref().filter(|s| !s.is_empty()) {
-            let expanded = if let Some(rest) = pf.strip_prefix("~/") {
-                if let Ok(home) = std::env::var("HOME") {
-                    format!("{}/{}", home, rest)
-                } else {
-                    pf.clone()
-                }
-            } else {
-                pf.clone()
-            };
+            let expanded = Self::expand_tilde(pf);
             match std::fs::read_to_string(&expanded) {
                 Ok(contents) => {
                     debug!("Using password from {}", expanded);
@@ -284,6 +286,39 @@ impl Config {
 
         Ok(())
     }
+}
+
+/// Atomic password-file writer: temp + rename. Mode is set to 0600 on
+/// the temp file before rename so the secret is never world-readable.
+pub fn write_password_file_atomic(
+    path: &str,
+    password: &str,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    let expanded = Config::expand_tilde(path);
+    let p = Path::new(&expanded);
+    if let Some(parent) = p.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let tmp = p.with_extension("tmp");
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&tmp)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    f.write_all(password.as_bytes())?;
+    f.write_all(b"\n")?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, p)?;
+    Ok(())
 }
 
 #[cfg(test)]

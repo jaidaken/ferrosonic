@@ -683,41 +683,16 @@ impl DaemonCore {
         pos: usize,
         mode: PlayMode,
     ) -> Result<(), Error> {
-        use crate::app::state::PlaybackState;
         let Some(client) = self.subsonic.read().await.clone() else {
             return Ok(());
         };
 
-        // Validate, fetch URL, and commit state under a single write
-        // lock so a concurrent queue mutation can't desync
-        // now_playing.song from queue[queue_position].
         let (song, stream_url) = {
             let mut state = self.state.write().await;
-            let song = match state.queue.get(pos) {
-                Some(s) => s.clone(),
-                None => return Ok(()),
-            };
-            let url = match client.get_stream_url(&song.id) {
-                Ok(url) => url,
-                Err(e) => {
-                    error!("Failed to get stream URL: {}", e);
-                    self.emit(DaemonEvent::Notification {
-                        message: format!("Failed to get stream URL: {}", e),
-                        is_error: true,
-                    });
-                    return Ok(());
-                }
-            };
-            state.queue_position = Some(pos);
-            state.now_playing.song = Some(song.clone());
-            state.now_playing.state = PlaybackState::Playing;
-            state.now_playing.position = 0.0;
-            state.now_playing.duration = song.duration.unwrap_or(0) as f64;
-            state.now_playing.sample_rate = None;
-            state.now_playing.bit_depth = None;
-            state.now_playing.format = None;
-            state.now_playing.channels = None;
-            (song, url)
+            match self.commit_play_state_in_lock(&mut state, &client, pos) {
+                Ok(v) => v,
+                Err(_) => return Ok(()),
+            }
         };
 
         info!(
@@ -725,6 +700,97 @@ impl DaemonCore {
             song.title, pos, mode
         );
 
+        self.dispatch_play(stream_url, pos, mode).await?;
+        self.emit_now_playing().await;
+        self.emit_queue().await;
+        self.spawn_fast_probe();
+        Ok(())
+    }
+
+    /// Replace queue + play target under a single state write lock so
+    /// another client cannot mutate the queue between the swap and the
+    /// play setup. If `play_from` is None, only the queue is replaced.
+    pub async fn replace_queue_and_play(
+        self: &Arc<Self>,
+        songs: Vec<crate::subsonic::models::Child>,
+        play_from: Option<usize>,
+        mode: PlayMode,
+    ) -> Result<(), Error> {
+        let client_opt = self.subsonic.read().await.clone();
+
+        let prepared = {
+            let mut state = self.state.write().await;
+            state.queue = songs;
+            state.queue_position = None;
+            match (play_from, client_opt) {
+                (Some(idx), Some(client)) => self
+                    .commit_play_state_in_lock(&mut state, &client, idx)
+                    .ok()
+                    .map(|(s, u)| (s, u, idx)),
+                _ => None,
+            }
+        };
+
+        self.broadcast_queue_changed().await;
+
+        let Some((song, stream_url, idx)) = prepared else {
+            return Ok(());
+        };
+
+        info!(
+            "Playing: {} (queue pos {}) mode={:?}",
+            song.title, idx, mode
+        );
+
+        self.dispatch_play(stream_url, idx, mode).await?;
+        self.emit_now_playing().await;
+        self.emit_queue().await;
+        self.spawn_fast_probe();
+        Ok(())
+    }
+
+    /// Validate queue[pos], fetch its stream URL, and commit play
+    /// state. Must be called with `state` already write-locked.
+    fn commit_play_state_in_lock(
+        self: &Arc<Self>,
+        state: &mut DaemonState,
+        client: &SubsonicClient,
+        pos: usize,
+    ) -> Result<(crate::subsonic::models::Child, String), ()> {
+        use crate::app::state::PlaybackState;
+        let song = match state.queue.get(pos) {
+            Some(s) => s.clone(),
+            None => return Err(()),
+        };
+        let url = match client.get_stream_url(&song.id) {
+            Ok(url) => url,
+            Err(e) => {
+                error!("Failed to get stream URL: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to get stream URL: {}", e),
+                    is_error: true,
+                });
+                return Err(());
+            }
+        };
+        state.queue_position = Some(pos);
+        state.now_playing.song = Some(song.clone());
+        state.now_playing.state = PlaybackState::Playing;
+        state.now_playing.position = 0.0;
+        state.now_playing.duration = song.duration.unwrap_or(0) as f64;
+        state.now_playing.sample_rate = None;
+        state.now_playing.bit_depth = None;
+        state.now_playing.format = None;
+        state.now_playing.channels = None;
+        Ok((song, url))
+    }
+
+    async fn dispatch_play(
+        self: &Arc<Self>,
+        stream_url: String,
+        pos: usize,
+        mode: PlayMode,
+    ) -> Result<(), Error> {
         match mode {
             PlayMode::Direct => {
                 let mut mpv = self.mpv.lock().await;
@@ -742,18 +808,12 @@ impl DaemonCore {
                 }
                 self.stamp_loadfile();
                 drop(mpv);
-                // Preload next now; mpv is loading new file.
                 self.preload_next_track(pos).await;
             }
             PlayMode::Buffered => {
-                // Cancel any in-flight prebuffer first; setting the flag
-                // before `mpv.stop` gives the prior task a chance to bail
-                // before its own `mpv.loadfile` races us.
                 if let Some(prev) = self.prebuffer_cancel.lock().await.take() {
                     prev.store(true, Ordering::Relaxed);
                 }
-                // Per-request loading flag; the task's Drop only clears
-                // this one Arc, so an older task can't clear ours.
                 let loading = Arc::new(AtomicBool::new(true));
                 *self.prebuffer_loading.lock().await = Some(loading.clone());
                 {
@@ -761,8 +821,6 @@ impl DaemonCore {
                     if mpv.is_paused().await.unwrap_or(false) {
                         let _ = mpv.resume().await;
                     }
-                    // audio-stream-silence=yes keeps the device open so
-                    // the user hears silence, not a re-init click.
                     if mpv.is_running() && !mpv.is_idle().await.unwrap_or(true) {
                         let _ = mpv.stop().await;
                     }
@@ -770,14 +828,12 @@ impl DaemonCore {
                 self.prebuffer_and_load(stream_url, pos, loading).await;
             }
         }
+        Ok(())
+    }
 
-        self.emit_now_playing().await;
-        self.emit_queue().await;
-
-        // Fast probe loop: poll mpv every 50ms for up to ~4s for audio
-        // properties. mpv usually has them within 200-500ms after
-        // loadfile; without this the 500ms backstop tick is the only
-        // path and the quality row visibly lags.
+    fn spawn_fast_probe(self: &Arc<Self>) {
+        // 50ms x 80 = ~4s ceiling for mpv to populate audio params,
+        // so the quality row doesn't lag the 500ms backstop tick.
         let core = self.clone();
         tokio::spawn(async move {
             for _ in 0..80 {
@@ -794,8 +850,6 @@ impl DaemonCore {
                 }
             }
         });
-
-        Ok(())
     }
 
     /// Smooth track swap: stream the new URL to a local temp file
@@ -1551,8 +1605,21 @@ impl DaemonCore {
             let mut state = self.state.write().await;
             state.config.base_url = base_url.to_string();
             state.config.username = username.to_string();
-            state.config.password = password.to_string();
-            state.config.save_default().map_err(Error::Config)?;
+            // When password_file is set, secret goes to that file and
+            // inline stays empty in config.toml; otherwise inline.
+            let pf_opt = state.config.password_file.clone().filter(|s| !s.is_empty());
+            if let Some(pf) = pf_opt.as_deref() {
+                if let Err(e) = crate::config::write_password_file_atomic(pf, password) {
+                    error!("Failed to write password to {}: {}", pf, e);
+                    return Err(Error::Io(e));
+                }
+                state.config.password = String::new();
+                state.config.save_default().map_err(Error::Config)?;
+                state.config.password = password.to_string();
+            } else {
+                state.config.password = password.to_string();
+                state.config.save_default().map_err(Error::Config)?;
+            }
         }
 
         let new_client =
