@@ -246,7 +246,11 @@ impl Config {
         }
 
         let contents = toml::to_string_pretty(self)?;
-        std::fs::write(path, contents)?;
+        // Write-temp-then-rename so a crash mid-write cannot leave a
+        // truncated config.toml and wipe the user's credentials.
+        let tmp = path.with_extension("toml.tmp");
+        std::fs::write(&tmp, contents)?;
+        std::fs::rename(&tmp, path)?;
 
         info!("Config saved to {}", path.display());
         Ok(())

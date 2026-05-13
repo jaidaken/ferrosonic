@@ -73,10 +73,8 @@ impl PipeWireController {
     }
 
     pub async fn set_rate(&mut self, rate: u32) -> Result<(), AudioError> {
-        if self.current_rate == Some(rate) {
-            debug!("Sample rate already set to {}", rate);
-            return Ok(());
-        }
+        // No cache short-circuit: external pw-metadata changes would
+        // make the cache stale and bit-perfect would silently break.
         info!("Setting PipeWire sample rate to {} Hz", rate);
         let rate_str = rate.to_string();
         let output = self

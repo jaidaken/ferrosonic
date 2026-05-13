@@ -15,6 +15,10 @@ use crate::config::paths::mpv_socket_path;
 use crate::error::AudioError;
 
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
+/// Overall deadline for a single `send_command`. Without this, a hung
+/// mpv would freeze every audio operation since the controller mutex
+/// serialises all IPC.
+const COMMAND_DEADLINE: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Serialize)]
 struct MpvCommand {
@@ -195,7 +199,14 @@ impl MpvController {
 
         let reader = self.reader.as_mut().ok_or(AudioError::MpvNotRunning)?;
         let mut line = String::new();
+        let deadline = std::time::Instant::now() + COMMAND_DEADLINE;
         loop {
+            if std::time::Instant::now() >= deadline {
+                return Err(AudioError::MpvIpc(format!(
+                    "mpv command timeout after {:?} (req {})",
+                    COMMAND_DEADLINE, request_id
+                )));
+            }
             line.clear();
             match timeout(READ_TIMEOUT, reader.read_line(&mut line)).await {
                 Ok(Ok(0)) => return Err(AudioError::MpvIpc("Socket closed".to_string())),

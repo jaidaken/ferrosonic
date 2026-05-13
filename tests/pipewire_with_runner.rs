@@ -116,7 +116,9 @@ async fn set_rate_invokes_runner_with_expected_args() {
 }
 
 #[tokio::test]
-async fn set_rate_with_same_value_short_circuits_without_running() {
+async fn set_rate_with_same_value_still_issues_pw_metadata() {
+    // External pw-metadata changes would make a cache short-circuit
+    // silently break bit-perfect, so set_rate always issues.
     let runner = FakeRunner::new();
     runner.set_initial_query("");
     let mut ctrl = PipeWireController::with_runner(Arc::new(runner.clone()));
@@ -124,7 +126,10 @@ async fn set_rate_with_same_value_short_circuits_without_running() {
     let calls_before = runner.calls().len();
     ctrl.set_rate(44100).await.unwrap();
     let calls_after = runner.calls().len();
-    assert_eq!(calls_before, calls_after, "second set_rate must not re-run");
+    assert!(
+        calls_after > calls_before,
+        "second set_rate must still run pw-metadata"
+    );
 }
 
 #[tokio::test]

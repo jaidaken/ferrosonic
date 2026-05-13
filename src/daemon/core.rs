@@ -82,6 +82,10 @@ pub struct DaemonCore {
     /// task's `mpv.loadfile`. Suppresses idle-advance during the gap.
     /// Per-task Arc so a stale task's Drop clears only its own flag.
     prebuffer_loading: Mutex<Option<Arc<AtomicBool>>>,
+    /// Timestamp of the most recent successful `mpv.loadfile`. mpv may
+    /// still report idle-active for a short window after loadfile, so
+    /// the idle-advance branch ignores idle within ~1.5s of this.
+    last_loadfile: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 impl DaemonCore {
@@ -121,6 +125,7 @@ impl DaemonCore {
             prebuffer_cancel: Mutex::new(None),
             prebuffer_files: Mutex::new(Vec::new()),
             prebuffer_loading: Mutex::new(None),
+            last_loadfile: std::sync::Mutex::new(None),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -128,17 +133,27 @@ impl DaemonCore {
         core
     }
 
+    fn stamp_loadfile(&self) {
+        *self.last_loadfile.lock().unwrap() = Some(std::time::Instant::now());
+    }
+
     fn restore_queue_blocking(self: Arc<Self>) {
-        if let Some(snap) = QueueSnapshot::load() {
-            let count = snap.queue.len();
-            let position = snap.position;
-            let st = self.state.clone();
-            tokio::spawn(async move {
-                let mut s = st.write().await;
+        // Sync try_write at startup so IPC Play requests can't race a
+        // not-yet-loaded queue.
+        let Some(snap) = QueueSnapshot::load() else {
+            return;
+        };
+        let count = snap.queue.len();
+        let position = snap.position;
+        match self.state.try_write() {
+            Ok(mut s) => {
                 s.queue = snap.queue;
                 s.queue_position = snap.position;
                 info!("Restored {} queue items (position={:?})", count, position);
-            });
+            }
+            Err(_) => {
+                warn!("State write lock contended at startup; queue not restored");
+            }
         }
     }
 
@@ -669,19 +684,20 @@ impl DaemonCore {
         mode: PlayMode,
     ) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
-        let song = {
-            let state = self.state.read().await;
-            match state.queue.get(pos) {
-                Some(s) => s.clone(),
-                None => return Ok(()),
-            }
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Ok(());
         };
 
-        let stream_url = {
-            let Some(client) = self.subsonic.read().await.clone() else {
-                return Ok(());
+        // Validate, fetch URL, and commit state under a single write
+        // lock so a concurrent queue mutation can't desync
+        // now_playing.song from queue[queue_position].
+        let (song, stream_url) = {
+            let mut state = self.state.write().await;
+            let song = match state.queue.get(pos) {
+                Some(s) => s.clone(),
+                None => return Ok(()),
             };
-            match client.get_stream_url(&song.id) {
+            let url = match client.get_stream_url(&song.id) {
                 Ok(url) => url,
                 Err(e) => {
                     error!("Failed to get stream URL: {}", e);
@@ -691,11 +707,7 @@ impl DaemonCore {
                     });
                     return Ok(());
                 }
-            }
-        };
-
-        {
-            let mut state = self.state.write().await;
+            };
             state.queue_position = Some(pos);
             state.now_playing.song = Some(song.clone());
             state.now_playing.state = PlaybackState::Playing;
@@ -705,7 +717,8 @@ impl DaemonCore {
             state.now_playing.bit_depth = None;
             state.now_playing.format = None;
             state.now_playing.channels = None;
-        }
+            (song, url)
+        };
 
         info!(
             "Playing: {} (queue pos {}) mode={:?}",
@@ -727,6 +740,7 @@ impl DaemonCore {
                     });
                     return Ok(());
                 }
+                self.stamp_loadfile();
                 drop(mpv);
                 // Preload next now; mpv is loading new file.
                 self.preload_next_track(pos).await;
@@ -820,6 +834,7 @@ impl DaemonCore {
                 );
                 let mut mpv = self.mpv.lock().await;
                 let _ = mpv.loadfile(&url).await;
+                self.stamp_loadfile();
                 loading.store(false, Ordering::Release);
                 return;
             }
@@ -861,6 +876,7 @@ impl DaemonCore {
                     error!("Pre-buffer fetch failed: {}", e);
                     let mut mpv = core.mpv.lock().await;
                     let _ = mpv.loadfile(&url).await;
+                    core.stamp_loadfile();
                     return;
                 }
             };
@@ -871,6 +887,7 @@ impl DaemonCore {
                     error!("Pre-buffer file open failed: {}", e);
                     let mut mpv = core.mpv.lock().await;
                     let _ = mpv.loadfile(&url).await;
+                    core.stamp_loadfile();
                     return;
                 }
             };
@@ -894,6 +911,7 @@ impl DaemonCore {
                         if !triggered {
                             let mut mpv = core.mpv.lock().await;
                             let _ = mpv.loadfile(&url).await;
+                            core.stamp_loadfile();
                         }
                         return;
                     }
@@ -927,6 +945,7 @@ impl DaemonCore {
                             error!("Pre-buffer loadfile failed: {}", e);
                             return;
                         }
+                        core.stamp_loadfile();
                     }
                     if cancel_task.load(Ordering::Relaxed) {
                         gate.disarm();
@@ -953,6 +972,7 @@ impl DaemonCore {
                         error!("Pre-buffer loadfile failed: {}", e);
                         return;
                     }
+                    core.stamp_loadfile();
                 }
                 if cancel_task.load(Ordering::Relaxed) {
                     gate.disarm();
@@ -1116,13 +1136,11 @@ impl DaemonCore {
         let Some(rate) = sr else {
             return false;
         };
-        let need_switch = {
-            let pw = self.pipewire.lock().await;
-            pw.get_current_rate() != Some(rate)
-        };
-        if need_switch {
+        {
+            // Single pw lock spans the set, and we always call set_rate
+            // (no cache short-circuit) so external pw-metadata changes
+            // don't leave us silently mismatched.
             let mut pw = self.pipewire.lock().await;
-            info!("Sample rate change to {} Hz", rate);
             if let Err(e) = pw.set_rate(rate).await {
                 warn!("Failed to set PipeWire sample rate: {}", e);
             }
@@ -1161,24 +1179,27 @@ impl DaemonCore {
         }
 
         if is_playing {
-            let (time_remaining, has_next) = {
+            let (time_remaining, has_next, position) = {
                 let state = self.state.read().await;
                 let tr = state.now_playing.duration - state.now_playing.position;
                 let hn = state
                     .queue_position
                     .map(|p| p + 1 < state.queue.len())
                     .unwrap_or(false);
-                (tr, hn)
+                (tr, hn, state.now_playing.position)
             };
 
-            if has_next && time_remaining > 0.0 && time_remaining < 2.0 {
+            // position > 0.5 guards against a freshly loaded track
+            // whose `time_remaining` lands in (0, 2) because state was
+            // pre-populated before mpv actually started decoding.
+            if has_next && position > 0.5 && time_remaining > 0.0 && time_remaining < 2.0 {
                 let count_opt = {
                     let mut mpv = self.mpv.lock().await;
                     mpv.get_playlist_count().await.ok()
                 };
                 if let Some(count) = count_opt {
                     if count < 2 {
-                        info!("Near end of track with no preloaded next — advancing early");
+                        info!("Near end of track with no preloaded next - advancing early");
                         let _ = self.next_track().await;
                         return;
                     }
@@ -1205,35 +1226,48 @@ impl DaemonCore {
                 mpv.get_playlist_pos().await.ok().flatten()
             };
             if mpv_pos_opt == Some(1) {
-                let advance_info = {
-                    let state = self.state.read().await;
+                // Resolve next-song and commit state under a single
+                // write lock; a queue mutation between resolution and
+                // commit would desync now_playing.
+                let next_pos = {
+                    let mut state = self.state.write().await;
                     let queue_len = state.queue.len();
                     let repeat = state.config.repeat_mode;
-                    state.queue_position.and_then(|cur| {
+                    let resolved = state.queue_position.and_then(|cur| {
                         repeat
                             .next_auto(cur, queue_len)
                             .and_then(|n| state.queue.get(n).map(|s| (n, s.clone())))
-                    })
-                };
-                if let Some((next_pos, song)) = advance_info {
-                    info!("Gapless advancement to track {}", next_pos);
-                    {
-                        let mut state = self.state.write().await;
+                    });
+                    if let Some((next_pos, song)) = resolved {
                         state.queue_position = Some(next_pos);
                         state.now_playing.song = Some(song.clone());
                         state.now_playing.position = 0.0;
                         state.now_playing.duration = song.duration.unwrap_or(0) as f64;
+                        Some(next_pos)
+                    } else {
+                        None
                     }
+                };
+                if let Some(next_pos) = next_pos {
+                    info!("Gapless advancement to track {}", next_pos);
                     {
+                        // Re-check playlist-pos under the same mpv lock
+                        // as the remove so we don't pop entry 0 after
+                        // mpv has moved on or rewound.
                         let mut mpv = self.mpv.lock().await;
-                        let _ = mpv.playlist_remove(0).await;
+                        let pos_now = mpv.get_playlist_pos().await.ok().flatten();
+                        if pos_now == Some(1) {
+                            let _ = mpv.playlist_remove(0).await;
+                        } else {
+                            warn!(
+                                "playlist-pos shifted from 1 to {:?} before remove; skipping",
+                                pos_now
+                            );
+                        }
                     }
                     self.preload_next_track(next_pos).await;
                     self.emit_now_playing().await;
-                    // queue_position changed; clients use it to derive
-                    // current_song(), so without this the play-indicator
-                    // sticks on the previous track until the next manual
-                    // queue mutation.
+                    // queue_position changed; clients derive current_song from it.
                     self.emit_queue().await;
                     return;
                 }
@@ -1244,9 +1278,7 @@ impl DaemonCore {
                 mpv.is_idle().await.ok()
             };
             if idle_opt == Some(true) {
-                // Buffered switch may have stopped mpv with state still
-                // Playing while the prebuffer downloads. Don't treat
-                // that gap as a finished track.
+                // Buffered switch stopped mpv mid-download.
                 let loading = self
                     .prebuffer_loading
                     .lock()
@@ -1256,6 +1288,18 @@ impl DaemonCore {
                     .unwrap_or(false);
                 if loading {
                     debug!("mpv idle but prebuffer in flight; deferring advance");
+                    return;
+                }
+                // Post-loadfile acceptance window: mpv may still report
+                // idle for a brief moment after a successful loadfile.
+                let just_loaded = self
+                    .last_loadfile
+                    .lock()
+                    .unwrap()
+                    .map(|t| t.elapsed() < std::time::Duration::from_millis(1500))
+                    .unwrap_or(false);
+                if just_loaded {
+                    debug!("mpv idle but loadfile <1.5s ago; deferring advance");
                     return;
                 }
                 info!("Track ended, advancing to next");
