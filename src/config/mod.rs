@@ -272,9 +272,10 @@ impl Config {
                 }
                 Err(e) => {
                     warn!(
-                        "PasswordFile {} unreadable: {}; falling back to inline password",
+                        "PasswordFile {} unreadable ({}); clearing inline password to avoid silent fallback to stale credentials",
                         expanded, e
                     );
+                    self.password.clear();
                 }
             }
         }
@@ -297,7 +298,20 @@ impl Config {
             }
         }
 
-        let contents = toml::to_string_pretty(self)?;
+        // Defensive: if password_file is set, never serialize inline plaintext, even if the caller forgot to clear it. update_server_config already does this for the standard path; this protects every other future caller.
+        let to_serialize = if self
+            .password_file
+            .as_ref()
+            .is_some_and(|s| !s.is_empty())
+            && !self.password.is_empty()
+        {
+            let mut scrubbed = self.clone();
+            scrubbed.password.clear();
+            std::borrow::Cow::Owned(scrubbed)
+        } else {
+            std::borrow::Cow::Borrowed(self)
+        };
+        let contents = toml::to_string_pretty(&*to_serialize)?;
         let tmp = path.with_extension("toml.tmp");
         use std::io::Write as _;
         let mut f = std::fs::OpenOptions::new()

@@ -58,7 +58,7 @@ PasswordFile = "{}"
 
 #[test]
 #[serial]
-fn password_file_unreadable_falls_back_to_inline() {
+fn password_file_unreadable_clears_inline_to_avoid_stale_credentials() {
     let tmp = tempfile::tempdir().unwrap();
     let config_path = tmp.path().join("config.toml");
     std::fs::write(
@@ -72,7 +72,7 @@ PasswordFile = "/nonexistent-file"
     .unwrap();
     std::env::remove_var("FERROSONIC_PASSWORD");
     let c = Config::load_from_file(&config_path).unwrap();
-    assert_eq!(c.password, "fallback-inline");
+    assert_eq!(c.password, "");
 }
 
 #[test]

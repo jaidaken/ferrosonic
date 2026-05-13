@@ -181,7 +181,7 @@ pub struct PlaylistsState {
     pub song_scroll_offset: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ServerState {
     /// 0=URL, 1=Username, 2=Password, 3=Test, 4=Save.
     pub selected_field: usize,
@@ -189,6 +189,21 @@ pub struct ServerState {
     pub username: String,
     pub password: String,
     pub status: Option<String>,
+}
+
+impl std::fmt::Debug for ServerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerState")
+            .field("selected_field", &self.selected_field)
+            .field("base_url", &self.base_url)
+            .field("username", &self.username)
+            .field(
+                "password",
+                &if self.password.is_empty() { "" } else { "***" },
+            )
+            .field("status", &self.status)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
