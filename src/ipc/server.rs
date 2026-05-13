@@ -86,6 +86,7 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
     });
 
     let event_writer_tx = writer_tx.clone();
+    let event_core = core.clone();
     let event_task = tokio::spawn(async move {
         loop {
             match events.recv().await {
@@ -95,12 +96,21 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("Event subscriber lagged by {}; resyncing", n);
-                    let frame = Frame::Event(DaemonEvent::Notification {
-                        message: format!("Client lagged by {} events", n),
-                        is_error: false,
+                    warn!("Event subscriber lagged by {}; resyncing from snapshot", n);
+                    // Push current state so the client can recover the
+                    // events it just missed instead of silently drifting.
+                    let snap = event_core.snapshot().await;
+                    let resync_now = Frame::Event(DaemonEvent::NowPlayingChanged(
+                        snap.now_playing.clone(),
+                    ));
+                    let resync_queue = Frame::Event(DaemonEvent::QueueChanged {
+                        queue: snap.queue.clone(),
+                        position: snap.queue_position,
                     });
-                    if event_writer_tx.send(frame).await.is_err() {
+                    if event_writer_tx.send(resync_now).await.is_err() {
+                        break;
+                    }
+                    if event_writer_tx.send(resync_queue).await.is_err() {
                         break;
                     }
                 }
@@ -124,14 +134,13 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
 
         match read {
             FrameRead::Ok(Frame::Request { id, req }) => {
-                let dispatcher = dispatcher.clone();
-                let writer_tx = writer_tx.clone();
-                tokio::spawn(async move {
-                    let result = dispatcher.request(req).await;
-                    let payload = result.map_err(|e| e.to_string());
-                    let resp = Frame::Response { id, payload };
-                    let _ = writer_tx.send(resp).await;
-                });
+                // Await inline so a single connection's requests are
+                // served in arrival order. Concurrent multi-client
+                // load is still handled by separate connection tasks.
+                let result = dispatcher.request(req).await;
+                let payload = result.map_err(|e| e.to_string());
+                let resp = Frame::Response { id, payload };
+                let _ = writer_tx.send(resp).await;
             }
             FrameRead::Ok(Frame::Response { id, .. }) => {
                 warn!("Client sent a Response frame (id={}), ignoring", id);
