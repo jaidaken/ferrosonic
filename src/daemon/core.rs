@@ -146,10 +146,23 @@ impl DaemonCore {
         let core = self.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
+            let mut watchdog =
+                tokio::time::interval(std::time::Duration::from_secs(2));
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                tick.tick().await;
-                core.update_playback_info().await;
+                tokio::select! {
+                    _ = tick.tick() => core.update_playback_info().await,
+                    _ = watchdog.tick() => {
+                        let dead = !core.mpv.lock().await.is_running();
+                        if dead {
+                            warn!("mpv backend gone, respawning");
+                            if let Err(e) = core.start_mpv().await {
+                                error!("respawn failed: {}", e);
+                            }
+                        }
+                    }
+                }
             }
         })
     }

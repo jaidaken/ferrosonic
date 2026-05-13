@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::UnixStream;
 use tokio::time::{sleep, timeout};
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::config::paths::mpv_socket_path;
 use crate::error::AudioError;
@@ -78,8 +78,20 @@ impl MpvController {
     }
 
     pub async fn start(&mut self) -> Result<(), AudioError> {
-        if self.process.is_some() {
-            return Ok(());
+        // Reap an exited child so a fresh mpv can be spawned. Without
+        // this, an mpv crash leaves self.process = Some(<exited Child>)
+        // and start_mpv() silently no-ops on every subsequent call.
+        if let Some(child) = self.process.as_mut() {
+            match child.try_wait() {
+                Ok(None) => return Ok(()),
+                Ok(Some(status)) => {
+                    warn!("mpv exited ({:?}), respawning", status);
+                    self.process = None;
+                    self.reader = None;
+                    self.writer = None;
+                }
+                Err(_) => return Ok(()),
+            }
         }
         let _ = std::fs::remove_file(&self.socket_path);
         info!("Starting MPV with socket: {}", self.socket_path.display());
