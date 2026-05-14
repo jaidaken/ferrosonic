@@ -10,5 +10,6 @@ pub mod daemon;
 pub mod error;
 pub mod ipc;
 pub mod mpris;
+pub mod secret;
 pub mod subsonic;
 pub mod ui;

@@ -53,6 +53,8 @@ url = "2"
 urlencoding = "2"
 md5 = "0.7"
 rand = "0.8"
+# Secret newtype: explicit drop-zeroize on the boxed password bytes.
+zeroize = { version = "1.8", features = ["derive"] }
 unicode-width = "0.2"
 strum = "0.26"
 strum_macros = "0.26"
