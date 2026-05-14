@@ -29,6 +29,7 @@ struct FakeMpvState {
     properties: HashMap<String, Value>,
     playlist: Vec<String>,
     commands: Vec<Vec<Value>>,
+    fail_loadfile: bool,
 }
 
 impl FakeMpv {
@@ -125,6 +126,10 @@ impl FakeMpv {
     pub async fn set_playlist(&self, items: Vec<String>) {
         self.state.lock().await.playlist = items;
     }
+
+    pub async fn set_fail_loadfile(&self, fail: bool) {
+        self.state.lock().await.fail_loadfile = fail;
+    }
 }
 
 async fn handle_connection(stream: UnixStream, state: Arc<Mutex<FakeMpvState>>) {
@@ -174,6 +179,9 @@ async fn process_command(
     let name = cmd.first().and_then(|v| v.as_str()).unwrap_or("");
     match name {
         "loadfile" => {
+            if s.fail_loadfile {
+                return ("loadfile injected failure".into(), None);
+            }
             let path = cmd
                 .get(1)
                 .and_then(|v| v.as_str())

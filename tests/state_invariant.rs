@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use common::{song, songs, TestDaemon};
+use ferrosonic::app::state::PlaybackState;
+use ferrosonic::daemon::core::PlayMode;
 use serial_test::serial;
 
 /// R1 core.rs:261. restore_queue_blocking used try_write and warned on contention; fix lifts the snapshot load into new_shared_daemon_state so it happens before the Arc<RwLock> is shared. Test asserts restoration actually lands; pre-fix this passes because construction is uncontended in tests but the silent-skip path remained reachable.
@@ -139,5 +141,47 @@ async fn r2_apply_star_and_refresh_under_one_lock() {
         violations.load(Ordering::Acquire),
         0,
         "observers saw starred_ids/starred_songs desync between apply_star_to_cached and refresh_starred"
+    );
+}
+
+/// R2 core.rs:984. commit_play_state_in_lock sets state.Playing under the state write lock; the idle-advance observer in update_playback_info must not interpret state.Playing+mpv.idle as track-ended during the loadfile in-flight window. The fix stamps last_loadfile at commit time so the 1.5s acceptance gate covers the entire window.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial]
+async fn r2_commit_play_state_stamps_last_loadfile_invariant() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_ping().await;
+    td.fake_subsonic.expect_artists(&[]).await;
+    td.fake_subsonic.expect_starred().await;
+    td.fake_subsonic.expect_playlists().await;
+    td.fake_subsonic.expect_random_songs(&[]).await;
+    for i in 0..4 {
+        td.fake_subsonic
+            .expect_stream_for(&format!("song-{}", i), vec![0u8; 1024])
+            .await;
+    }
+    {
+        let mut s = td.state.write().await;
+        s.queue = songs("song", 4);
+        s.queue_position = None;
+    }
+
+    td.fake_mpv.set_fail_loadfile(true).await;
+    let _ = td.core.play_queue_position(0, PlayMode::Direct).await;
+
+    let state_after = td.state.read().await;
+    assert_eq!(
+        state_after.now_playing.state,
+        PlaybackState::Playing,
+        "state.Playing is committed before the loadfile attempt"
+    );
+    let qp_before = state_after.queue_position;
+    drop(state_after);
+
+    td.core.update_playback_info().await;
+
+    let state_post = td.state.read().await;
+    assert_eq!(
+        state_post.queue_position, qp_before,
+        "observer must not auto-advance during the commit-to-loadfile window"
     );
 }
