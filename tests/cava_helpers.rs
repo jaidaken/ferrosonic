@@ -1,7 +1,7 @@
 //! cava config generation + lifecycle tests.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ferrosonic::app::cava::generate_cava_config;
+use ferrosonic::app::cava_pipe::generate_cava_config;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
 use serial_test::serial;

@@ -3,7 +3,7 @@
 
 use std::io::{Cursor, Error, ErrorKind, Read, Result};
 
-use ferrosonic::app::cava::{drain_into_parser, screen_to_cava_rows, DrainOutcome};
+use ferrosonic::app::cava_pipe::{drain_into_parser, screen_to_cava_rows, DrainOutcome};
 
 /// Reader that returns scripted chunks, then a final outcome (EOF,
 /// WouldBlock, or HardError). Used to exercise each drain branch.

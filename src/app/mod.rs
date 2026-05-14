@@ -1,6 +1,6 @@
 //! Main application module
 
-pub mod cava;
+pub mod cava_pipe;
 pub mod client_state;
 pub mod event_pump;
 pub mod event_source;

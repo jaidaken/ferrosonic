@@ -1,6 +1,6 @@
 //! Pure-logic tests for cava screen_to_cava_rows.
 
-use ferrosonic::app::cava::screen_to_cava_rows;
+use ferrosonic::app::cava_pipe::screen_to_cava_rows;
 use ferrosonic::app::state::{CavaColor, CavaRow};
 
 fn parse(rows: u16, cols: u16, input: &[u8]) -> Vec<CavaRow> {
