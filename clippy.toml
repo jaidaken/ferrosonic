@@ -2,3 +2,7 @@ avoid-breaking-exported-api = true
 cognitive-complexity-threshold = 25
 type-complexity-threshold = 250
 too-many-arguments-threshold = 8
+
+disallowed-methods = [
+    { path = "std::fs::write", reason = "use temp + rename via fsync_parent_dir or atomic_write; bypass with #[allow(clippy::disallowed_methods)] + reason comment" },
+]

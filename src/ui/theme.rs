@@ -249,10 +249,12 @@ pub fn seed_default_themes(dir: &Path) {
     for (filename, content) in BUILTIN_THEMES {
         let path = dir.join(filename);
         if !path.exists() {
-            if let Err(e) = std::fs::write(&path, content) {
-                error!("Failed to write theme {}: {}", filename, e);
-            } else {
-                info!("Seeded theme file: {}", filename);
+            #[allow(clippy::disallowed_methods)]
+            // allow-direct-write: seeding built-in theme, rebuildable from defaults
+            let res = std::fs::write(&path, content);
+            match res {
+                Err(e) => error!("Failed to write theme {}: {}", filename, e),
+                Ok(()) => info!("Seeded theme file: {}", filename),
             }
         }
     }

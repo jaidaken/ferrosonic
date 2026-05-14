@@ -8,9 +8,15 @@
 *.swo
 *~
 
-# Claude Code
+# Claude Code (project-local AI working files)
 CLAUDE.md
 CLAUDE.md2
+CLAUDE.local.md
+.claude/
+.claudeignore
+.rust-audit-marker
+.rust-project-init-seen
+.rust-project-init-skip
 
 # Local planning notes (not for the repo)
 PLANNING.md
@@ -24,6 +30,3 @@ Thumbs.db
 
 # Config (may contain credentials)
 config.toml
-
-# rust-audit hook marker (per-checkout)
-.rust-audit-marker

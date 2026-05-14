@@ -54,6 +54,8 @@ impl QueueSnapshot {
         let tmp = path.with_extension("json.tmp");
         let body = serde_json::to_vec(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        #[allow(clippy::disallowed_methods)]
+        // allow-direct-write: tmp half of temp+rename pattern, completed below
         std::fs::write(&tmp, body)?;
         std::fs::rename(&tmp, &path)?;
         crate::config::fsync_parent_dir(&path);

@@ -130,4 +130,6 @@ expect_used = "warn"
 panic = "warn"
 # A Mutex<bool> can usually be an AtomicBool with less contention.
 mutex_atomic = "warn"
+# Surfaces calls to methods banned in clippy.toml disallowed-methods.
+disallowed_methods = "warn"
 
