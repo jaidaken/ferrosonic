@@ -1,6 +1,5 @@
 //! Ferrosonic, terminal-based Subsonic music client.
-
-// drop(guard) releases a lock before .await; clippy can't see that.
+#![warn(clippy::pedantic, clippy::nursery, missing_docs, rust_2018_idioms)]
 
 pub mod app;
 pub mod audio;

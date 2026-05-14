@@ -1,9 +1,11 @@
 name: test
 
-# Manual trigger only. Run from the Actions tab or via
-# `gh workflow run test`. The release workflow still fires on tag push.
+# Manual trigger by default; nightly schedule runs the slow mutants job.
+# The release workflow still fires on tag push.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
 
 env:
   CARGO_TERM_COLOR: always
@@ -31,6 +33,49 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  unwrap_grep:
+    name: forbid unwrap/expect in src
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Grep src/ for forbidden patterns
+        run: |
+          set -e
+          if grep -RnE '\.unwrap\(\)|\.expect\(' src/ \
+              --include='*.rs' \
+              --exclude-dir=tests \
+              --exclude-dir=examples \
+              --exclude-dir=benches; then
+            echo
+            echo "::error::production code uses .unwrap() or .expect()."
+            echo "Move the call to tests/examples/benches, or replace with proper error handling, or add #[cfg(test)] gating."
+            exit 1
+          fi
+          echo "src/ is clean of .unwrap() and .expect() outside tests/examples/benches."
+
+  mutants:
+    name: cargo-mutants (slow, nightly only)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config mpv
+      - name: Run cargo-mutants
+        run: cargo mutants --no-shuffle --timeout 60 -- --all-targets
+      - name: Upload mutants report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants.out/
+          retention-days: 30
 
   test:
     name: nextest + mpv
