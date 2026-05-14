@@ -1,3 +1,4 @@
+//! Library page input. Single match in `handle_library_key` covers one tree-of-mixed-items view plus a filter overlay; splitting by key would fragment one match across files.
 use crossterm::event::{self, KeyCode};
 use tracing::info;
 
