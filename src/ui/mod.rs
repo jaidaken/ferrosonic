@@ -9,6 +9,9 @@ pub mod pages;
 pub mod styled_lines;
 pub mod theme;
 mod theme_builtins;
-pub mod widgets;
+pub mod widget_cava;
+pub mod widget_now_playing;
 
 pub use layout::draw;
+pub use widget_cava::CavaWidget;
+pub use widget_now_playing::NowPlayingWidget;

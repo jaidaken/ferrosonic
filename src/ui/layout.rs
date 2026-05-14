@@ -11,7 +11,7 @@ use super::cover_art::{self, CoverArtState};
 use super::footer::Footer;
 use super::header::Header;
 use super::pages;
-use super::widgets::{self, CavaWidget, NowPlayingWidget};
+use super::{widget_cava::CavaWidget, widget_now_playing, widget_now_playing::NowPlayingWidget};
 
 const NOW_PLAYING_BASE: u16 = 7;
 
@@ -123,7 +123,7 @@ pub fn draw(
             .try_lock()
             .map(|g| g.cell_size)
             .unwrap_or((10, 20));
-        if let Some(rect) = widgets::now_playing::art_rect(now_playing_area, art_cols, cell_size) {
+        if let Some(rect) = widget_now_playing::art_rect(now_playing_area, art_cols, cell_size) {
             cover_art::render(frame, rect, cover_art_state);
         }
     }

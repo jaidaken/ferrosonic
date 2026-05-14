@@ -1,4 +1,4 @@
-//! ui/widgets/now_playing.rs: render branches across area sizes.
+//! ui/widget_now_playing.rs: render branches across area sizes.
 
 use ferrosonic::daemon::state::{NowPlaying, PlaybackState};
 use ferrosonic::subsonic::models::Child;
@@ -7,7 +7,7 @@ use ferrosonic::ui::theme::{ThemeColors, ThemeData};
 fn colors() -> ThemeColors {
     ThemeData::default_theme().colors
 }
-use ferrosonic::ui::widgets::now_playing::{art_rect, render_progress_bar, NowPlayingWidget};
+use ferrosonic::ui::widget_now_playing::{art_rect, render_progress_bar, NowPlayingWidget};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::Widget;

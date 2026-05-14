@@ -1,7 +1,7 @@
-//! ui/widgets/cava.rs: every render branch + color conversion.
+//! ui/widget_cava.rs: every render branch + color conversion.
 
 use ferrosonic::app::state::{CavaColor, CavaRow, CavaSpan};
-use ferrosonic::ui::widgets::cava::CavaWidget;
+use ferrosonic::ui::widget_cava::CavaWidget;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
