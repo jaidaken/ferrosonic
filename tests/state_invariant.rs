@@ -318,3 +318,60 @@ async fn r1_pause_playback_rechecks_under_write_lock() {
         );
     }
 }
+
+/// R1 core.rs:778. extend_with_random_and_play must read queue.len, extend, and commit play state under a single state write lock so a concurrent advance_auto reading queue.len between extend and commit cannot stamp the wrong queue_position. The function as shipped does the entire read-validate-extend-play under one write; this test pins that contract by verifying that immediately after the call the queue_position points to a song whose id matches an appended random song.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial]
+async fn r1_extend_with_random_and_play_atomic_queue_extend() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_ping().await;
+    td.fake_subsonic.expect_artists(&[]).await;
+    td.fake_subsonic.expect_starred().await;
+    td.fake_subsonic.expect_playlists().await;
+    td.fake_subsonic
+        .expect_random_songs(&["A", "B", "C", "D"])
+        .await;
+    for i in 0..4 {
+        td.fake_subsonic
+            .expect_stream_for(&format!("song-{}", i), vec![0u8; 1024])
+            .await;
+    }
+
+    {
+        let mut s = td.state.write().await;
+        s.queue = songs("seed", 1);
+        s.queue_position = Some(0);
+        s.config.auto_continue = true;
+        s.now_playing.state = PlaybackState::Playing;
+        s.now_playing.song = Some(s.queue[0].clone());
+    }
+
+    let initial_len = td.state.read().await.queue.len();
+    let _ = td.core.next_track().await;
+
+    let s = td.state.read().await;
+    assert!(
+        s.queue.len() > initial_len,
+        "queue must extend with random songs (was {}, now {})",
+        initial_len,
+        s.queue.len()
+    );
+    let pos = s.queue_position.expect("queue_position must be set after auto-continue");
+    assert_eq!(
+        pos, initial_len,
+        "queue_position must point at the first appended song"
+    );
+    let played_song = s.now_playing.song.as_ref().expect("now_playing.song set");
+    assert_eq!(
+        played_song.id,
+        s.queue[pos].id,
+        "now_playing.song must equal queue[queue_position] at commit time"
+    );
+    let random_ids: std::collections::HashSet<&str> =
+        ["song-0", "song-1", "song-2", "song-3"].iter().copied().collect();
+    assert!(
+        random_ids.contains(played_song.id.as_str()),
+        "played song {} must come from the random batch",
+        played_song.id
+    );
+}
