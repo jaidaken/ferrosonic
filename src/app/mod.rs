@@ -16,6 +16,7 @@ pub mod models;
 mod mouse;
 mod mouse_library;
 mod mouse_playlists;
+pub mod page_state;
 pub mod state;
 
 use std::io;
