@@ -24,11 +24,11 @@ fn build_player() -> (MprisPlayer, Arc<RecordingClient>, SharedDaemonState) {
 }
 
 async fn drain_fire(rec: &RecordingClient, expected: usize) {
-    for _ in 0..50 {
+    for _ in 0..500 {
         if rec.requests().await.len() >= expected {
             return;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::task::yield_now().await;
     }
 }
 

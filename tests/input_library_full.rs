@@ -88,7 +88,16 @@ async fn filter_backspace_to_empty_clears_search_results() {
         cs.artists.search_results = Some(SearchResult3::default());
     }
     fx.app.handle_key(key(KeyCode::Backspace)).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if fx.app.client_state.read().await.artists.search_results.is_none() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("clear-search task did not clear search_results");
     let cs = fx.app.client_state.read().await;
     assert!(
         cs.artists.search_results.is_none(),

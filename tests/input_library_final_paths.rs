@@ -87,7 +87,16 @@ async fn typing_into_filter_triggers_search_task_and_commits_result() {
     app.handle_key(key(KeyCode::Char('f'))).await.unwrap();
     app.handle_key(key(KeyCode::Char('o'))).await.unwrap();
     app.handle_key(key(KeyCode::Char('u'))).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if app.client_state.read().await.artists.search_results.is_some() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("search task did not populate search_results");
     let cs = app.client_state.read().await;
     assert!(cs.artists.search_results.is_some());
 }

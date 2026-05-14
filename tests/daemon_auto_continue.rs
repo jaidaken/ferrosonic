@@ -19,7 +19,16 @@ async fn next_track_at_end_with_auto_continue_and_random_appends_and_plays() {
         s.config.repeat_mode = RepeatMode::Off;
     }
     let _ = td.core.next_track().await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if td.state.read().await.queue.len() > 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("auto-continue append task did not extend queue");
     let st = td.state.read().await;
     assert!(st.queue.len() > 1);
 }
@@ -39,7 +48,16 @@ async fn advance_auto_at_end_with_auto_continue_appends_random_songs() {
         s.config.repeat_mode = RepeatMode::Off;
     }
     let _ = td.core.advance_auto().await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if td.state.read().await.queue.len() > 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("advance_auto append task did not extend queue");
     let st = td.state.read().await;
     assert!(st.queue.len() > 1);
 }

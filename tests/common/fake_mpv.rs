@@ -93,6 +93,7 @@ impl FakeMpv {
             if std::time::Instant::now() >= deadline {
                 return false;
             }
+            // polling primitive: deadline-bounded poll interval, not a fixed-duration sync.
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     }

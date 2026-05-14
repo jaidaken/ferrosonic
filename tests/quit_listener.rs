@@ -15,7 +15,16 @@ async fn listener_sets_should_quit_when_signal_future_resolves() {
     });
     assert!(!cs.read().await.should_quit);
     tx.send(()).unwrap();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if cs.read().await.should_quit {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("listener did not set should_quit after signal");
     assert!(cs.read().await.should_quit);
 }
 
@@ -23,7 +32,16 @@ async fn listener_sets_should_quit_when_signal_future_resolves() {
 async fn listener_with_immediate_future_quits_promptly() {
     let cs = new_shared_client_state(&Config::new());
     spawn_quit_listener(cs.clone(), async {});
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if cs.read().await.should_quit {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("listener with immediate future did not set should_quit");
     assert!(cs.read().await.should_quit);
 }
 
@@ -31,7 +49,9 @@ async fn listener_with_immediate_future_quits_promptly() {
 async fn listener_with_pending_future_does_not_quit() {
     let cs = new_shared_client_state(&Config::new());
     spawn_quit_listener(cs.clone(), std::future::pending::<()>());
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    for _ in 0..100 {
+        tokio::task::yield_now().await;
+    }
     assert!(!cs.read().await.should_quit);
 }
 
@@ -40,7 +60,16 @@ async fn multiple_listeners_set_should_quit_independently() {
     let cs = new_shared_client_state(&Config::new());
     spawn_quit_listener(cs.clone(), async {});
     spawn_quit_listener(cs.clone(), async {});
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if cs.read().await.should_quit {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("multiple listeners did not set should_quit");
     assert!(cs.read().await.should_quit);
 }
 

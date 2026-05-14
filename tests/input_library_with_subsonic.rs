@@ -74,7 +74,9 @@ async fn enter_on_artist_not_in_cache_loads_albums_and_expands() {
         cs.artists.selected_index = Some(0);
     }
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    for _ in 0..100 {
+        tokio::task::yield_now().await;
+    }
     let cs = app.client_state.read().await;
     let _ = cs;
 }

@@ -26,7 +26,9 @@ async fn play_queue_position_buffered_mode_with_real_song() {
         s.queue = vec![song("s1", "Track 1")];
     }
     let _ = td.core.play_queue_position(0, PlayMode::Buffered).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    for _ in 0..100 {
+        tokio::task::yield_now().await;
+    }
 }
 
 #[tokio::test]

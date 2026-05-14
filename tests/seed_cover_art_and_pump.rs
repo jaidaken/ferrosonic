@@ -98,7 +98,16 @@ async fn bootstrap_and_pump_fetches_snapshot_into_daemon_state() {
         s.queue.push(song_with_cover("a", "ca"));
     }
     app.bootstrap_and_pump().await;
-    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if app.daemon_state.read().await.queue.len() == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("bootstrap pump did not populate daemon_state queue");
     let ds = app.daemon_state.read().await;
     assert_eq!(ds.queue.len(), 1);
 }

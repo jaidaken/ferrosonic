@@ -56,7 +56,9 @@ async fn subscribe_receiver_gets_broadcast_events() {
 
     let client = SocketClient::connect(&socket).await.unwrap();
     let mut rx = client.subscribe();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    for _ in 0..100 {
+        tokio::task::yield_now().await;
+    }
 
     td.core.broadcast_queue_changed().await;
 
@@ -77,7 +79,9 @@ async fn request_after_server_dies_returns_disconnected() {
     let client = SocketClient::connect(&socket).await.unwrap();
     client.request(DaemonRequest::Ping).await.unwrap();
     server.abort();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    for _ in 0..100 {
+        tokio::task::yield_now().await;
+    }
     let _ = client.request(DaemonRequest::Ping).await;
 }
 
