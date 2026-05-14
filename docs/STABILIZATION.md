@@ -438,3 +438,94 @@ Done criteria status:
 - `cargo check` + clippy + test green: YES.
 - `/rust-audit` reports no new STATE_INVARIANT findings: per-commit
   audits returned 0 blocking, 0 investigate, 0 note for each.
+
+---
+
+## 6. Prompt 3 PASSWORD follow-up checklist
+
+Items deferred from the prompt 3 in-scope set. Each tagged DEFER (to a
+later prompt) or DROP (with reasoning). Status as of 2026-05-14 after
+the 4 highest-traffic sites adopted `Secret`.
+
+Done in prompt 3:
+
+- [x] `Secret` newtype with drop-zeroize and masked Debug+Serialize.
+  `src/secret.rs`, registered in `lib.rs`. Commit `cea7abf`.
+- [x] `Config.password: Secret` with default-masked Serialize and
+  Debug, `serialize_revealed_opt` for on-disk path. `resolve_password`
+  zeroizes the intermediate `String` after trimming.
+- [x] `SubsonicClient.password: Arc<Secret>` so Clone is cheap and
+  the secret is shared, not duplicated. `generate_auth_params(&Secret)`
+  hashes through a zeroizing buffer.
+- [x] `ServerState.password: Secret` (drops manual Debug masking
+  in favour of Secret's masked impl).
+- [x] `DaemonRequest::{UpdateServerConfig, TestServerConnection}`
+  wire types: `Secret` field with explicit
+  `#[serde(serialize_with = "serialize_revealed",
+  deserialize_with = "deserialize_secret")]` so the IPC frame on the
+  wire carries plaintext but in-memory `Debug` masks. Commit `551e3d1`.
+- [x] `tests/password_redaction.rs` regression suite: Debug + Serialize
+  masking, wire reveal helpers, IPC round-trip, Config/ServerState
+  debug masking, clone correctness. 100/100 green.
+
+DEFER (move to a later prompt; not behavior-improving in isolation):
+
+- [DEFER prompt 7] `DaemonState.password` field via Secret newtype
+  + remove ad-hoc Serialize redaction (`src/daemon/state.rs:10-17`).
+  Subsumed: `DaemonState` already routes via `Config.password`, so
+  the type-level masking we just landed in `Config` covers DaemonState
+  too. The audit row (1.10) was filed before the Config refactor.
+  Verify in prompt 7's HIGH catch-all that no separate path leaks.
+- [DEFER prompt 7] `mpris/server.rs:27` cover-art URL redaction.
+  `build_cover_art_url` builds a URL containing the auth token and
+  salt that the password produced. The token is one-way-hashed so
+  the URL itself is not the password, but it still authenticates.
+  Audit a redact-before-log pass over the URL builder; this is
+  category PASSWORD-adjacent and belongs in prompt 7 alongside the
+  other tracing / log audits.
+- [DEFER prompt 7] `core.rs:1887-1906` PASSWORD window between
+  `password_file` write and `state.config.password` re-set. The
+  current code (in `update_server_config`) is still:
+  1. write `password_file` atomically, 2. clear `state.config.password`,
+  3. save config to disk, 4. restore `state.config.password` to the
+  full Secret. This window is now under a single state write lock
+  so concurrent readers see one of the two consistent states. The
+  ideal fix (don't store plaintext in memory at all when
+  `password_file` is set, instead lazy-read on demand) is a behavior
+  change deferred to prompt 7's HIGH catch-all. Marked acceptable
+  given Secret already drop-zeroizes.
+
+DROP (not worth landing as part of the stabilization sprint):
+
+- [DROP] `tests/config_password_resolution.rs` and other tests that
+  store plaintext passwords. The prompt 3 brief listed this as a
+  candidate for `Secret::from_string("...".into())`. The 4 in-scope
+  sites already forced these test fixtures to migrate (now use
+  `&"p".into()` or `c.password_str()` for assertions). No further
+  cleanup needed. Status: covered by the in-scope work, no DROP cost.
+- [DROP] `subsonic/models.rs:5` `SubsonicResponse` derives Debug
+  audit row 1.7. With `Secret` adopted at the four boundaries, no
+  password ever flows through `SubsonicResponse`. The audit row was
+  defense-in-depth against a future leak path that does not exist
+  today. Reasoning: would cost a manual Debug impl plus tests for a
+  type that does not carry secrets. No structural improvement.
+- [DROP] `app/state.rs:346-360` "no zeroize of config password after
+  copy" audit row 1.8. The copy is now Secret-to-Secret. When
+  `client.server_state.password` is later overwritten, the previous
+  Secret drops and zeroizes. The original "copy" was a `String`
+  duplication that lingered until the ClientState dropped; with
+  Secret, the lifecycle is bounded and zeroized. No follow-up needed.
+
+Done criteria status:
+
+- `Secret` newtype lives at `src/secret.rs`, exported from `lib.rs`:
+  YES.
+- All 4 highest-traffic sites adopted: YES (Config.password,
+  ServerState.password, SubsonicClient.password Arc-shared, IPC
+  request types via serialize_revealed).
+- Regression tests prove redaction: YES
+  (`tests/password_redaction.rs`, 14 tests, 100/100 consecutive).
+- `cargo check` + clippy + test all green: YES.
+- `/rust-audit` reports no new PASSWORD findings on the affected
+  files: per-commit audits returned 0 blocking, 0 investigate, 0
+  note.

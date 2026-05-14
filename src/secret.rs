@@ -39,8 +39,8 @@ impl Secret {
     }
 
     pub fn clear(&mut self) {
-        let mut taken = std::mem::replace(&mut self.0, Box::from([]));
-        taken.zeroize();
+        self.0.zeroize();
+        self.0 = Box::from([]);
     }
 
     pub fn push_char(&mut self, c: char) {

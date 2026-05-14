@@ -193,6 +193,30 @@ fn is_configured_false_when_password_empty() {
 
 #[test]
 #[serial]
+fn resolved_password_does_not_leak_plaintext_through_debug() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("c.toml");
+    std::fs::write(
+        &p,
+        r#"BaseURL = "https://x"
+Username = "u"
+Password = "super-secret-PW-123"
+"#,
+    )
+    .unwrap();
+    std::env::remove_var("FERROSONIC_PASSWORD");
+    let c = Config::load_from_file(&p).unwrap();
+    assert_eq!(c.password_str(), "super-secret-PW-123");
+    let d = format!("{:?}", c);
+    assert!(
+        !d.contains("super-secret-PW-123"),
+        "Config Debug must not contain plaintext password: {}",
+        d
+    );
+}
+
+#[test]
+#[serial]
 fn empty_ferrosonic_password_env_does_not_override() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("c.toml");
