@@ -10,7 +10,6 @@ use crate::app::state::SharedDaemonState;
 use crate::audio::mpv::MpvController;
 use crate::audio::pipewire::PipeWireController;
 use crate::config::Config;
-use crate::daemon::persistence::QueueSnapshot;
 use crate::daemon::state::DaemonState;
 use crate::error::Error;
 use crate::ipc::protocol::DaemonEvent;
@@ -152,7 +151,7 @@ pub struct DaemonCore {
     /// Flipped to true on shutdown so background spawn tasks (fast
     /// probe, cava watchers) can exit promptly instead of holding
     /// `Arc<Self>` alive until their own timers fire.
-    shutdown: std::sync::atomic::AtomicBool,
+    pub(super) shutdown: std::sync::atomic::AtomicBool,
     /// Wakes futures awaiting shutdown; consumers select on shutdown_signal().
     shutdown_notify: tokio::sync::Notify,
     /// Bumped on each library refresh; LibraryVersionChanged carries it for pull-style clients.
@@ -253,37 +252,6 @@ impl DaemonCore {
         *guard = Some(std::time::Instant::now());
     }
 
-    fn spawn_queue_persistence(
-        self: Arc<Self>,
-        mut rx: tokio::sync::mpsc::Receiver<()>,
-    ) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = self.shutdown_signal() => return,
-                    next = rx.recv() => {
-                        if next.is_none() { return; }
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                while rx.try_recv().is_ok() {}
-                if self.shutdown.load(std::sync::atomic::Ordering::Acquire) {
-                    return;
-                }
-                let snap = {
-                    let s = self.state.read().await;
-                    QueueSnapshot {
-                        queue: s.queue.clone(),
-                        position: s.queue_position,
-                    }
-                };
-                if let Err(e) = snap.save() {
-                    warn!("Queue persistence write failed: {}", e);
-                }
-            }
-        })
-    }
-
     /// Idempotent — no-ops if mpv is already running.
     pub async fn start_mpv(&self) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
@@ -339,35 +307,6 @@ impl DaemonCore {
         self.request_shutdown();
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.quit().await;
-    }
-
-    pub fn spawn_polling_task(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
-        let core = self.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
-            let mut watchdog =
-                tokio::time::interval(std::time::Duration::from_secs(2));
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                tokio::select! {
-                    _ = core.shutdown_signal() => return,
-                    _ = tick.tick() => core.update_playback_info().await,
-                    _ = watchdog.tick() => {
-                        if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {
-                            return;
-                        }
-                        let dead = !core.mpv.lock().await.is_running();
-                        if dead {
-                            warn!("mpv backend gone, respawning");
-                            if let Err(e) = core.start_mpv().await {
-                                error!("respawn failed: {}", e);
-                            }
-                        }
-                    }
-                }
-            }
-        })
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {

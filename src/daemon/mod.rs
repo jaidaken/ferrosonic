@@ -5,6 +5,7 @@ pub mod loaders;
 pub mod playback_ops;
 pub mod playback_tick;
 pub mod persistence;
+pub mod polling;
 pub mod queue_ops;
 pub mod settings_ops;
 pub mod state;
