@@ -17,6 +17,7 @@ mod mouse;
 mod mouse_library;
 mod mouse_playlists;
 pub mod page_state;
+pub mod spawn_daemon;
 pub mod state;
 
 use std::io;

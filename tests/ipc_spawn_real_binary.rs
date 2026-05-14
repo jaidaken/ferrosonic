@@ -1,4 +1,4 @@
-//! ipc/spawn.rs: full sibling-binary lookup using a real ferrosonicd build.
+//! app/spawn_daemon.rs: full sibling-binary lookup using a real ferrosonicd build.
 
 use serial_test::serial;
 
@@ -19,7 +19,7 @@ fn spawn_daemon_finds_sibling_via_real_ferrosonicd_binary() {
 
     let original_path = std::env::var_os("PATH");
     std::env::set_var("PATH", "/nonexistent");
-    let result = std::panic::catch_unwind(ferrosonic::ipc::spawn::spawn_daemon);
+    let result = std::panic::catch_unwind(ferrosonic::app::spawn_daemon::spawn_daemon);
     if let Some(p) = original_path {
         std::env::set_var("PATH", p);
     }
@@ -33,7 +33,7 @@ fn spawn_daemon_via_path_finds_real_ferrosonicd() {
     let dir = daemon_bin.parent().unwrap().to_path_buf();
     let original = std::env::var_os("PATH");
     std::env::set_var("PATH", &dir);
-    let result = ferrosonic::ipc::spawn::spawn_daemon();
+    let result = ferrosonic::app::spawn_daemon::spawn_daemon();
     if let Some(p) = original {
         std::env::set_var("PATH", p);
     }
@@ -59,8 +59,8 @@ async fn spawn_and_wait_via_path_with_real_binary_returns_ok() {
 
     let socket = tmp_cfg.path().join("ferrosonic-daemon.sock");
 
-    let r =
-        ferrosonic::ipc::spawn::spawn_and_wait(&socket, std::time::Duration::from_secs(3)).await;
+    let r = ferrosonic::app::spawn_daemon::spawn_and_wait(&socket, std::time::Duration::from_secs(3))
+        .await;
 
     if let Some(p) = original_path {
         std::env::set_var("PATH", p);

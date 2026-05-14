@@ -10,7 +10,7 @@ use ferrosonic::app::App;
 use ferrosonic::config::paths::config_dir;
 use ferrosonic::config::Config;
 use ferrosonic::ipc::path::socket_path;
-use ferrosonic::ipc::spawn::spawn_and_wait;
+use ferrosonic::app::spawn_daemon::spawn_and_wait;
 use ferrosonic::ipc::SocketClient;
 
 const DAEMON_SPAWN_TIMEOUT: Duration = Duration::from_secs(2);

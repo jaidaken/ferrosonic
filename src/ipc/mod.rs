@@ -6,7 +6,6 @@ pub mod path;
 pub mod protocol;
 pub mod server;
 pub mod socket_client;
-pub mod spawn;
 
 pub use client::{DaemonClient, InProcessClient};
 pub use protocol::{DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError};

@@ -1,4 +1,4 @@
-//! ipc/spawn.rs: daemon auto-spawn path-resolution.
+//! app/spawn_daemon.rs: daemon auto-spawn path-resolution.
 
 use serial_test::serial;
 use std::path::PathBuf;
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 fn spawn_daemon_returns_not_found_with_empty_path() {
     let original = std::env::var_os("PATH");
     std::env::set_var("PATH", "");
-    let result = ferrosonic::ipc::spawn::spawn_daemon();
+    let result = ferrosonic::app::spawn_daemon::spawn_daemon();
     if let Some(p) = original {
         std::env::set_var("PATH", p);
     }
@@ -44,7 +44,8 @@ async fn spawn_and_wait_returns_io_error_when_binary_missing() {
     std::env::set_var("PATH", "/nonexistent");
     let sock: PathBuf = "/tmp/ferrosonic-no-daemon.sock".into();
     let r =
-        ferrosonic::ipc::spawn::spawn_and_wait(&sock, std::time::Duration::from_millis(50)).await;
+        ferrosonic::app::spawn_daemon::spawn_and_wait(&sock, std::time::Duration::from_millis(50))
+            .await;
     if let Some(p) = original {
         std::env::set_var("PATH", p);
     }
