@@ -161,6 +161,45 @@ pub struct DaemonCore {
     last_preload_attempt: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
+/// Owned snapshot of every read the playback tick needs to decide an action.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PlaybackTickInputs {
+    is_active: bool,
+    is_playing: bool,
+    mpv_running: bool,
+    time_remaining: f64,
+    has_next: bool,
+    position: f64,
+    playlist_count: Option<usize>,
+    playlist_pos: Option<i64>,
+    mpv_idle: Option<bool>,
+    queue_position: Option<usize>,
+    prebuffer_loading: bool,
+    just_loaded: bool,
+}
+
+/// Outcome of one playback tick. Branch priority: AdvanceEarly > Preload > GaplessAdvance > AdvanceOnIdle.
+#[must_use]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlaybackTickAction {
+    Skip,
+    AdvanceEarly,
+    Preload { from_pos: usize },
+    GaplessAdvance,
+    AdvanceOnIdle,
+    Continue,
+}
+
+/// Whether the orchestrator should fall through to the tail tick updates after the main action.
+#[must_use]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TickContinuation { Stop, Continue }
+
+/// Result of try_gapless_advance under the write critical section.
+#[must_use]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GaplessOutcome { Advanced, QueueRanOut }
+
 impl DaemonCore {
     pub fn new(state: SharedDaemonState, config: &Config) -> Arc<Self> {
         Self::new_with_mpv(state, config, MpvController::new())
@@ -1494,9 +1533,8 @@ impl DaemonCore {
         true
     }
 
-    /// Periodic poll (500ms): detect track advance, update position +
-    /// audio properties, drive PipeWire rate switching, emit events.
-    pub async fn update_playback_info(self: &Arc<Self>) {
+    /// Collect every read the playback tick state machine needs. Read-only by design.
+    async fn gather_playback_tick_inputs(self: &Arc<Self>) -> PlaybackTickInputs {
         use crate::app::state::PlaybackState;
 
         let (is_playing, is_active) = {
@@ -1506,198 +1544,256 @@ impl DaemonCore {
             (pl, active)
         };
 
-        if !is_active {
-            return;
+        let mpv_running = { let mut mpv = self.mpv.lock().await; mpv.is_running() };
+
+        if !is_active || !mpv_running {
+            return PlaybackTickInputs {
+                is_active,
+                is_playing,
+                mpv_running,
+                time_remaining: 0.0,
+                has_next: false,
+                position: 0.0,
+                playlist_count: None,
+                playlist_pos: None,
+                mpv_idle: None,
+                queue_position: None,
+                prebuffer_loading: false,
+                just_loaded: false,
+            };
         }
+
+        let (time_remaining, has_next, position, queue_position) = {
+            let state = self.state.read().await;
+            let tr = state.now_playing.duration - state.now_playing.position;
+            let hn = state
+                .queue_position
+                .map(|p| p + 1 < state.queue.len())
+                .unwrap_or(false);
+            (tr, hn, state.now_playing.position, state.queue_position)
+        };
+
+        let (playlist_count, playlist_pos, mpv_idle) = {
+            let mut mpv = self.mpv.lock().await;
+            let c = mpv.get_playlist_count().await.ok();
+            let p = mpv.get_playlist_pos().await.ok().flatten();
+            let i = mpv.is_idle().await.ok();
+            (c, p, i)
+        };
+
+        let prebuffer_loading = self
+            .prebuffer_loading
+            .lock()
+            .await
+            .as_ref()
+            .map(|a| a.load(Ordering::Acquire))
+            .unwrap_or(false);
+
+        let just_loaded = self
+            .last_loadfile
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .map(|t| t.elapsed() < std::time::Duration::from_millis(1500))
+            .unwrap_or(false);
+
+        PlaybackTickInputs {
+            is_active,
+            is_playing,
+            mpv_running,
+            time_remaining,
+            has_next,
+            position,
+            playlist_count,
+            playlist_pos,
+            mpv_idle,
+            queue_position,
+            prebuffer_loading,
+            just_loaded,
+        }
+    }
+
+    /// Pure state-machine. Priority: AdvanceEarly > Preload > GaplessAdvance > AdvanceOnIdle.
+    const fn decide_playback_tick_action(inputs: &PlaybackTickInputs) -> PlaybackTickAction {
+        if !inputs.is_active || !inputs.mpv_running {
+            return PlaybackTickAction::Skip;
+        }
+        if !inputs.is_playing {
+            return PlaybackTickAction::Continue;
+        }
+
+        if inputs.has_next
+            && inputs.position > 0.5
+            && inputs.time_remaining > 0.0
+            && inputs.time_remaining < 2.0
+        {
+            if let Some(c) = inputs.playlist_count {
+                if c < 2 {
+                    return PlaybackTickAction::AdvanceEarly;
+                }
+            }
+        }
+
+        if matches!(inputs.playlist_count, Some(1)) {
+            if let Some(from_pos) = inputs.queue_position {
+                return PlaybackTickAction::Preload { from_pos };
+            }
+        }
+
+        if matches!(inputs.playlist_pos, Some(1)) {
+            return PlaybackTickAction::GaplessAdvance;
+        }
+
+        if matches!(inputs.mpv_idle, Some(true))
+            && !inputs.prebuffer_loading
+            && !inputs.just_loaded
+        {
+            return PlaybackTickAction::AdvanceOnIdle;
+        }
+
+        PlaybackTickAction::Continue
+    }
+
+    /// Verify-then-commit a gapless advance: under one write lock, re-derive the next song and atomically swap state. Returns whether the advance happened.
+    async fn try_gapless_advance(self: &Arc<Self>) -> GaplessOutcome {
+        let next_pos = {
+            let mut state = self.state.write().await;
+            let queue_len = state.queue.len();
+            let repeat = state.config.repeat_mode;
+            let resolved = state.queue_position.and_then(|cur| {
+                repeat
+                    .next_auto(cur, queue_len)
+                    .and_then(|n| state.queue.get(n).map(|s| (n, s.clone())))
+            });
+            if let Some((next_pos, song)) = resolved {
+                state.queue_position = Some(next_pos);
+                state.now_playing.song = Some(song.clone());
+                state.now_playing.position = 0.0;
+                state.now_playing.duration = song.duration.unwrap_or(0) as f64;
+                Some(next_pos)
+            } else {
+                None
+            }
+        };
+        let Some(next_pos) = next_pos else {
+            return GaplessOutcome::QueueRanOut;
+        };
+        info!("Gapless advancement to track {}", next_pos);
         {
             let mut mpv = self.mpv.lock().await;
-            if !mpv.is_running() {
-                return;
+            let pos_now = mpv.get_playlist_pos().await.ok().flatten();
+            if matches!(pos_now, Some(1)) {
+                let _ = mpv.playlist_remove(0).await;
+            } else {
+                warn!(
+                    "playlist-pos shifted from 1 to {:?} before remove; skipping",
+                    pos_now
+                );
             }
         }
+        self.preload_next_track(next_pos).await;
+        self.emit_now_playing().await;
+        self.emit_queue().await;
+        GaplessOutcome::Advanced
+    }
 
-        if is_playing {
-            let (time_remaining, has_next, position) = {
-                let state = self.state.read().await;
-                let tr = state.now_playing.duration - state.now_playing.position;
-                let hn = state
-                    .queue_position
-                    .map(|p| p + 1 < state.queue.len())
-                    .unwrap_or(false);
-                (tr, hn, state.now_playing.position)
-            };
+    /// Rate-limit on `last_preload_attempt`; returns true when due (and bumps the timer).
+    fn bump_preload_due(&self) -> bool {
+        let mut last = self
+            .last_preload_attempt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let due = last
+            .map(|t| t.elapsed() >= std::time::Duration::from_secs(5))
+            .unwrap_or(true);
+        if due {
+            *last = Some(std::time::Instant::now());
+        }
+        due
+    }
 
-            // position > 0.5 guards against a freshly loaded track
-            // whose `time_remaining` lands in (0, 2) because state was
-            // pre-populated before mpv actually started decoding.
-            if has_next && position > 0.5 && time_remaining > 0.0 && time_remaining < 2.0 {
-                let count_opt = {
-                    let mut mpv = self.mpv.lock().await;
-                    mpv.get_playlist_count().await.ok()
-                };
-                if let Some(count) = count_opt {
-                    if count < 2 {
-                        info!("Near end of track with no preloaded next, advancing early");
-                        let _ = self.advance_auto().await;
-                        return;
-                    }
-                }
+    /// Dispatch the decided action. Returns Stop when the orchestrator should NOT run tail tick updates.
+    async fn apply_playback_tick_action(
+        self: &Arc<Self>,
+        action: PlaybackTickAction,
+    ) -> TickContinuation {
+        match action {
+            PlaybackTickAction::Skip => TickContinuation::Stop,
+            PlaybackTickAction::AdvanceEarly => {
+                info!("Near end of track with no preloaded next, advancing early");
+                let _ = self.advance_auto().await;
+                TickContinuation::Stop
             }
-
-            let count_opt = {
-                let mut mpv = self.mpv.lock().await;
-                mpv.get_playlist_count().await.ok()
-            };
-            if count_opt == Some(1) {
-                let should_try = {
-                    let mut last = self
-                        .last_preload_attempt
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    let due = last
-                        .map(|t| t.elapsed() >= std::time::Duration::from_secs(5))
-                        .unwrap_or(true);
-                    if due {
-                        *last = Some(std::time::Instant::now());
-                    }
-                    due
-                };
-                if should_try {
-                    let cur_pos_opt = {
-                        let state = self.state.read().await;
-                        state.queue_position
-                    };
-                    if let Some(pos) = cur_pos_opt {
-                        debug!("Playlist count is 1, re-preloading next track");
-                        self.preload_next_track(pos).await;
-                    }
+            PlaybackTickAction::Preload { from_pos } => {
+                if self.bump_preload_due() {
+                    debug!("Playlist count is 1, re-preloading next track");
+                    self.preload_next_track(from_pos).await;
                 }
+                TickContinuation::Continue
             }
-
-            let mpv_pos_opt = {
-                let mut mpv = self.mpv.lock().await;
-                mpv.get_playlist_pos().await.ok().flatten()
-            };
-            if mpv_pos_opt == Some(1) {
-                // Resolve next-song and commit state under a single
-                // write lock; a queue mutation between resolution and
-                // commit would desync now_playing.
-                let next_pos = {
-                    let mut state = self.state.write().await;
-                    let queue_len = state.queue.len();
-                    let repeat = state.config.repeat_mode;
-                    let resolved = state.queue_position.and_then(|cur| {
-                        repeat
-                            .next_auto(cur, queue_len)
-                            .and_then(|n| state.queue.get(n).map(|s| (n, s.clone())))
-                    });
-                    if let Some((next_pos, song)) = resolved {
-                        state.queue_position = Some(next_pos);
-                        state.now_playing.song = Some(song.clone());
-                        state.now_playing.position = 0.0;
-                        state.now_playing.duration = song.duration.unwrap_or(0) as f64;
-                        Some(next_pos)
-                    } else {
-                        None
-                    }
-                };
-                if let Some(next_pos) = next_pos {
-                    info!("Gapless advancement to track {}", next_pos);
-                    {
-                        // Re-check playlist-pos under the same mpv lock
-                        // as the remove so we don't pop entry 0 after
-                        // mpv has moved on or rewound.
-                        let mut mpv = self.mpv.lock().await;
-                        let pos_now = mpv.get_playlist_pos().await.ok().flatten();
-                        if pos_now == Some(1) {
-                            let _ = mpv.playlist_remove(0).await;
-                        } else {
-                            warn!(
-                                "playlist-pos shifted from 1 to {:?} before remove; skipping",
-                                pos_now
-                            );
-                        }
-                    }
-                    self.preload_next_track(next_pos).await;
-                    self.emit_now_playing().await;
-                    // queue_position changed; clients derive current_song from it.
-                    self.emit_queue().await;
-                    return;
-                }
-            }
-
-            let idle_opt = {
-                let mut mpv = self.mpv.lock().await;
-                mpv.is_idle().await.ok()
-            };
-            if idle_opt == Some(true) {
-                // Buffered switch stopped mpv mid-download.
-                let loading = self
-                    .prebuffer_loading
-                    .lock()
-                    .await
-                    .as_ref()
-                    .map(|a| a.load(Ordering::Acquire))
-                    .unwrap_or(false);
-                if loading {
-                    debug!("mpv idle but prebuffer in flight; deferring advance");
-                    return;
-                }
-                // Post-loadfile acceptance window: mpv may still report
-                // idle for a brief moment after a successful loadfile.
-                let just_loaded = self
-                    .last_loadfile
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .map(|t| t.elapsed() < std::time::Duration::from_millis(1500))
-                    .unwrap_or(false);
-                if just_loaded {
-                    debug!("mpv idle but loadfile <1.5s ago; deferring advance");
-                    return;
-                }
+            PlaybackTickAction::GaplessAdvance => match self.try_gapless_advance().await {
+                GaplessOutcome::Advanced => TickContinuation::Stop,
+                GaplessOutcome::QueueRanOut => TickContinuation::Continue,
+            },
+            PlaybackTickAction::AdvanceOnIdle => {
                 info!("Track ended, advancing to next");
                 let _ = self.advance_auto().await;
-                return;
+                TickContinuation::Stop
             }
+            PlaybackTickAction::Continue => TickContinuation::Continue,
         }
+    }
 
+    /// Emit a PositionTick event with mpv's current playhead.
+    async fn tick_emit_position(self: &Arc<Self>) {
         let pos_opt = {
             let mut mpv = self.mpv.lock().await;
             mpv.get_time_pos().await.ok()
         };
         if let Some(position) = pos_opt {
-            let mut state = self.state.write().await;
-            state.now_playing.position = position;
-            drop(state);
+            {
+                let mut state = self.state.write().await;
+                state.now_playing.position = position;
+            }
             self.emit(DaemonEvent::PositionTick(position));
         }
+    }
 
-        let need_duration = {
-            let state = self.state.read().await;
-            state.now_playing.duration <= 0.0
+    /// Backfill duration if missing; re-check is INSIDE the write critical section to close a TOCTOU.
+    async fn tick_backfill_duration(self: &Arc<Self>) {
+        let dur_opt = {
+            let mut mpv = self.mpv.lock().await;
+            mpv.get_duration().await.ok()
         };
-        if need_duration {
-            let dur_opt = {
-                let mut mpv = self.mpv.lock().await;
-                mpv.get_duration().await.ok()
-            };
-            if let Some(duration) = dur_opt {
-                if duration > 0.0 {
-                    let mut state = self.state.write().await;
-                    state.now_playing.duration = duration;
-                }
-            }
+        let Some(dur) = dur_opt.filter(|&d| d > 0.0) else {
+            return;
+        };
+        let mut state = self.state.write().await;
+        if state.now_playing.duration <= 0.0 {
+            state.now_playing.duration = dur;
         }
+    }
 
-        // Audio properties — backstop poll. Fast probe (spawned from
-        // play_queue_position) usually picks them up before this tick.
-        let need_sr = {
-            let state = self.state.read().await;
-            state.now_playing.sample_rate.is_none()
-        };
+    /// Fetch sample-rate + bit-depth + format + channels if not yet known. Backstop poll.
+    async fn tick_fetch_audio_properties_if_needed(self: &Arc<Self>) {
+        let need_sr = self.state.read().await.now_playing.sample_rate.is_none();
         if need_sr {
             let _ = self.fetch_audio_properties().await;
         }
+    }
+
+    /// 500ms tick: gather inputs, decide an action, apply it, then run tail updates unless told to stop.
+    pub async fn update_playback_info(self: &Arc<Self>) {
+        let inputs = self.gather_playback_tick_inputs().await;
+        let action = Self::decide_playback_tick_action(&inputs);
+        if matches!(
+            self.apply_playback_tick_action(action).await,
+            TickContinuation::Stop
+        ) {
+            return;
+        }
+        self.tick_emit_position().await;
+        self.tick_backfill_duration().await;
+        self.tick_fetch_audio_properties_if_needed().await;
     }
 }
 
@@ -2173,5 +2269,186 @@ fn sync_starred_songs(
     } else {
         daemon.library.starred_ids.remove(song_id);
         daemon.library.starred_songs.retain(|s| s.id != song_id);
+    }
+}
+
+#[cfg(test)]
+mod playback_tick_tests {
+    use super::{DaemonCore, GaplessOutcome, PlaybackTickAction, PlaybackTickInputs, TickContinuation};
+
+    fn baseline() -> PlaybackTickInputs {
+        PlaybackTickInputs {
+            is_active: true,
+            is_playing: true,
+            mpv_running: true,
+            time_remaining: 100.0,
+            has_next: false,
+            position: 50.0,
+            playlist_count: Some(2),
+            playlist_pos: Some(0),
+            mpv_idle: Some(false),
+            queue_position: Some(0),
+            prebuffer_loading: false,
+            just_loaded: false,
+        }
+    }
+
+    fn decide(i: &PlaybackTickInputs) -> PlaybackTickAction {
+        DaemonCore::decide_playback_tick_action(i)
+    }
+
+    #[test]
+    fn skip_when_inactive() {
+        let i = PlaybackTickInputs { is_active: false, ..baseline() };
+        assert_eq!(decide(&i), PlaybackTickAction::Skip);
+    }
+
+    #[test]
+    fn skip_when_mpv_not_running() {
+        let i = PlaybackTickInputs { mpv_running: false, ..baseline() };
+        assert_eq!(decide(&i), PlaybackTickAction::Skip);
+    }
+
+    #[test]
+    fn continue_when_paused() {
+        let i = PlaybackTickInputs { is_playing: false, ..baseline() };
+        assert_eq!(decide(&i), PlaybackTickAction::Continue);
+    }
+
+    #[test]
+    fn advance_early_at_track_end_with_empty_playlist() {
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 1.0,
+            time_remaining: 1.0,
+            playlist_count: Some(1),
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::AdvanceEarly);
+    }
+
+    #[test]
+    fn preload_when_playlist_one_and_position_present() {
+        let i = PlaybackTickInputs {
+            has_next: false,
+            playlist_count: Some(1),
+            queue_position: Some(3),
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::Preload { from_pos: 3 });
+    }
+
+    #[test]
+    fn gapless_advance_when_mpv_playlist_pos_one() {
+        let i = PlaybackTickInputs {
+            playlist_count: Some(2),
+            playlist_pos: Some(1),
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::GaplessAdvance);
+    }
+
+    #[test]
+    fn advance_on_idle_when_idle_and_clean() {
+        let i = PlaybackTickInputs {
+            playlist_pos: Some(0),
+            mpv_idle: Some(true),
+            prebuffer_loading: false,
+            just_loaded: false,
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::AdvanceOnIdle);
+    }
+
+    #[test]
+    fn continue_when_playing_and_nothing_matches() {
+        let i = baseline();
+        assert_eq!(decide(&i), PlaybackTickAction::Continue);
+    }
+
+    #[test]
+    fn priority_advance_early_beats_preload() {
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 1.0,
+            time_remaining: 1.0,
+            playlist_count: Some(1),
+            queue_position: Some(0),
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::AdvanceEarly);
+    }
+
+    #[test]
+    fn priority_preload_beats_gapless_advance() {
+        let i = PlaybackTickInputs {
+            playlist_count: Some(1),
+            playlist_pos: Some(1),
+            queue_position: Some(7),
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::Preload { from_pos: 7 });
+    }
+
+    #[test]
+    fn priority_gapless_advance_beats_idle() {
+        let i = PlaybackTickInputs {
+            playlist_pos: Some(1),
+            mpv_idle: Some(true),
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::GaplessAdvance);
+    }
+
+    #[test]
+    fn idle_suppressed_by_prebuffer_loading() {
+        let i = PlaybackTickInputs {
+            playlist_pos: Some(0),
+            mpv_idle: Some(true),
+            prebuffer_loading: true,
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::Continue);
+    }
+
+    #[test]
+    fn idle_suppressed_by_just_loaded() {
+        let i = PlaybackTickInputs {
+            playlist_pos: Some(0),
+            mpv_idle: Some(true),
+            just_loaded: true,
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::Continue);
+    }
+
+    #[test]
+    fn advance_early_requires_position_above_half() {
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 0.3,
+            time_remaining: 1.0,
+            playlist_count: Some(1),
+            ..baseline()
+        };
+        assert_ne!(decide(&i), PlaybackTickAction::AdvanceEarly);
+    }
+
+    #[test]
+    fn advance_early_requires_time_remaining_below_two() {
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 1.0,
+            time_remaining: 2.5,
+            playlist_count: Some(1),
+            ..baseline()
+        };
+        assert_ne!(decide(&i), PlaybackTickAction::AdvanceEarly);
+    }
+
+    #[test]
+    fn enum_must_use_attrs_present() {
+        let _ = TickContinuation::Stop;
+        let _ = GaplessOutcome::Advanced;
     }
 }
