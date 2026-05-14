@@ -207,7 +207,6 @@ impl DaemonCore {
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
-        core.clone().restore_queue_blocking();
         Self::sweep_orphan_prebuffer_files();
         core
     }
@@ -248,26 +247,6 @@ impl DaemonCore {
 
     fn stamp_loadfile(&self) {
         *self.last_loadfile.lock().unwrap() = Some(std::time::Instant::now());
-    }
-
-    fn restore_queue_blocking(self: Arc<Self>) {
-        // Sync try_write at startup so IPC Play requests can't race a
-        // not-yet-loaded queue.
-        let Some(snap) = QueueSnapshot::load() else {
-            return;
-        };
-        let count = snap.queue.len();
-        let position = snap.position;
-        match self.state.try_write() {
-            Ok(mut s) => {
-                s.queue = snap.queue;
-                s.queue_position = snap.position;
-                info!("Restored {} queue items (position={:?})", count, position);
-            }
-            Err(_) => {
-                warn!("State write lock contended at startup; queue not restored");
-            }
-        }
     }
 
     fn spawn_queue_persistence(

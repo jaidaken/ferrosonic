@@ -26,6 +26,10 @@ pub struct TestDaemon {
 impl TestDaemon {
     pub async fn new() -> Self {
         let config_dir = tempfile::tempdir().expect("create config tempdir");
+        Self::new_with_config_dir(config_dir).await
+    }
+
+    pub async fn new_with_config_dir(config_dir: TempDir) -> Self {
         std::env::set_var("FERROSONIC_CONFIG_DIR", config_dir.path());
 
         let fake_mpv = FakeMpv::start().await;

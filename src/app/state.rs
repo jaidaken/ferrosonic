@@ -340,7 +340,15 @@ pub type SharedDaemonState = Arc<RwLock<crate::daemon::DaemonState>>;
 pub type SharedClientState = Arc<RwLock<crate::app::client_state::ClientState>>;
 
 pub fn new_shared_daemon_state(config: Config) -> SharedDaemonState {
-    Arc::new(RwLock::new(crate::daemon::DaemonState::new(config)))
+    let mut state = crate::daemon::DaemonState::new(config);
+    if let Some(snap) = crate::daemon::persistence::QueueSnapshot::load() {
+        let count = snap.queue.len();
+        let pos = snap.position;
+        state.queue = snap.queue;
+        state.queue_position = pos;
+        tracing::info!("Restored {} queue items (position={:?})", count, pos);
+    }
+    Arc::new(RwLock::new(state))
 }
 
 pub fn new_shared_client_state(config: &Config) -> SharedClientState {
