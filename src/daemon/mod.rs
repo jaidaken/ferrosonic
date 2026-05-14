@@ -1,6 +1,7 @@
 pub mod core;
 pub mod library;
 pub mod library_ops;
+pub mod loaders;
 pub mod playback_ops;
 pub mod playback_tick;
 pub mod persistence;
