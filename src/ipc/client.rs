@@ -1,6 +1,5 @@
 //! `DaemonClient` trait + `InProcessClient` dispatch.
 
-#![allow(dead_code)]
 
 use std::sync::Arc;
 

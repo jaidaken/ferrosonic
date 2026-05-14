@@ -357,7 +357,6 @@ impl Config {
         self.password.reveal()
     }
 
-    #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.base_url.is_empty() {
             return Err(ConfigError::MissingField {

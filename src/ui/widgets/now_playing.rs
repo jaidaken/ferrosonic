@@ -29,7 +29,6 @@ impl<'a> NowPlayingWidget<'a> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self

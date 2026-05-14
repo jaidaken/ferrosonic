@@ -50,11 +50,9 @@ pub enum SubsonicError {
     #[error("API error {code}: {message}")]
     Api { code: i32, message: String },
 
-    #[allow(dead_code)]
     #[error("Authentication failed")]
     AuthFailed,
 
-    #[allow(dead_code)]
     #[error("Server not configured")]
     NotConfigured,
 
@@ -82,11 +80,9 @@ pub enum AudioError {
     #[error("PipeWire command failed: {0}")]
     PipeWire(String),
 
-    #[allow(dead_code)]
     #[error("Queue is empty")]
     QueueEmpty,
 
-    #[allow(dead_code)]
     #[error("Invalid queue index: {index}")]
     InvalidIndex { index: usize },
 
@@ -109,5 +105,4 @@ pub enum UiError {
     Input(std::io::Error),
 }
 
-#[allow(dead_code)]
 pub type Result<T> = std::result::Result<T, Error>;

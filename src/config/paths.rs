@@ -16,7 +16,6 @@ pub fn themes_dir() -> Option<PathBuf> {
     config_dir().map(|p| p.join("themes"))
 }
 
-#[allow(dead_code)]
 pub fn log_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("ferrosonic.log"))
 }
@@ -39,7 +38,6 @@ pub fn queue_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("queue.json"))
 }
 
-#[allow(dead_code)]
 pub fn ensure_config_dir() -> std::io::Result<PathBuf> {
     let dir = config_dir().ok_or_else(|| {
         std::io::Error::new(

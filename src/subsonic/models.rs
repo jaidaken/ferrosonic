@@ -11,7 +11,6 @@ pub struct SubsonicResponse<T> {
 #[derive(Debug, Deserialize)]
 pub struct SubsonicResponseInner<T> {
     pub status: String,
-    #[allow(dead_code)]
     pub version: String,
     #[serde(default)]
     pub error: Option<ApiError>,
@@ -62,7 +61,6 @@ pub struct ArtistsIndex {
 
 #[derive(Debug, Deserialize)]
 pub struct ArtistIndex {
-    #[allow(dead_code)]
     pub name: String,
     #[serde(default)]
     pub artist: Vec<Artist>,

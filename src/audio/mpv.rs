@@ -42,7 +42,6 @@ struct MpvResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct MpvEvent {
     event: String,
     #[serde(default)]

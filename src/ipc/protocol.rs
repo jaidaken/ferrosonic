@@ -1,7 +1,5 @@
 //! IPC protocol: length-prefixed JSON over a Unix socket.
 
-#![allow(dead_code)]
-#![allow(clippy::large_enum_variant)]
 
 use serde::{Deserialize, Serialize};
 

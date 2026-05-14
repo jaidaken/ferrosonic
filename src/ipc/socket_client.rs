@@ -1,7 +1,6 @@
 //! `DaemonClient` over a Unix socket. Separate reader + writer tasks;
 //! the reader demuxes Response (resolves pending) vs Event (broadcasts).
 
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::Path;

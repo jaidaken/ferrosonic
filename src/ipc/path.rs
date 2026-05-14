@@ -4,7 +4,6 @@
 //! `$XDG_RUNTIME_DIR/ferrosonic/ferrosonicd.sock` →
 //! `/tmp/ferrosonic-{uid}/ferrosonicd.sock`. AF_UNIX caps at 108 bytes.
 
-#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

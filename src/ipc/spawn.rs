@@ -1,7 +1,6 @@
 //! Auto-spawn `ferrosonicd` when the TUI starts and no daemon is
 //! reachable on the socket.
 
-#![allow(dead_code)]
 
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};

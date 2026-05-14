@@ -1,6 +1,5 @@
 //! Daemon-side IPC server: one task per connected client.
 
-#![allow(dead_code)]
 
 use std::path::Path;
 use std::sync::Arc;

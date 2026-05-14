@@ -8,9 +8,6 @@ pub mod server;
 pub mod socket_client;
 pub mod spawn;
 
-#[allow(unused_imports)]
 pub use client::{DaemonClient, InProcessClient};
-#[allow(unused_imports)]
 pub use protocol::{DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError};
-#[allow(unused_imports)]
 pub use socket_client::SocketClient;

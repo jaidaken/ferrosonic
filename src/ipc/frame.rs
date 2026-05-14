@@ -1,9 +1,7 @@
 //! Wire format: `u32 LE length || JSON body`. JSON over bincode for
 //! debuggability with `socat`; throughput is plenty at this scale.
 
-#![allow(dead_code)]
 // Variants span single bool to full snapshot; boxing helps nothing.
-#![allow(clippy::large_enum_variant)]
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

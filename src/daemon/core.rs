@@ -366,7 +366,6 @@ impl DaemonCore {
         })
     }
 
-    #[allow(dead_code)]
     pub fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
         self.event_tx.subscribe()
     }
@@ -742,7 +741,7 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Manual skip. Ignores `repeat=One` (user wants to move). rust-audit: skip
+    /// Manual skip. Ignores `repeat=One` (user wants to move).
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
@@ -825,7 +824,7 @@ impl DaemonCore {
         Ok(true)
     }
 
-    /// Auto-end advance. Honours `repeat=One` and `repeat=All`. rust-audit: skip
+    /// Auto-end advance. Honours `repeat=One` and `repeat=All`.
     pub async fn advance_auto(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
@@ -1493,7 +1492,6 @@ impl DaemonCore {
 
     /// Periodic poll (500ms): detect track advance, update position +
     /// audio properties, drive PipeWire rate switching, emit events.
-    /// rust-audit: skip (guard-reads + self-contained gapless write block by design)
     pub async fn update_playback_info(self: &Arc<Self>) {
         use crate::app::state::PlaybackState;
 

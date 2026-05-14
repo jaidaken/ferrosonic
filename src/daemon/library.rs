@@ -106,12 +106,10 @@ pub struct LibraryCache {
     pub albums_cache: HashMap<String, Vec<Album>>,
     #[serde(default)]
     pub albums_cache_order: VecDeque<String>,
-    #[allow(dead_code)]
     pub album_songs_cache: HashMap<String, Vec<Child>>,
     #[serde(default)]
     pub album_songs_cache_order: VecDeque<String>,
     pub playlists: Vec<Playlist>,
-    #[allow(dead_code)]
     pub playlist_songs_cache: HashMap<String, Vec<Child>>,
     #[serde(default)]
     pub playlist_songs_cache_order: VecDeque<String>,
