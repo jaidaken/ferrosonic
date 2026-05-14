@@ -547,11 +547,6 @@ impl DaemonCore {
     }
 
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
-        let currently_starred = {
-            let state = self.state.read().await;
-            song_is_starred(&state, song_id)
-        };
-
         let Some(client) = self.subsonic.read().await.clone() else {
             return Err(Error::Subsonic(crate::error::SubsonicError::Api {
                 code: 0,
@@ -559,22 +554,54 @@ impl DaemonCore {
             }));
         };
 
-        if currently_starred {
-            client.unstar_song(song_id).await.map_err(Error::Subsonic)?;
+        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
+        // R1: read currently_starred under the same write lock that will commit the toggle so a concurrent toggle cannot flip the bit between read and the cache mutation below.
+        let (currently_starred, new_starred) = {
+            let mut state = self.state.write().await;
+            let was = song_is_starred(&state, song_id);
+            let now = !was;
+            apply_star_to_cached(&mut state, song_id, now);
+            (was, now)
+        };
+
+        let rpc_result = if currently_starred {
+            client.unstar_song(song_id).await
         } else {
-            client.star_song(song_id).await.map_err(Error::Subsonic)?;
+            client.star_song(song_id).await
+        };
+        if let Err(e) = rpc_result {
+            let mut state = self.state.write().await;
+            apply_star_to_cached(&mut state, song_id, currently_starred);
+            return Err(Error::Subsonic(e));
         }
 
-        let new_starred = !currently_starred;
-        {
+        let refreshed = match client.get_starred_songs().await {
+            Ok(list) => Some(list),
+            Err(e) => {
+                warn!("Post-toggle starred refresh failed: {}", e);
+                None
+            }
+        };
+        let stale = self.config_gen_changed(gen_at_start);
+
+        let new_list = {
             let mut state = self.state.write().await;
-            apply_star_to_cached(&mut state, song_id, new_starred);
-        }
+            if let Some(list) = refreshed.as_ref() {
+                if !stale {
+                    state.library.starred_songs = list.clone();
+                    state.library.rebuild_starred_index();
+                }
+            }
+            state.library.starred_songs.clone()
+        };
         self.emit(DaemonEvent::SongStarChanged {
             id: song_id.to_string(),
             starred: new_starred,
         });
-        self.refresh_starred().await;
+        if refreshed.is_some() && !stale {
+            self.emit(DaemonEvent::StarredChanged(new_list));
+            self.bump_library_version();
+        }
         Ok(new_starred)
     }
 
