@@ -689,17 +689,20 @@ impl DaemonCore {
 
     pub async fn pause_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::app::state::PlaybackState;
-        {
-            let state = self.state.read().await;
-            if state.now_playing.state != PlaybackState::Playing {
-                return Ok(());
-            }
+        // R1: take the write lock upfront so the Playing check and the eventual Paused commit cover one consistent snapshot.
+        let mut state = self.state.write().await;
+        if state.now_playing.state != PlaybackState::Playing {
+            return Ok(());
         }
+        drop(state);
         let mut mpv = self.mpv.lock().await;
         match mpv.pause().await {
             Ok(()) => {
                 drop(mpv);
-                let mut state = self.state.write().await;
+                state = self.state.write().await;
+                if state.now_playing.state != PlaybackState::Playing {
+                    return Ok(());
+                }
                 state.now_playing.state = PlaybackState::Paused;
                 drop(state);
                 self.emit_now_playing().await;
