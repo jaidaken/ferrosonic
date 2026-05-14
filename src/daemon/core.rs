@@ -533,6 +533,11 @@ impl DaemonCore {
         self.config_gen.load(std::sync::atomic::Ordering::Acquire) != snapshot
     }
 
+    #[doc(hidden)]
+    pub fn config_gen_for_test(&self) -> u64 {
+        self.config_gen.load(std::sync::atomic::Ordering::Acquire)
+    }
+
     fn bump_library_version(&self) {
         let v = self
             .library_version
@@ -1874,11 +1879,13 @@ impl DaemonCore {
 
         let new_client =
             SubsonicClient::new(base_url, username, password).map_err(Error::Subsonic)?;
-        *self.subsonic.write().await = Some(new_client);
-        // Bump after the new client is installed so in-flight refreshes
-        // started with the old client discard their results.
-        self.config_gen
-            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        {
+            // R4: bump gen before installing client, both under subsonic write so refreshes serialize.
+            let mut slot = self.subsonic.write().await;
+            self.config_gen
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            slot.replace(new_client);
+        }
 
         self.refresh_starred().await;
         self.refresh_artists().await;

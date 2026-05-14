@@ -37,6 +37,11 @@ impl SubsonicClient {
         })
     }
 
+    #[doc(hidden)]
+    pub fn base_url(&self) -> &str {
+        self.base_url.as_str()
+    }
+
     fn build_url(&self, endpoint: &str) -> Result<Url, SubsonicError> {
         let mut url = self.base_url.join(&format!("rest/{}", endpoint))?;
 
