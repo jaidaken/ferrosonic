@@ -3,9 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::app::state::NowPlaying;
 use crate::config::{Config, RepeatMode};
-use crate::daemon::state::DaemonState;
+use crate::daemon::state::{DaemonState, NowPlaying};
 use crate::secret::{deserialize_secret, serialize_revealed, Secret};
 use crate::subsonic::models::{Album, Artist, Child, Playlist, SearchResult3};
 

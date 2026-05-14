@@ -75,7 +75,7 @@ fn now_playing_widget_renders_with_a_loaded_track() {
     daemon.queue.push(song("a", "A Track"));
     daemon.queue_position = Some(0);
     daemon.now_playing.song = Some(song("a", "A Track"));
-    daemon.now_playing.state = ferrosonic::app::state::PlaybackState::Playing;
+    daemon.now_playing.state = ferrosonic::daemon::state::PlaybackState::Playing;
     daemon.now_playing.position = 30.0;
     daemon.now_playing.duration = 180.0;
     let frame = render(80, 24, &daemon, &mut client);

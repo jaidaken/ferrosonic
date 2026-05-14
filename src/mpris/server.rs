@@ -10,7 +10,8 @@ use mpris_server::{
 use tracing::info;
 use url::Url;
 
-use crate::app::state::{NowPlaying, PlaybackState, SharedClientState, SharedDaemonState};
+use crate::app::state::{SharedClientState, SharedDaemonState};
+use crate::daemon::state::{NowPlaying, PlaybackState};
 use crate::config::Config;
 use crate::ipc::{DaemonClient, DaemonRequest};
 use crate::subsonic::auth::generate_auth_params;

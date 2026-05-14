@@ -3,7 +3,8 @@
 mod common;
 
 use common::song;
-use ferrosonic::app::state::{new_shared_daemon_state, PlaybackState};
+use ferrosonic::app::state::new_shared_daemon_state;
+use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::config::Config;
 use ferrosonic::mpris::server::build_property_snapshot;
 use mpris_server::PlaybackStatus;

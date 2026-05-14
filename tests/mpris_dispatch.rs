@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use common::RecordingClient;
 use ferrosonic::app::state::{
-    new_shared_client_state, new_shared_daemon_state, PlaybackState, SharedDaemonState,
+    new_shared_client_state, new_shared_daemon_state, SharedDaemonState,
 };
+use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::config::Config;
 use ferrosonic::ipc::protocol::DaemonRequest;
 use ferrosonic::mpris::server::MprisPlayer;

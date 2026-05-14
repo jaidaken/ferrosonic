@@ -187,7 +187,7 @@ async fn play_queue_position_with_bad_stream_id_returns_ok() {
 #[tokio::test]
 #[serial]
 async fn repeat_one_advance_auto_reloads_same_track() {
-    use ferrosonic::app::state::PlaybackState;
+    use ferrosonic::daemon::state::PlaybackState;
     use ferrosonic::config::RepeatMode;
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
@@ -212,7 +212,7 @@ async fn repeat_one_advance_auto_reloads_same_track() {
 #[tokio::test]
 #[serial]
 async fn repeat_all_advance_auto_wraps_to_first_at_end_of_queue() {
-    use ferrosonic::app::state::PlaybackState;
+    use ferrosonic::daemon::state::PlaybackState;
     use ferrosonic::config::RepeatMode;
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;

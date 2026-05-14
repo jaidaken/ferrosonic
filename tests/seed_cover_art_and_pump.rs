@@ -113,9 +113,9 @@ async fn apply_event_now_playing_with_cover_art_enabled_fetches_image() {
         let mut cs = app.client_state.write().await;
         cs.settings_state.cover_art = true;
     }
-    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::app::state::NowPlaying {
+    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::daemon::state::NowPlaying {
         song: Some(song_with_cover("s1", "art-np")),
-        state: ferrosonic::app::state::PlaybackState::Playing,
+        state: ferrosonic::daemon::state::PlaybackState::Playing,
         position: 0.0,
         duration: 180.0,
         sample_rate: None,
@@ -147,7 +147,7 @@ async fn apply_event_now_playing_clears_cover_when_no_cover_id() {
         let mut cs = app.client_state.write().await;
         cs.settings_state.cover_art = true;
     }
-    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::app::state::NowPlaying {
+    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::daemon::state::NowPlaying {
         song: Some(Child {
             id: "no-cover".into(),
             title: "T".into(),
@@ -168,7 +168,7 @@ async fn apply_event_now_playing_clears_cover_when_no_cover_id() {
             disc_number: None,
             starred: None,
         }),
-        state: ferrosonic::app::state::PlaybackState::Playing,
+        state: ferrosonic::daemon::state::PlaybackState::Playing,
         position: 0.0,
         duration: 120.0,
         sample_rate: None,

@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
-use crate::app::state::NowPlaying;
+use crate::daemon::state::NowPlaying;
 use crate::ui::theme::ThemeColors;
 
 pub struct NowPlayingWidget<'a> {

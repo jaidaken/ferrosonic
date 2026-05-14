@@ -64,7 +64,7 @@ async fn queue_changed_event_updates_queue_and_position() {
 #[tokio::test]
 #[serial]
 async fn now_playing_changed_event_updates_state() {
-    use ferrosonic::app::state::{NowPlaying, PlaybackState};
+    use ferrosonic::daemon::state::{NowPlaying, PlaybackState};
     let h = build_harness();
     let np = NowPlaying {
         song: Some(song("x", "X")),

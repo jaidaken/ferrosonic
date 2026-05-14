@@ -684,7 +684,7 @@ impl DaemonCore {
 
 impl DaemonCore {
     pub async fn toggle_pause(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         let (playback_state, queue_pos) = {
             let state = self.state.read().await;
             (state.now_playing.state, state.queue_position)
@@ -731,7 +731,7 @@ impl DaemonCore {
     }
 
     pub async fn pause_playback(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         // R1: take the write lock upfront so the Playing check and the eventual Paused commit cover one consistent snapshot.
         let mut state = self.state.write().await;
         if state.now_playing.state != PlaybackState::Playing {
@@ -756,7 +756,7 @@ impl DaemonCore {
     }
 
     pub async fn resume_playback(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         let (playback_state, queue_pos) = {
             let state = self.state.read().await;
             (state.now_playing.state, state.queue_position)
@@ -786,7 +786,7 @@ impl DaemonCore {
 
     /// Manual skip. Ignores `repeat=One` (user wants to move).
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
             (
@@ -869,7 +869,7 @@ impl DaemonCore {
 
     /// Auto-end advance. Honours `repeat=One` and `repeat=All`.
     pub async fn advance_auto(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
             (
@@ -1029,7 +1029,7 @@ impl DaemonCore {
         client: &SubsonicClient,
         pos: usize,
     ) -> Result<(crate::subsonic::models::Child, String), ()> {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         let song = match state.queue.get(pos) {
             Some(s) => s.clone(),
             None => return Err(()),
@@ -1406,7 +1406,7 @@ impl DaemonCore {
     }
 
     pub async fn stop_playback(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         {
             let mut mpv = self.mpv.lock().await;
             if let Err(e) = mpv.stop().await {
@@ -1433,7 +1433,7 @@ impl DaemonCore {
     /// MPRIS / Stop-button semantics: halt playback but keep the queue
     /// and current selection intact so Play can resume the same track.
     pub async fn stop_keep_queue(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         {
             let mut mpv = self.mpv.lock().await;
             if let Err(e) = mpv.stop().await {
@@ -1451,7 +1451,7 @@ impl DaemonCore {
 
     /// Stop mpv without touching the queue.
     pub async fn halt_keep_queue(self: &Arc<Self>) {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
         {
             let mut mpv = self.mpv.lock().await;
             if let Err(e) = mpv.stop().await {
@@ -1535,7 +1535,7 @@ impl DaemonCore {
 
     /// Collect every read the playback tick state machine needs. Read-only by design.
     async fn gather_playback_tick_inputs(self: &Arc<Self>) -> PlaybackTickInputs {
-        use crate::app::state::PlaybackState;
+        use crate::daemon::state::PlaybackState;
 
         let (is_playing, is_active) = {
             let state = self.state.read().await;

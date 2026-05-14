@@ -130,7 +130,7 @@ async fn proptest_arbitrary_play_queue_sequences_dont_panic() {
 #[tokio::test]
 #[serial]
 async fn rapid_pause_resume_toggle_doesnt_corrupt_state() {
-    use ferrosonic::app::state::PlaybackState;
+    use ferrosonic::daemon::state::PlaybackState;
     let td = TestDaemon::new().await;
     {
         let mut s = td.state.write().await;

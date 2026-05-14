@@ -105,7 +105,7 @@ impl DaemonClient for InProcessClient {
                     must_stop = was_playing && pos >= new_len;
                     if must_stop {
                         state.now_playing.state =
-                            crate::app::state::PlaybackState::Stopped;
+                            crate::daemon::state::PlaybackState::Stopped;
                         state.now_playing.song = None;
                         state.now_playing.position = 0.0;
                         state.now_playing.duration = 0.0;

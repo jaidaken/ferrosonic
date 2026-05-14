@@ -151,7 +151,7 @@ async fn replace_and_remove_interleave_holds_no_locks() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[serial]
 async fn pause_resume_under_replace_storm_stays_consistent() {
-    use ferrosonic::app::state::PlaybackState;
+    use ferrosonic::daemon::state::PlaybackState;
     let td = TestDaemon::new().await;
     seed_mocks(&td).await;
     {

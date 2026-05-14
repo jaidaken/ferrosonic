@@ -3,7 +3,7 @@
 mod common;
 
 use common::{song, TestDaemon};
-use ferrosonic::app::state::PlaybackState;
+use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::config::RepeatMode;
 use serial_test::serial;
 

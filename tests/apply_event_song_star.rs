@@ -140,13 +140,13 @@ async fn apply_event_now_playing_when_disabled_skips_cover_fetch() {
         let mut cs = app.client_state.write().await;
         cs.settings_state.cover_art = false;
     }
-    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::app::state::NowPlaying {
+    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::daemon::state::NowPlaying {
         song: Some({
             let mut s = song("x");
             s.cover_art = Some("art".into());
             s
         }),
-        state: ferrosonic::app::state::PlaybackState::Playing,
+        state: ferrosonic::daemon::state::PlaybackState::Playing,
         position: 0.0,
         duration: 100.0,
         sample_rate: None,
@@ -189,13 +189,13 @@ async fn apply_event_now_playing_with_same_cover_id_skips_fetch() {
             chafa_cache: None,
         },
     ));
-    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::app::state::NowPlaying {
+    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::daemon::state::NowPlaying {
         song: Some({
             let mut s = song("x");
             s.cover_art = Some("same-id".into());
             s
         }),
-        state: ferrosonic::app::state::PlaybackState::Playing,
+        state: ferrosonic::daemon::state::PlaybackState::Playing,
         position: 0.0,
         duration: 100.0,
         sample_rate: None,

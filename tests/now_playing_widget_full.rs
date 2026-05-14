@@ -1,6 +1,6 @@
 //! ui/widgets/now_playing.rs: render branches across area sizes.
 
-use ferrosonic::app::state::{NowPlaying, PlaybackState};
+use ferrosonic::daemon::state::{NowPlaying, PlaybackState};
 use ferrosonic::subsonic::models::Child;
 use ferrosonic::ui::theme::{ThemeColors, ThemeData};
 

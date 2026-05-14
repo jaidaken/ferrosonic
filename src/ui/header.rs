@@ -6,7 +6,8 @@ use ratatui::{
     widgets::{Tabs, Widget},
 };
 
-use crate::app::state::{Page, PlaybackState};
+use crate::app::state::Page;
+use crate::daemon::state::PlaybackState;
 use crate::ui::theme::ThemeColors;
 
 pub struct Header {

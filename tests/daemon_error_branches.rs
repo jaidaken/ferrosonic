@@ -208,7 +208,7 @@ async fn prev_track_on_empty_queue_is_silent_noop() {
 #[tokio::test]
 #[serial]
 async fn auto_continue_with_subsonic_error_stops_cleanly() {
-    use ferrosonic::app::state::PlaybackState;
+    use ferrosonic::daemon::state::PlaybackState;
     let td = TestDaemon::new().await;
     td.fake_subsonic
         .expect_error("getRandomSongs", 50, "err")
@@ -294,7 +294,7 @@ async fn pause_playback_when_not_playing_is_noop() {
 #[tokio::test]
 #[serial]
 async fn resume_playback_when_not_paused_is_noop() {
-    use ferrosonic::app::state::PlaybackState;
+    use ferrosonic::daemon::state::PlaybackState;
     let td = TestDaemon::new().await;
     {
         let mut s = td.state.write().await;

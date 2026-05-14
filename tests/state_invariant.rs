@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use common::{song, songs, TestDaemon};
-use ferrosonic::app::state::PlaybackState;
+use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::daemon::core::PlayMode;
 use serial_test::serial;
 

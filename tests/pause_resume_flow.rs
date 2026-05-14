@@ -3,7 +3,7 @@
 mod common;
 
 use common::{songs, TestDaemon};
-use ferrosonic::app::state::PlaybackState;
+use ferrosonic::daemon::state::PlaybackState;
 use serde_json::Value;
 use serial_test::serial;
 

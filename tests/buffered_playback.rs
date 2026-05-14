@@ -91,7 +91,7 @@ async fn buffered_play_stops_previous_audio_immediately() {
     {
         let mut s = td.state.write().await;
         s.queue.push(song("abc", "Track"));
-        s.now_playing.state = ferrosonic::app::state::PlaybackState::Playing;
+        s.now_playing.state = ferrosonic::daemon::state::PlaybackState::Playing;
     }
 
     td.fake_mpv
