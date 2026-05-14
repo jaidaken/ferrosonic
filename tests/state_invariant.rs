@@ -73,7 +73,7 @@ async fn r4_update_server_config_bumps_gen_before_installing_client() {
 
     let _ = td
         .core
-        .update_server_config(&alt_url, "user", "pw")
+        .update_server_config(&alt_url, "user", &"pw".into())
         .await;
 
     stop.store(true, Ordering::Release);

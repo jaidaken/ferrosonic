@@ -15,7 +15,7 @@ async fn update_server_config_swaps_subsonic_client_and_refreshes_library() {
     new_subsonic.expect_playlists().await;
 
     td.core
-        .update_server_config(&new_subsonic.url(), "newuser", "newpass")
+        .update_server_config(&new_subsonic.url(), "newuser", &"newpass".into())
         .await
         .expect("update succeeds");
 
@@ -34,7 +34,7 @@ async fn test_server_connection_returns_ok_for_reachable_subsonic() {
 
     let (ok, msg) = td
         .core
-        .test_server_connection(&td.fake_subsonic.url(), "u", "p")
+        .test_server_connection(&td.fake_subsonic.url(), "u", &"p".into())
         .await;
     assert!(ok, "expected ok=true, got message: {}", msg);
     assert_eq!(msg, "Connection OK");
@@ -46,7 +46,7 @@ async fn test_server_connection_returns_false_for_bad_url() {
     let td = TestDaemon::new().await;
     let (ok, msg) = td
         .core
-        .test_server_connection("http://127.0.0.1:1", "u", "p")
+        .test_server_connection("http://127.0.0.1:1", "u", &"p".into())
         .await;
     assert!(!ok, "unreachable URL must return false");
     assert!(

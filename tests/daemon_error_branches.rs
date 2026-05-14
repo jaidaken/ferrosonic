@@ -184,7 +184,10 @@ async fn play_queue_position_with_no_subsonic_client_is_safe() {
 #[serial]
 async fn update_server_config_invalid_url_returns_error() {
     let td = TestDaemon::new().await;
-    let r = td.core.update_server_config("not a url", "u", "p").await;
+    let r = td
+        .core
+        .update_server_config("not a url", "u", &"p".into())
+        .await;
     assert!(r.is_err());
 }
 
@@ -243,7 +246,7 @@ async fn test_server_connection_with_unreachable_host_returns_failure() {
     let td = TestDaemon::new().await;
     let (ok, msg) = td
         .core
-        .test_server_connection("http://127.0.0.1:1", "u", "p")
+        .test_server_connection("http://127.0.0.1:1", "u", &"p".into())
         .await;
     assert!(!ok);
     assert!(msg.contains("failed") || msg.contains("Connection"));

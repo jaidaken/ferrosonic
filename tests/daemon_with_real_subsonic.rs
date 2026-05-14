@@ -111,7 +111,7 @@ async fn test_server_connection_succeeds_with_fake() {
     td.fake_subsonic.expect_ping().await;
     let (ok, _msg) = td
         .core
-        .test_server_connection(&td.fake_subsonic.url(), "u", "p")
+        .test_server_connection(&td.fake_subsonic.url(), "u", &"p".into())
         .await;
     assert!(ok);
 }
@@ -151,7 +151,7 @@ async fn update_server_config_persists_and_reloads() {
     td.fake_subsonic.expect_ping().await;
     let r = td
         .core
-        .update_server_config(&td.fake_subsonic.url(), "newuser", "newpw")
+        .update_server_config(&td.fake_subsonic.url(), "newuser", &"newpw".into())
         .await;
     let _ = r;
     let s = td.state.read().await;

@@ -111,7 +111,16 @@ async fn char_into_password_field_appends() {
         cs.server_state.password.clear();
     }
     fx.app.handle_key(key(KeyCode::Char('p'))).await.unwrap();
-    assert_eq!(fx.app.client_state.read().await.server_state.password, "p");
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .server_state
+            .password
+            .reveal(),
+        "p"
+    );
 }
 
 #[tokio::test]
@@ -154,7 +163,13 @@ async fn backspace_pops_from_password() {
     }
     fx.app.handle_key(key(KeyCode::Backspace)).await.unwrap();
     assert_eq!(
-        fx.app.client_state.read().await.server_state.password,
+        fx.app
+            .client_state
+            .read()
+            .await
+            .server_state
+            .password
+            .reveal(),
         "secre"
     );
 }

@@ -83,7 +83,7 @@ async fn typing_into_password_field_buffers() {
         fx.app.handle_key(key(KeyCode::Char(c))).await.unwrap();
     }
     let cs = fx.app.client_state.read().await;
-    assert_eq!(cs.server_state.password, "secret");
+    assert_eq!(cs.server_state.password.reveal(), "secret");
 }
 
 #[tokio::test]
@@ -97,7 +97,7 @@ async fn backspace_on_password_field_trims_one_char() {
     }
     fx.app.handle_key(key(KeyCode::Backspace)).await.unwrap();
     let cs = fx.app.client_state.read().await;
-    assert_eq!(cs.server_state.password, "p");
+    assert_eq!(cs.server_state.password.reveal(), "p");
 }
 
 #[tokio::test]

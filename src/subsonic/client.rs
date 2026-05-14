@@ -1,5 +1,7 @@
 //! Subsonic API client
 
+use std::sync::Arc;
+
 use reqwest::Client;
 use tracing::{debug, info};
 use url::Url;
@@ -7,6 +9,7 @@ use url::Url;
 use super::auth::generate_auth_params;
 use super::models::*;
 use crate::error::SubsonicError;
+use crate::secret::Secret;
 
 const CLIENT_NAME: &str = "ferrosonic-rs";
 const API_VERSION: &str = "1.16.1";
@@ -15,13 +18,13 @@ const API_VERSION: &str = "1.16.1";
 pub struct SubsonicClient {
     base_url: Url,
     username: String,
-    /// Held in plaintext for stream URL signing.
-    password: String,
+    /// Arc shares the secret across clones without duplicating the heap bytes.
+    password: Arc<Secret>,
     http: Client,
 }
 
 impl SubsonicClient {
-    pub fn new(base_url: &str, username: &str, password: &str) -> Result<Self, SubsonicError> {
+    pub fn new(base_url: &str, username: &str, password: &Secret) -> Result<Self, SubsonicError> {
         let base_url = Url::parse(base_url)?;
 
         let http = Client::builder()
@@ -32,7 +35,7 @@ impl SubsonicClient {
         Ok(Self {
             base_url,
             username: username.to_string(),
-            password: password.to_string(),
+            password: Arc::new(password.clone()),
             http,
         })
     }

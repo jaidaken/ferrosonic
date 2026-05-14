@@ -87,7 +87,7 @@ async fn concurrent_ipc_commands_do_not_deadlock() {
                 .request(DaemonRequest::UpdateServerConfig {
                     base_url: url.clone(),
                     username: format!("user-{}", i),
-                    password: format!("pw-{}", i),
+                    password: format!("pw-{}", i).into(),
                 })
                 .await;
         }

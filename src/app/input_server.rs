@@ -29,17 +29,27 @@ impl App {
             KeyCode::Tab => {
                 state.client.server_state.selected_field = (field + 1) % 5;
             }
-            KeyCode::Char(c) if is_text_field => {
-                let target: &mut String = match field {
-                    0 => &mut state.client.server_state.base_url,
-                    1 => &mut state.client.server_state.username,
-                    2 => &mut state.client.server_state.password,
-                    _ => return Ok(()),
-                };
-                if target.len() < MAX_FIELD_LEN {
-                    target.push(c);
+            KeyCode::Char(c) if is_text_field => match field {
+                0 => {
+                    let t = &mut state.client.server_state.base_url;
+                    if t.len() < MAX_FIELD_LEN {
+                        t.push(c);
+                    }
                 }
-            }
+                1 => {
+                    let t = &mut state.client.server_state.username;
+                    if t.len() < MAX_FIELD_LEN {
+                        t.push(c);
+                    }
+                }
+                2 => {
+                    let s = &mut state.client.server_state.password;
+                    if s.len() < MAX_FIELD_LEN {
+                        s.push_char(c);
+                    }
+                }
+                _ => return Ok(()),
+            },
             KeyCode::Backspace if is_text_field => match field {
                 0 => {
                     state.client.server_state.base_url.pop();
@@ -48,7 +58,7 @@ impl App {
                     state.client.server_state.username.pop();
                 }
                 2 => {
-                    state.client.server_state.password.pop();
+                    state.client.server_state.password.pop_char();
                 }
                 _ => {}
             },

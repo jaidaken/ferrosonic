@@ -50,7 +50,7 @@ async fn connection_refused_returns_error_from_test_server() {
     let td = TestDaemon::new().await;
     let (ok, msg) = td
         .core
-        .test_server_connection("http://127.0.0.1:1", "u", "p")
+        .test_server_connection("http://127.0.0.1:1", "u", &"p".into())
         .await;
     assert!(!ok);
     assert!(

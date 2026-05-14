@@ -1,7 +1,10 @@
 use rand::Rng;
+use zeroize::Zeroize;
 
-/// Returns `(salt, md5(password + salt))`.
-pub fn generate_auth_params(password: &str) -> (String, String) {
+use crate::secret::Secret;
+
+/// Returns `(salt, md5(password + salt))`. Token buffer is zeroized before drop.
+pub fn generate_auth_params(password: &Secret) -> (String, String) {
     let salt = generate_salt();
     let token = generate_token(password, &salt);
     (salt, token)
@@ -21,9 +24,13 @@ fn generate_salt() -> String {
         .collect()
 }
 
-fn generate_token(password: &str, salt: &str) -> String {
-    let input = format!("{}{}", password, salt);
-    let digest = md5::compute(input.as_bytes());
+fn generate_token(password: &Secret, salt: &str) -> String {
+    let mut buf: Vec<u8> =
+        Vec::with_capacity(password.reveal_bytes().len() + salt.len());
+    buf.extend_from_slice(password.reveal_bytes());
+    buf.extend_from_slice(salt.as_bytes());
+    let digest = md5::compute(&buf);
+    buf.zeroize();
     format!("{:x}", digest)
 }
 
@@ -33,7 +40,8 @@ mod tests {
 
     #[test]
     fn test_generate_token() {
-        let token = generate_token("sesame", "c19b2d");
+        let pw = Secret::from_string("sesame".to_string());
+        let token = generate_token(&pw, "c19b2d");
         assert_eq!(token, "26719a1196d2a940705a59634eb18eab");
     }
 
@@ -45,7 +53,8 @@ mod tests {
 
     #[test]
     fn test_auth_params() {
-        let (salt, token) = generate_auth_params("password");
+        let pw = Secret::from_string("password".to_string());
+        let (salt, token) = generate_auth_params(&pw);
         assert_eq!(salt.len(), 16);
         assert_eq!(token.len(), 32);
     }

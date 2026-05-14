@@ -41,7 +41,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
             )| Config {
                 base_url,
                 username,
-                password,
+                password: password.into(),
                 password_file: None,
                 theme,
                 cava,

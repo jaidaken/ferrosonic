@@ -124,7 +124,7 @@ async fn fkey_on_server_page_reverts_unsaved_edits() {
     let cs = app.client_state.read().await;
     assert_eq!(cs.server_state.base_url, "");
     assert_eq!(cs.server_state.username, "");
-    assert_eq!(cs.server_state.password, "");
+    assert!(cs.server_state.password.is_empty());
     assert!(cs.server_state.status.is_none());
 }
 

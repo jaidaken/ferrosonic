@@ -7,7 +7,7 @@ use ferrosonic::subsonic::client::SubsonicClient;
 use serial_test::serial;
 
 async fn build_client(fake: &FakeSubsonic) -> SubsonicClient {
-    SubsonicClient::new(&fake.url(), "test", "test").unwrap()
+    SubsonicClient::new(&fake.url(), "test", &"test".into()).unwrap()
 }
 
 #[tokio::test]
@@ -215,6 +215,6 @@ async fn empty_search_returns_empty_result() {
 #[tokio::test]
 #[serial]
 async fn invalid_base_url_returns_construction_error() {
-    let r = SubsonicClient::new("not a url", "u", "p");
+    let r = SubsonicClient::new("not a url", "u", &"p".into());
     assert!(r.is_err());
 }

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::models::SongOption;
 use crate::config::Config;
+use crate::secret::Secret;
 use crate::subsonic::models::Child;
 use crate::ui::theme::{ThemeColors, ThemeData};
 
@@ -181,29 +182,14 @@ pub struct PlaylistsState {
     pub song_scroll_offset: usize,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct ServerState {
     /// 0=URL, 1=Username, 2=Password, 3=Test, 4=Save.
     pub selected_field: usize,
     pub base_url: String,
     pub username: String,
-    pub password: String,
+    pub password: Secret,
     pub status: Option<String>,
-}
-
-impl std::fmt::Debug for ServerState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ServerState")
-            .field("selected_field", &self.selected_field)
-            .field("base_url", &self.base_url)
-            .field("username", &self.username)
-            .field(
-                "password",
-                &if self.password.is_empty() { "" } else { "***" },
-            )
-            .field("status", &self.status)
-            .finish()
-    }
 }
 
 #[derive(Debug, Clone)]

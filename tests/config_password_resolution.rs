@@ -26,7 +26,7 @@ PasswordFile = "{}"
     std::env::set_var("FERROSONIC_PASSWORD", "env-wins");
     let c = Config::load_from_file(&config_path).unwrap();
     std::env::remove_var("FERROSONIC_PASSWORD");
-    assert_eq!(c.password, "env-wins");
+    assert_eq!(c.password_str(), "env-wins");
 }
 
 #[test]
@@ -51,7 +51,8 @@ PasswordFile = "{}"
     std::env::remove_var("FERROSONIC_PASSWORD");
     let c = Config::load_from_file(&config_path).unwrap();
     assert_eq!(
-        c.password, "file-password",
+        c.password_str(),
+        "file-password",
         "trailing whitespace must be trimmed"
     );
 }
@@ -72,7 +73,7 @@ PasswordFile = "/nonexistent-file"
     .unwrap();
     std::env::remove_var("FERROSONIC_PASSWORD");
     let c = Config::load_from_file(&config_path).unwrap();
-    assert_eq!(c.password, "");
+    assert_eq!(c.password_str(), "");
 }
 
 #[test]
@@ -93,7 +94,7 @@ PasswordFile = "~/pw.txt"
     .unwrap();
     std::env::remove_var("FERROSONIC_PASSWORD");
     let c = Config::load_from_file(&config_path).unwrap();
-    assert_eq!(c.password, "tilde-resolved");
+    assert_eq!(c.password_str(), "tilde-resolved");
 }
 
 #[test]
@@ -176,6 +177,7 @@ fn is_configured_true_when_all_three_fields_set() {
         ..Default::default()
     };
     assert!(c.is_configured());
+    assert_eq!(c.password_str(), "p");
 }
 
 #[test]
@@ -205,5 +207,5 @@ Password = "kept"
     std::env::set_var("FERROSONIC_PASSWORD", "");
     let c = Config::load_from_file(&p).unwrap();
     std::env::remove_var("FERROSONIC_PASSWORD");
-    assert_eq!(c.password, "kept");
+    assert_eq!(c.password_str(), "kept");
 }

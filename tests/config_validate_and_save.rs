@@ -30,7 +30,7 @@ fn validate_with_valid_url_and_empty_username_warns_but_passes() {
     let c = Config {
         base_url: "https://example.com".into(),
         username: String::new(),
-        password: String::new(),
+        password: ferrosonic::secret::Secret::new(),
         ..Default::default()
     };
     let r = c.validate();

@@ -203,6 +203,9 @@ async fn update_playback_info_when_stopped_returns_early() {
 #[serial]
 async fn update_server_config_with_bad_url_returns_error() {
     let td = TestDaemon::new().await;
-    let r = td.core.update_server_config("not a url", "u", "p").await;
+    let r = td
+        .core
+        .update_server_config("not a url", "u", &"p".into())
+        .await;
     assert!(r.is_err());
 }

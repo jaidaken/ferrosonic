@@ -96,7 +96,10 @@ async fn set_cava_size_clamps_to_range() {
 #[serial]
 async fn test_server_connection_with_bad_url_returns_false() {
     let td = TestDaemon::new().await;
-    let (ok, _msg) = td.core.test_server_connection("not a url", "u", "p").await;
+    let (ok, _msg) = td
+        .core
+        .test_server_connection("not a url", "u", &"p".into())
+        .await;
     assert!(!ok);
 }
 

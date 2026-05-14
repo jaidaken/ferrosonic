@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::state::NowPlaying;
 use crate::config::{Config, RepeatMode};
 use crate::daemon::state::DaemonState;
+use crate::secret::{deserialize_secret, serialize_revealed, Secret};
 use crate::subsonic::models::{Album, Artist, Child, Playlist, SearchResult3};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,12 +57,20 @@ pub enum DaemonRequest {
     UpdateServerConfig {
         base_url: String,
         username: String,
-        password: String,
+        #[serde(
+            serialize_with = "serialize_revealed",
+            deserialize_with = "deserialize_secret"
+        )]
+        password: Secret,
     },
     TestServerConnection {
         base_url: String,
         username: String,
-        password: String,
+        #[serde(
+            serialize_with = "serialize_revealed",
+            deserialize_with = "deserialize_secret"
+        )]
+        password: Secret,
     },
     SetTheme(String),
     SetCavaEnabled(bool),

@@ -413,6 +413,7 @@ impl DaemonCore {
             let state = self.state.read().await;
             state.config.clone()
         };
+        // Mask the wire path explicitly. Secret::Serialize would emit "***" but we want "" so the client treats it as empty.
         cfg.password.clear();
         cfg.password_file = None;
         self.emit(DaemonEvent::ConfigChanged(cfg));
@@ -1896,25 +1897,23 @@ impl DaemonCore {
         self: &Arc<Self>,
         base_url: &str,
         username: &str,
-        password: &str,
+        password: &crate::secret::Secret,
     ) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
             state.config.base_url = base_url.to_string();
             state.config.username = username.to_string();
-            // When password_file is set, secret goes to that file and
-            // inline stays empty in config.toml; otherwise inline.
             let pf_opt = state.config.password_file.clone().filter(|s| !s.is_empty());
             if let Some(pf) = pf_opt.as_deref() {
                 if let Err(e) = crate::config::write_password_file_atomic(pf, password) {
                     error!("Failed to write password to {}: {}", pf, e);
                     return Err(Error::Io(e));
                 }
-                state.config.password = String::new();
+                state.config.password = crate::secret::Secret::new();
                 state.config.save_default().map_err(Error::Config)?;
-                state.config.password = password.to_string();
+                state.config.password = password.clone();
             } else {
-                state.config.password = password.to_string();
+                state.config.password = password.clone();
                 state.config.save_default().map_err(Error::Config)?;
             }
         }
@@ -1941,7 +1940,7 @@ impl DaemonCore {
         self: &Arc<Self>,
         base_url: &str,
         username: &str,
-        password: &str,
+        password: &crate::secret::Secret,
     ) -> (bool, String) {
         match SubsonicClient::new(base_url, username, password) {
             Ok(client) => match client.ping().await {

@@ -5,6 +5,7 @@ use std::path::Path;
 use tracing::{debug, info, warn};
 
 use crate::error::ConfigError;
+use crate::secret::{serialize_revealed, Secret};
 
 /// All top-level TOML keys we expect. Anything not in this list is
 /// warned on load so a typo like `RepeateMode` is visible instead of
@@ -24,7 +25,7 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "CoverArtSize",
 ];
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Config {
     #[serde(rename = "BaseURL", default)]
     pub base_url: String,
@@ -32,13 +33,9 @@ pub struct Config {
     #[serde(rename = "Username", default)]
     pub username: String,
 
-    /// Resolved at load-time from env, PasswordFile, then this inline value. Custom serializer masks the value so any accidental Serialize path emits "***" instead of leaking; save_to_file routes through ConfigOnDisk to write the real value.
-    #[serde(
-        rename = "Password",
-        default,
-        serialize_with = "serialize_password_redacted"
-    )]
-    pub password: String,
+    /// Resolved at load-time from env, PasswordFile, then this inline value. Secret masks Debug + Serialize so accidental log/wire paths emit "***"; save_to_file routes through ConfigOnDisk which writes the real value.
+    #[serde(rename = "Password", default)]
+    pub password: Secret,
 
     #[serde(
         rename = "PasswordFile",
@@ -76,22 +73,18 @@ pub struct Config {
     pub cover_art_size: u8,
 }
 
-fn serialize_password_redacted<S: serde::Serializer>(
-    p: &str,
-    ser: S,
-) -> Result<S::Ok, S::Error> {
-    let masked = if p.is_empty() { "" } else { "***" };
-    ser.serialize_str(masked)
-}
-
 #[derive(Serialize)]
 struct ConfigOnDisk<'a> {
     #[serde(rename = "BaseURL")]
     base_url: &'a str,
     #[serde(rename = "Username")]
     username: &'a str,
-    #[serde(rename = "Password", skip_serializing_if = "str::is_empty")]
-    password: &'a str,
+    #[serde(
+        rename = "Password",
+        serialize_with = "serialize_revealed_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    password: Option<&'a Secret>,
     #[serde(rename = "PasswordFile", skip_serializing_if = "Option::is_none")]
     password_file: Option<&'a str>,
     #[serde(rename = "Theme")]
@@ -112,6 +105,16 @@ struct ConfigOnDisk<'a> {
     cover_art_size: u8,
 }
 
+fn serialize_revealed_opt<S: serde::Serializer>(
+    s: &Option<&Secret>,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    match s {
+        Some(sec) => serialize_revealed(sec, ser),
+        None => ser.serialize_str(""),
+    }
+}
+
 impl Config {
     fn as_on_disk(&self) -> ConfigOnDisk<'_> {
         let pw_file_set = self
@@ -121,7 +124,11 @@ impl Config {
         ConfigOnDisk {
             base_url: &self.base_url,
             username: &self.username,
-            password: if pw_file_set { "" } else { &self.password },
+            password: if pw_file_set || self.password.is_empty() {
+                None
+            } else {
+                Some(&self.password)
+            },
             password_file: self.password_file.as_deref(),
             theme: &self.theme,
             cava: self.cava,
@@ -132,28 +139,6 @@ impl Config {
             cover_art: self.cover_art,
             cover_art_size: self.cover_art_size,
         }
-    }
-}
-
-impl std::fmt::Debug for Config {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Config")
-            .field("base_url", &self.base_url)
-            .field("username", &self.username)
-            .field(
-                "password",
-                &if self.password.is_empty() { "" } else { "***" },
-            )
-            .field("password_file", &self.password_file)
-            .field("theme", &self.theme)
-            .field("cava", &self.cava)
-            .field("cava_size", &self.cava_size)
-            .field("daemon", &self.daemon)
-            .field("auto_continue", &self.auto_continue)
-            .field("repeat_mode", &self.repeat_mode)
-            .field("cover_art", &self.cover_art)
-            .field("cover_art_size", &self.cover_art_size)
-            .finish()
     }
 }
 
@@ -232,7 +217,7 @@ impl Default for Config {
         Self {
             base_url: String::new(),
             username: String::new(),
-            password: String::new(),
+            password: Secret::new(),
             password_file: None,
             theme: String::new(),
             cava: false,
@@ -320,18 +305,21 @@ impl Config {
         if let Ok(env) = std::env::var("FERROSONIC_PASSWORD") {
             if !env.is_empty() {
                 debug!("Using password from FERROSONIC_PASSWORD env var");
-                self.password = env;
+                self.password = Secret::from_string(env);
                 return;
             }
         }
         if let Some(pf) = self.password_file.as_ref().filter(|s| !s.is_empty()) {
             let expanded = Self::expand_tilde(pf);
             match std::fs::read_to_string(&expanded) {
-                Ok(contents) => {
+                Ok(mut contents) => {
                     debug!("Using password from {}", expanded);
-                    self.password = contents
+                    let trimmed = contents
                         .trim_end_matches(['\n', '\r', ' ', '\t'])
                         .to_string();
+                    use zeroize::Zeroize;
+                    contents.zeroize();
+                    self.password = Secret::from_string(trimmed);
                 }
                 Err(e) => {
                     warn!(
@@ -384,6 +372,10 @@ impl Config {
         !self.base_url.is_empty() && !self.username.is_empty() && !self.password.is_empty()
     }
 
+    pub fn password_str(&self) -> &str {
+        self.password.reveal()
+    }
+
     #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.base_url.is_empty() {
@@ -422,7 +414,7 @@ pub fn fsync_parent_dir(path: &Path) {
 /// Atomic password-file writer: temp + rename + 0600 + parent dir fsync.
 pub fn write_password_file_atomic(
     path: &str,
-    password: &str,
+    password: &Secret,
 ) -> std::io::Result<()> {
     use std::io::Write;
     let expanded = Config::expand_tilde(path);
@@ -441,7 +433,7 @@ pub fn write_password_file_atomic(
         opts.mode(0o600);
     }
     let mut f = opts.open(&tmp)?;
-    f.write_all(password.as_bytes())?;
+    f.write_all(password.reveal_bytes())?;
     f.write_all(b"\n")?;
     f.sync_all()?;
     drop(f);
@@ -470,7 +462,7 @@ Password = "testpass"
         let config = Config::load_from_file(file.path()).unwrap();
         assert_eq!(config.base_url, "https://example.com");
         assert_eq!(config.username, "testuser");
-        assert_eq!(config.password, "testpass");
+        assert_eq!(config.password_str(), "testpass");
     }
 
     #[test]
@@ -480,7 +472,7 @@ Password = "testpass"
 
         config.base_url = "https://example.com".to_string();
         config.username = "user".to_string();
-        config.password = "pass".to_string();
+        config.password = Secret::from_string("pass".to_string());
         assert!(config.is_configured());
     }
 

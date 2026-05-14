@@ -70,6 +70,18 @@ impl Default for Secret {
     }
 }
 
+impl From<String> for Secret {
+    fn from(s: String) -> Self {
+        Self::from_string(s)
+    }
+}
+
+impl From<&str> for Secret {
+    fn from(s: &str) -> Self {
+        Self::from_string(s.to_string())
+    }
+}
+
 impl Drop for Secret {
     fn drop(&mut self) {
         self.0.zeroize();

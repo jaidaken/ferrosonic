@@ -85,5 +85,5 @@ async fn server_field_text_char_branch_default_arm_unreachable_but_documented() 
     app.handle_key(key(KeyCode::Char('b'))).await.unwrap();
     app.handle_key(key(KeyCode::Backspace)).await.unwrap();
     let cs = app.client_state.read().await;
-    assert_eq!(cs.server_state.password, "a");
+    assert_eq!(cs.server_state.password.reveal(), "a");
 }
