@@ -660,15 +660,25 @@ impl DaemonCore {
         match mpv.toggle_pause().await {
             Ok(now_paused) => {
                 drop(mpv);
-                let mut state = self.state.write().await;
-                state.now_playing.state = if now_paused {
-                    PlaybackState::Paused
-                } else {
-                    PlaybackState::Playing
+                // R1+R2: re-check state under the write lock; a concurrent Stop between the initial read and the mpv ack must not be overwritten by the pause toggle.
+                let updated = {
+                    let mut state = self.state.write().await;
+                    let cur = state.now_playing.state;
+                    if cur != PlaybackState::Playing && cur != PlaybackState::Paused {
+                        false
+                    } else {
+                        state.now_playing.state = if now_paused {
+                            PlaybackState::Paused
+                        } else {
+                            PlaybackState::Playing
+                        };
+                        debug!("toggle_pause: now {:?}", state.now_playing.state);
+                        true
+                    }
                 };
-                debug!("toggle_pause: now {:?}", state.now_playing.state);
-                drop(state);
-                self.emit_now_playing().await;
+                if updated {
+                    self.emit_now_playing().await;
+                }
             }
             Err(e) => {
                 error!("Failed to toggle pause: {}", e);

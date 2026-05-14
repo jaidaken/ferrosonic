@@ -185,3 +185,76 @@ async fn r2_commit_play_state_stamps_last_loadfile_invariant() {
         "observer must not auto-advance during the commit-to-loadfile window"
     );
 }
+
+/// R1+R2 core.rs:639. toggle_pause reads playback state outside the lock then commits Paused/Playing after mpv ack; under a concurrent Replace storm the queue must stay coherent and now_playing.state must remain in {Playing,Paused,Stopped}.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial]
+async fn r1_toggle_pause_state_stays_consistent_under_replace() {
+    use ferrosonic::ipc::client::{DaemonClient, InProcessClient};
+    use ferrosonic::ipc::protocol::{DaemonRequest, EnqueueMode};
+    use tokio::time::{timeout, Duration};
+
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_ping().await;
+    td.fake_subsonic.expect_artists(&[]).await;
+    td.fake_subsonic.expect_starred().await;
+    td.fake_subsonic.expect_playlists().await;
+    td.fake_subsonic.expect_random_songs(&[]).await;
+    for i in 0..16 {
+        td.fake_subsonic
+            .expect_stream_for(&format!("song-{}", i), vec![0u8; 1024])
+            .await;
+    }
+    {
+        let mut s = td.state.write().await;
+        s.queue = songs("song", 16);
+        s.queue_position = Some(0);
+        s.now_playing.state = PlaybackState::Playing;
+        s.now_playing.song = Some(s.queue[0].clone());
+    }
+    let client = Arc::new(InProcessClient::new(td.core.clone())) as Arc<dyn DaemonClient>;
+
+    let c1 = client.clone();
+    let toggler = tokio::spawn(async move {
+        for _ in 0..40 {
+            let _ = c1.request(DaemonRequest::TogglePause).await;
+        }
+    });
+
+    let c2 = client.clone();
+    let replacer = tokio::spawn(async move {
+        for i in 0..20 {
+            let payload: Vec<_> = (0..3)
+                .map(|j| song(&format!("song-{}", (i + j) % 16), "x"))
+                .collect();
+            let _ = c2
+                .request(DaemonRequest::EnqueueSongs {
+                    songs: payload,
+                    mode: EnqueueMode::Replace { play_from: Some(0) },
+                })
+                .await;
+        }
+    });
+
+    let work = async {
+        let _ = toggler.await;
+        let _ = replacer.await;
+    };
+    timeout(Duration::from_secs(10), work)
+        .await
+        .expect("workload exceeded budget");
+
+    let s = td.state.read().await;
+    if let Some(pos) = s.queue_position {
+        assert!(
+            pos < s.queue.len(),
+            "queue_position {} out of bounds for queue len {}",
+            pos,
+            s.queue.len()
+        );
+    }
+    assert!(matches!(
+        s.now_playing.state,
+        PlaybackState::Playing | PlaybackState::Paused | PlaybackState::Stopped
+    ));
+}
