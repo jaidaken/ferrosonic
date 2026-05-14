@@ -53,7 +53,7 @@ impl QueueSnapshot {
         }
         let body = serde_json::to_vec(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        crate::config::atomic_write_bytes(&path, &body)?;
+        crate::io_util::atomic_write_bytes(&path, &body)?;
         Ok(path)
     }
 }

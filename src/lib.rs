@@ -7,6 +7,7 @@ pub mod config;
 pub mod daemon;
 pub mod error;
 pub mod ipc;
+pub mod io_util;
 pub mod mpris;
 pub mod secret;
 pub mod subsonic;
