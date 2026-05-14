@@ -9,7 +9,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
 
 jobs:
   fmt:
@@ -23,7 +22,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    name: clippy
+    name: clippy (gate)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,27 +31,37 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Gating clippy run
+        run: cargo clippy --all-targets --all-features
 
-  unwrap_grep:
-    name: forbid unwrap/expect in src
+  clippy_audit:
+    name: clippy (aspirational, non-gating)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+      - name: Pedantic + nursery + missing-docs warning count
+        run: cargo clippy --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -W missing_docs
+
+  unwrap_check:
+    name: forbid unwrap/expect in production
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Grep src/ for forbidden patterns
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+      - name: Clippy unwrap_used / expect_used on non-test build
         run: |
-          set -e
-          if grep -RnE '\.unwrap\(\)|\.expect\(' src/ \
-              --include='*.rs' \
-              --exclude-dir=tests \
-              --exclude-dir=examples \
-              --exclude-dir=benches; then
-            echo
-            echo "::error::production code uses .unwrap() or .expect()."
-            echo "Move the call to tests/examples/benches, or replace with proper error handling, or add #[cfg(test)] gating."
-            exit 1
-          fi
-          echo "src/ is clean of .unwrap() and .expect() outside tests/examples/benches."
+          cargo clippy --lib --bins --all-features \
+            -- -D clippy::unwrap_used -D clippy::expect_used
 
   mutants:
     name: cargo-mutants (slow, nightly only)

@@ -263,12 +263,11 @@ impl MpvController {
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(request_id, tx);
 
-        if self.writer.is_none() {
-            self.pending.lock().await.remove(&request_id);
-            return Err(AudioError::MpvNotRunning);
-        }
         {
-            let writer = self.writer.as_mut().expect("checked Some above");
+            let Some(writer) = self.writer.as_mut() else {
+                self.pending.lock().await.remove(&request_id);
+                return Err(AudioError::MpvNotRunning);
+            };
             if let Err(e) = writer.write_all(&json).await {
                 self.pending.lock().await.remove(&request_id);
                 return Err(AudioError::MpvIpc(e.to_string()));

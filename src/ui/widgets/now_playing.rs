@@ -99,15 +99,14 @@ impl Widget for NowPlayingWidget<'_> {
         let info_area = Rect::new(inner.x, inner.y, info_w, info_h);
         let progress_area = Rect::new(inner.x, inner.y + info_h, inner.width, 1);
 
-        if self.now_playing.song.is_none() {
+        let Some(song) = self.now_playing.song.as_ref() else {
             let no_track = Paragraph::new("No track playing")
                 .style(Style::default().fg(self.colors.muted))
                 .alignment(Alignment::Center);
             no_track.render(info_area, buf);
             return;
-        }
+        };
 
-        let song = self.now_playing.song.as_ref().unwrap();
         let artist = song.artist.clone().unwrap_or_default();
         let album = song.album.clone().unwrap_or_default();
         let title = song.title.clone();

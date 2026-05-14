@@ -246,7 +246,11 @@ impl DaemonCore {
     }
 
     fn stamp_loadfile(&self) {
-        *self.last_loadfile.lock().unwrap() = Some(std::time::Instant::now());
+        let mut guard = self
+            .last_loadfile
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = Some(std::time::Instant::now());
     }
 
     fn spawn_queue_persistence(
@@ -1546,7 +1550,10 @@ impl DaemonCore {
             };
             if count_opt == Some(1) {
                 let should_try = {
-                    let mut last = self.last_preload_attempt.lock().unwrap();
+                    let mut last = self
+                        .last_preload_attempt
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     let due = last
                         .map(|t| t.elapsed() >= std::time::Duration::from_secs(5))
                         .unwrap_or(true);
@@ -1641,7 +1648,7 @@ impl DaemonCore {
                 let just_loaded = self
                     .last_loadfile
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .map(|t| t.elapsed() < std::time::Duration::from_millis(1500))
                     .unwrap_or(false);
                 if just_loaded {
