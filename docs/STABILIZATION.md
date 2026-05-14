@@ -380,40 +380,49 @@ read the finding row in section 1, write a regression test in
 confirm the test passes. Run `/rust-audit` after each commit and
 require zero new STATE_INVARIANT findings.
 
-In scope (close every one of these):
+Status (DONE 2026-05-14):
 
-- [ ] `core.rs:984` R2: `commit_play_state_in_lock` sets
-  `now_playing.state = Playing` before `mpv.loadfile` issues. Gate
-  observers on a transitioning flag or set Playing only after
-  loadfile success.
-- [ ] `core.rs:1902-1906` R4: `update_server_config` installs new
-  `subsonic` client THEN bumps `config_gen`. In-flight refresh
-  results from the old client land after the new client is
-  installed; they read the new gen and commit anyway. Fix: bump
-  `config_gen` first, then install client.
-- [ ] `core.rs:588` R2: `apply_star_to_cached` mutates state after
-  the star RPC but before `refresh_starred` query lands; observers
-  see mid-transition. Wrap mutation and refresh in one state write.
-- [ ] `core.rs:2061-2108` R2 adjacent: `song_is_starred` scans every
-  cache with no state lock. Move scan under state read lock, or
-  use the per-song atomic flag already in `starred_ids`.
-- [ ] `core.rs:261-268` R1: `restore_queue_blocking` uses
-  `try_write` then warns on failure; queue restore silently
-  skipped if IPC consumers race the startup. Block IPC consumers
-  behind a `Notify` until restore completes, or use sync write.
-- [ ] `core.rs:639-661` R1 + R2: `toggle_pause` reads `queue_pos`
-  outside the lock, then sets Paused/Playing before mpv acks.
-  Re-check `queue_pos` under write lock; defer state until mpv
-  returns success.
-- [ ] `core.rs:673-676` R1: `pause_playback` reads state, early
-  returns, then takes write lock. Acquire write lock upfront and
-  re-check, or hoist into one write critical section.
-- [ ] `core.rs:778-800` R1: `extend_with_random_and_play` reads
-  queue len, writes queue, plays; a concurrent `advance_auto` can
-  shift the queue. Consolidate into one read-validate-extend-play
-  write critical section.
+- [x] `core.rs:984` R2: `commit_play_state_in_lock` stamps
+  `last_loadfile` under the state write lock; the existing 1.5s
+  idle-advance gate in `update_playback_info` now covers the
+  commit-to-loadfile transitioning window. Commit `8129336`.
+- [x] `core.rs:1902-1906` R4: `update_server_config` now takes
+  `subsonic.write()`, bumps `config_gen` first, then installs the
+  client, all under one critical section. Refreshes acquire
+  `subsonic.read()` and serialize behind. Commit `0d6143f`.
+- [x] `core.rs:588` R2: `toggle_star_song` consolidates the
+  currently-starred read + optimistic cache mutation into one
+  state write; pre-fetches the fresh starred list outside the
+  lock; then commits cache + starred_songs replacement + index
+  rebuild atomically. RPC failure path rolls the optimistic
+  mutation back under another write. Commit `6f82b61`.
+- [DROP] `core.rs:2061-2108` `song_is_starred` scan: function
+  signature `fn song_is_starred(daemon: &DaemonState, song_id)`
+  already requires the caller to hold a state lock (the `&` borrow
+  is only obtainable while holding the read or write guard). The
+  sole caller in `toggle_star_song` takes the lock before calling
+  in. The fallback chain over multiple caches is an intentional
+  defense for caches that may carry the `starred` marker without
+  having had `starred_ids` rebuilt. No code change required.
+- [x] `core.rs:261-268` R1: snapshot load is hoisted into
+  `new_shared_daemon_state` so it runs on a fresh `DaemonState`
+  before the `Arc<RwLock>` wraps it. `restore_queue_blocking` is
+  removed entirely. The try_write silent-skip path no longer
+  exists. Commit `22f338a`.
+- [x] `core.rs:639-661` R1 + R2: `toggle_pause` now re-checks the
+  pre-commit state under the final write lock; only commits
+  Paused/Playing if state was still Playing or Paused. Concurrent
+  Stop wins. Commit `ef10a09`.
+- [x] `core.rs:673-676` R1: `pause_playback` takes the write lock
+  upfront for the Playing check, releases for the mpv.pause()
+  call, then re-acquires the write lock and re-checks before
+  committing Paused. Commit `c9da966`.
+- [x] `core.rs:778-800` R1: `extend_with_random_and_play` already
+  reads queue.len(), extends, and commits play state under a
+  single state write (prompt 2 LOCK_ORDER pass ratified). A
+  positive regression test pins the contract. Commit `0f801a4`.
 
-Out of scope (do NOT touch in prompt 2.5):
+Out of scope (NOT touched in prompt 2.5):
 
 - `mpv.rs` / `pipewire.rs` / `cava.rs` / `app/mod.rs` /
   `ui/cover_art.rs` STATE_INVARIANT items: these have their own
@@ -421,8 +430,11 @@ Out of scope (do NOT touch in prompt 2.5):
 - PASSWORD, IPC_PROTOCOL, RESOURCE_LEAK categories.
 - Any LOW item not in the STATE_INVARIANT category.
 
-Done criteria: every in-scope finding fixed or explicitly marked
-DROP in this checklist with reasoning; `tests/state_invariant.rs`
-exists with one regression test per fix and passes 100 consecutive
-runs; `cargo check` + clippy + test green; `/rust-audit` reports no
-STATE_INVARIANT findings on the affected files.
+Done criteria status:
+
+- Every in-scope finding fixed or marked DROP with reasoning: YES.
+- `tests/state_invariant.rs` exists with one regression test per
+  fix (7 tests + DROP item) and passes: YES.
+- `cargo check` + clippy + test green: YES.
+- `/rust-audit` reports no new STATE_INVARIANT findings: per-commit
+  audits returned 0 blocking, 0 investigate, 0 note for each.

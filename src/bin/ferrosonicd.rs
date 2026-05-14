@@ -9,7 +9,7 @@ use tokio::signal::unix::{signal, SignalKind};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use ferrosonic::app::state::new_shared_daemon_state;
+use ferrosonic::app::state::new_shared_daemon_state_with_restored_queue;
 use ferrosonic::config::paths::config_dir;
 use ferrosonic::config::Config;
 use ferrosonic::daemon::DaemonCore;
@@ -103,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
         }
     );
 
-    let daemon_state = new_shared_daemon_state(config.clone());
+    let daemon_state = new_shared_daemon_state_with_restored_queue(config.clone());
     let core = DaemonCore::new(daemon_state, &config);
 
     if let Err(e) = core.start_mpv().await {

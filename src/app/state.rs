@@ -340,6 +340,11 @@ pub type SharedDaemonState = Arc<RwLock<crate::daemon::DaemonState>>;
 pub type SharedClientState = Arc<RwLock<crate::app::client_state::ClientState>>;
 
 pub fn new_shared_daemon_state(config: Config) -> SharedDaemonState {
+    Arc::new(RwLock::new(crate::daemon::DaemonState::new(config)))
+}
+
+/// Daemon-only constructor: loads the persisted queue snapshot synchronously into the bare DaemonState before wrapping in Arc<RwLock>. Tests use new_shared_daemon_state to avoid reading the user's real ~/.config/ferrosonic/queue.json.
+pub fn new_shared_daemon_state_with_restored_queue(config: Config) -> SharedDaemonState {
     let mut state = crate::daemon::DaemonState::new(config);
     if let Some(snap) = crate::daemon::persistence::QueueSnapshot::load() {
         let count = snap.queue.len();

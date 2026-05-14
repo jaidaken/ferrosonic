@@ -107,7 +107,7 @@ pub async fn wait_for_unix_quit_signal() {
 
 impl App {
     pub fn new(config: Config) -> Self {
-        let daemon_state = new_shared_daemon_state(config.clone());
+        let daemon_state = new_shared_daemon_state_with_restored_queue(config.clone());
         let client_state = new_shared_client_state(&config);
         let core = DaemonCore::new(daemon_state.clone(), &config);
         let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(core.clone()));

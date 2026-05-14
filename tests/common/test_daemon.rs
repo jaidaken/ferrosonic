@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use tempfile::TempDir;
 
-use ferrosonic::app::state::{new_shared_daemon_state, SharedDaemonState};
+use ferrosonic::app::state::{
+    new_shared_daemon_state, new_shared_daemon_state_with_restored_queue, SharedDaemonState,
+};
 use ferrosonic::audio::mpv::MpvController;
 use ferrosonic::config::Config;
 use ferrosonic::daemon::DaemonCore;
@@ -26,10 +28,14 @@ pub struct TestDaemon {
 impl TestDaemon {
     pub async fn new() -> Self {
         let config_dir = tempfile::tempdir().expect("create config tempdir");
-        Self::new_with_config_dir(config_dir).await
+        Self::build(config_dir, false).await
     }
 
     pub async fn new_with_config_dir(config_dir: TempDir) -> Self {
+        Self::build(config_dir, true).await
+    }
+
+    async fn build(config_dir: TempDir, restore_queue: bool) -> Self {
         std::env::set_var("FERROSONIC_CONFIG_DIR", config_dir.path());
 
         let fake_mpv = FakeMpv::start().await;
@@ -40,7 +46,11 @@ impl TestDaemon {
         config.username = "test".into();
         config.password = "test".into();
 
-        let state = new_shared_daemon_state(config.clone());
+        let state = if restore_queue {
+            new_shared_daemon_state_with_restored_queue(config.clone())
+        } else {
+            new_shared_daemon_state(config.clone())
+        };
 
         let mut mpv = MpvController::with_socket_path(fake_mpv.socket_path.clone());
         mpv.connect_to_existing()
