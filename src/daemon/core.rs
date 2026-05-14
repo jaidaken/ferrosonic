@@ -1,5 +1,4 @@
-//! Daemon core: owns mpv, the queue, the library cache, the event
-//! broadcast, and config persistence.
+//! Daemon core: owns mpv, queue, library cache, event broadcast, config persistence. Lock order: state then subsonic then mpv then pipewire then prebuffer_cancel then prebuffer_loading then prebuffer_files then last_loadfile then last_preload_attempt then cover_art_cache. Authoritative table: docs/LOCK-ORDER.md.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -1017,11 +1016,16 @@ impl DaemonCore {
                 self.preload_next_track(pos).await;
             }
             PlayMode::Buffered => {
-                if let Some(prev) = self.prebuffer_cancel.lock().await.take() {
-                    prev.store(true, Ordering::Relaxed);
-                }
                 let loading = Arc::new(AtomicBool::new(true));
-                *self.prebuffer_loading.lock().await = Some(loading.clone());
+                let cancel = Arc::new(AtomicBool::new(false));
+                {
+                    let mut cancel_slot = self.prebuffer_cancel.lock().await;
+                    let mut loading_slot = self.prebuffer_loading.lock().await;
+                    if let Some(prev) = cancel_slot.replace(cancel.clone()) {
+                        prev.store(true, Ordering::Relaxed);
+                    }
+                    let _ = loading_slot.replace(loading.clone());
+                }
                 let mut owner = LoadingFlagOwner::new(loading.clone());
                 {
                     let mut mpv = self.mpv.lock().await;
@@ -1032,7 +1036,7 @@ impl DaemonCore {
                         let _ = mpv.stop().await;
                     }
                 }
-                self.prebuffer_and_load(stream_url, pos, loading).await;
+                self.prebuffer_and_load(stream_url, pos, loading, cancel).await;
                 owner.disarm();
             }
         }
@@ -1091,17 +1095,9 @@ impl DaemonCore {
         url: String,
         preload_pos: usize,
         loading: Arc<AtomicBool>,
+        cancel: Arc<AtomicBool>,
     ) {
         use std::sync::Arc as StdArc;
-
-        // Cancel any prior pre-buffer so we don't leave parallel
-        // downloads writing temp files.
-        if let Some(old) = self.prebuffer_cancel.lock().await.take() {
-            old.store(true, Ordering::Relaxed);
-        }
-
-        let cancel = StdArc::new(AtomicBool::new(false));
-        *self.prebuffer_cancel.lock().await = Some(cancel.clone());
 
         let temp = match tempfile::Builder::new()
             .prefix("ferrosonic-prebuf-")
