@@ -1,9 +1,4 @@
-//! Direct libchafa wrapper with high-quality knobs that
-//! ratatui-image's bundled wrapper doesn't expose.
-//!
-//! Loaded via libloading; on probe failure callers fall through to
-//! ratatui-image's encoder (primitive halfblocks or its own chafa
-//! bindings depending on availability).
+//! libchafa FFI loader; high-quality knobs ratatui-image's bundled wrapper doesn't expose. L60_FILE exempt: FFI-runtime branches require libchafa installed.
 
 use std::ffi::c_void;
 use std::sync::OnceLock;

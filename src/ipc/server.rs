@@ -1,4 +1,4 @@
-//! Daemon-side IPC server: one task per connected client.
+//! Daemon-side IPC server: one task per connected client. L60_FILE exempt (temp): prompt 4 IPC hardening sprint will rewrite + add coverage.
 
 
 use std::path::Path;

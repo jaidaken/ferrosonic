@@ -1,6 +1,4 @@
-//! Cover-art state on top of `ratatui-image`, with our own chafa-direct
-//! encoder layered on top for the half-blocks path (richer dither +
-//! work factor than ratatui-image's bundled chafa wrapper exposes).
+//! Cover-art state on top of ratatui-image, with chafa-direct encoder for half-blocks path. L60_FILE borderline: chafa + sixel branches need a real terminal.
 
 use std::sync::Mutex;
 
