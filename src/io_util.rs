@@ -3,6 +3,15 @@
 use std::path::Path;
 
 /// Best-effort parent-dir fsync after atomic rename so directory entry survives power loss on writeback filesystems. Silent on error since the rename itself succeeded.
+///
+/// ```
+/// use ferrosonic::io_util::{atomic_write_bytes, fsync_parent_dir};
+/// let dir = tempfile::tempdir().unwrap();
+/// let p = dir.path().join("a.txt");
+/// atomic_write_bytes(&p, b"x").unwrap();
+/// fsync_parent_dir(&p);
+/// assert!(p.exists());
+/// ```
 pub fn fsync_parent_dir(path: &Path) {
     if let Some(parent) = path.parent() {
         if let Ok(dir) = std::fs::File::open(parent) {
@@ -12,6 +21,14 @@ pub fn fsync_parent_dir(path: &Path) {
 }
 
 /// Atomic bytes-to-file via temp + fsync + rename + parent-dir fsync. Single audited entry point for the temp+rename pattern; callers using this avoid the disallowed_methods lint by routing through here.
+///
+/// ```
+/// use ferrosonic::io_util::atomic_write_bytes;
+/// let dir = tempfile::tempdir().unwrap();
+/// let p = dir.path().join("x.toml");
+/// atomic_write_bytes(&p, b"hello").unwrap();
+/// assert_eq!(std::fs::read(&p).unwrap(), b"hello");
+/// ```
 pub fn atomic_write_bytes(path: &Path, body: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     if let Some(parent) = path.parent() {

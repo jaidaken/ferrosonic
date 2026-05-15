@@ -12,12 +12,26 @@ impl Secret {
         Self(Box::from([]))
     }
 
+    /// Construct a Secret from a String, zeroizing the input.
+    ///
+    /// ```
+    /// use ferrosonic::secret::Secret;
+    /// let s = Secret::from_string(String::from("hunter2"));
+    /// assert_eq!(s.reveal(), "hunter2");
+    /// ```
     pub fn from_string(mut s: String) -> Self {
         let bytes = s.as_bytes().to_vec().into_boxed_slice();
         s.zeroize();
         Self(bytes)
     }
 
+    /// Construct a Secret from raw bytes.
+    ///
+    /// ```
+    /// use ferrosonic::secret::Secret;
+    /// let s = Secret::from_bytes(vec![b'a', b'b', b'c']);
+    /// assert_eq!(s.reveal_bytes(), b"abc");
+    /// ```
     pub fn from_bytes(b: Vec<u8>) -> Self {
         Self(b.into_boxed_slice())
     }
@@ -38,11 +52,28 @@ impl Secret {
         self.0.len()
     }
 
+    /// Zeroize the contents and leave the Secret empty.
+    ///
+    /// ```
+    /// use ferrosonic::secret::Secret;
+    /// let mut s = Secret::from_string(String::from("hunter2"));
+    /// s.clear();
+    /// assert!(s.is_empty());
+    /// ```
     pub fn clear(&mut self) {
         self.0.zeroize();
         self.0 = Box::from([]);
     }
 
+    /// Append a single UTF-8 character to the Secret.
+    ///
+    /// ```
+    /// use ferrosonic::secret::Secret;
+    /// let mut s = Secret::new();
+    /// s.push_char('h');
+    /// s.push_char('i');
+    /// assert_eq!(s.reveal(), "hi");
+    /// ```
     pub fn push_char(&mut self, c: char) {
         let mut buf = [0u8; 4];
         let s = c.encode_utf8(&mut buf);
@@ -52,6 +83,14 @@ impl Secret {
         old.zeroize();
     }
 
+    /// Remove the last UTF-8 character. No-op if empty.
+    ///
+    /// ```
+    /// use ferrosonic::secret::Secret;
+    /// let mut s = Secret::from_string(String::from("hi"));
+    /// s.pop_char();
+    /// assert_eq!(s.reveal(), "h");
+    /// ```
     pub fn pop_char(&mut self) {
         let idx_opt = std::str::from_utf8(&self.0)
             .ok()

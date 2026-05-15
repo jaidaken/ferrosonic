@@ -159,6 +159,14 @@ impl RepeatMode {
             RepeatMode::All => "all",
         }
     }
+    /// Step through `Off -> One -> All -> Off` for UI cycling.
+    ///
+    /// ```
+    /// use ferrosonic::config::RepeatMode;
+    /// assert_eq!(RepeatMode::Off.cycle(), RepeatMode::One);
+    /// assert_eq!(RepeatMode::One.cycle(), RepeatMode::All);
+    /// assert_eq!(RepeatMode::All.cycle(), RepeatMode::Off);
+    /// ```
     pub fn cycle(self) -> Self {
         match self {
             RepeatMode::Off => RepeatMode::One,
@@ -166,8 +174,14 @@ impl RepeatMode {
             RepeatMode::All => RepeatMode::Off,
         }
     }
-    /// Auto-advance: `One` repeats current, `All` wraps, `Off`
-    /// returns `None` at the end (caller handles auto-continue / stop).
+    /// Auto-advance: `One` repeats current, `All` wraps, `Off` returns `None` at the end (caller handles auto-continue / stop).
+    ///
+    /// ```
+    /// use ferrosonic::config::RepeatMode;
+    /// assert_eq!(RepeatMode::One.next_auto(2, 5), Some(2));
+    /// assert_eq!(RepeatMode::All.next_auto(4, 5), Some(0));
+    /// assert_eq!(RepeatMode::Off.next_auto(4, 5), None);
+    /// ```
     pub fn next_auto(self, current: usize, queue_len: usize) -> Option<usize> {
         if queue_len == 0 {
             return None;
@@ -184,7 +198,14 @@ impl RepeatMode {
             }
         }
     }
-    /// Manual skip: `One` is ignored — user wants to move.
+    /// Manual skip: `One` is ignored - user wants to move.
+    ///
+    /// ```
+    /// use ferrosonic::config::RepeatMode;
+    /// assert_eq!(RepeatMode::One.next_manual(4, 5), Some(0));
+    /// assert_eq!(RepeatMode::All.next_manual(0, 3), Some(1));
+    /// assert_eq!(RepeatMode::Off.next_manual(2, 3), None);
+    /// ```
     pub fn next_manual(self, current: usize, queue_len: usize) -> Option<usize> {
         if queue_len == 0 {
             return None;
@@ -200,8 +221,14 @@ impl RepeatMode {
             }
         }
     }
-    /// Manual prev from position 0: `All`/`One` wrap to last track,
-    /// `Off` returns `None` (caller restarts current).
+    /// Manual prev from position 0: `All`/`One` wrap to last track, `Off` returns `None` (caller restarts current).
+    ///
+    /// ```
+    /// use ferrosonic::config::RepeatMode;
+    /// assert_eq!(RepeatMode::All.prev_wrap(5), Some(4));
+    /// assert_eq!(RepeatMode::One.prev_wrap(5), Some(4));
+    /// assert_eq!(RepeatMode::Off.prev_wrap(5), None);
+    /// ```
     pub fn prev_wrap(self, queue_len: usize) -> Option<usize> {
         if queue_len == 0 {
             return None;
@@ -262,8 +289,17 @@ impl Config {
         }
     }
 
-    /// Resolves the password in priority order: `FERROSONIC_PASSWORD`
-    /// env > `PasswordFile` > inline.
+    /// Resolves the password in priority order: `FERROSONIC_PASSWORD` env > `PasswordFile` > inline.
+    ///
+    /// ```
+    /// use ferrosonic::config::Config;
+    /// use ferrosonic::io_util::atomic_write_bytes;
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let p = dir.path().join("c.toml");
+    /// atomic_write_bytes(&p, b"BaseURL = \"https://x\"\n").unwrap();
+    /// let c = Config::load_from_file(&p).unwrap();
+    /// assert_eq!(c.base_url, "https://x");
+    /// ```
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
         debug!("Loading config from {}", path.display());
 
@@ -293,6 +329,12 @@ impl Config {
     }
 
     /// Expand `~/` if present in a password-file path.
+    ///
+    /// ```
+    /// use ferrosonic::config::Config;
+    /// assert_eq!(Config::expand_tilde("/etc/passwd"), "/etc/passwd");
+    /// assert_eq!(Config::expand_tilde(""), "");
+    /// ```
     pub fn expand_tilde(path: &str) -> String {
         if let Some(rest) = path.strip_prefix("~/") {
             if let Ok(home) = std::env::var("HOME") {
@@ -341,6 +383,17 @@ impl Config {
         self.save_to_file(&path)
     }
 
+    /// Atomically write the config TOML; round-trips via load_from_file.
+    ///
+    /// ```
+    /// use ferrosonic::config::Config;
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let p = dir.path().join("c.toml");
+    /// let mut c = Config::new();
+    /// c.base_url = "https://x".into();
+    /// c.save_to_file(&p).unwrap();
+    /// assert_eq!(Config::load_from_file(&p).unwrap().base_url, "https://x");
+    /// ```
     pub fn save_to_file(&self, path: &Path) -> Result<(), ConfigError> {
         debug!("Saving config to {}", path.display());
         // ConfigOnDisk uses the real password and obeys password_file indirection so neither the redacted-serializer nor a caller mistake can leak or omit the secret.
@@ -350,6 +403,18 @@ impl Config {
         Ok(())
     }
 
+    /// True when base_url, username, and password are all non-empty.
+    ///
+    /// ```
+    /// use ferrosonic::config::Config;
+    /// use ferrosonic::secret::Secret;
+    /// let mut c = Config::new();
+    /// assert!(!c.is_configured());
+    /// c.base_url = "https://x".into();
+    /// c.username = "u".into();
+    /// c.password = Secret::from("p");
+    /// assert!(c.is_configured());
+    /// ```
     pub fn is_configured(&self) -> bool {
         !self.base_url.is_empty() && !self.username.is_empty() && !self.password.is_empty()
     }
@@ -358,6 +423,15 @@ impl Config {
         self.password.reveal()
     }
 
+    /// Reject empty or malformed base_url. Empty username/password warn only.
+    ///
+    /// ```
+    /// use ferrosonic::config::Config;
+    /// assert!(Config::new().validate().is_err());
+    /// let mut c = Config::new();
+    /// c.base_url = "https://x".into();
+    /// assert!(c.validate().is_ok());
+    /// ```
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.base_url.is_empty() {
             return Err(ConfigError::MissingField {
