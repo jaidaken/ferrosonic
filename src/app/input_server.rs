@@ -1,4 +1,4 @@
-//! Server-config page input. L60_FILE near-miss (58.87% line, 62.11% region): 30 of 39 async continuation states unreached; full IPC roundtrip tests via RecordingClient queued for Phase C zero-assert audit deepening.
+//! Server-config page input.
 
 use crossterm::event::{self, KeyCode};
 use tracing::info;

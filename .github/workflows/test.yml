@@ -48,6 +48,24 @@ jobs:
       - name: Pedantic + nursery + missing-docs warning count
         run: cargo clippy --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -W missing_docs
 
+  deny:
+    name: cargo-deny (advisories + licenses + bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+
+  machete:
+    name: cargo-machete (unused deps)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bnjbvr/cargo-machete@main
+
   unwrap_check:
     name: forbid unwrap/expect in production
     runs-on: ubuntu-latest
