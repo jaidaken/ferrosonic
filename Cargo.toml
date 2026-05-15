@@ -88,6 +88,14 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # bundled chafa wrapper doesn't expose dither / work-factor knobs).
 libloading = "0.8"
 
+# Live tokio runtime introspection (opt-in via --features console). Heavyweight
+# transitive deps (tonic+prost); gated so non-debug builds pay nothing.
+console-subscriber = { version = "0.4", optional = true }
+
+[features]
+default = []
+console = ["dep:console-subscriber"]
+
 [dev-dependencies]
 # Async HTTP fakes for Subsonic API. Records request bodies for
 # assertions; mounts on a local port.
@@ -109,6 +117,14 @@ assert_cmd = "2"
 predicates = "3"
 # Snapshot testing for ratatui frame output.
 insta = "1"
+# Inline snapshot testing for unit-scale expects (rust-analyzer pattern).
+# UPDATE_EXPECT=1 cargo nextest run to rewrite inline literals.
+expect-test = "1"
+# Fuzz + property hybrid, stable Rust, multi-engine (libfuzzer/AFL/Honggfuzz).
+# Replaces cargo-fuzz; targets are #[test] fns that also run as property tests.
+bolero = "0.10"
+# Assert on tracing events instead of log line content.
+tracing-test = "0.2"
 
 [profile.release]
 lto = true

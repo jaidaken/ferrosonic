@@ -49,15 +49,15 @@ fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerG
     } else {
         EnvFilter::new("ferrosonic=info")
     };
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            fmt::layer()
-                .with_writer(non_blocking)
-                .with_ansi(false)
-                .with_target(false),
-        )
-        .init();
+    let registry = tracing_subscriber::registry().with(filter).with(
+        fmt::layer()
+            .with_writer(non_blocking)
+            .with_ansi(false)
+            .with_target(false),
+    );
+    #[cfg(feature = "console")]
+    let registry = registry.with(console_subscriber::spawn());
+    registry.init();
     if verbose {
         eprintln!("Logging to: {}", log_file.display());
     }
