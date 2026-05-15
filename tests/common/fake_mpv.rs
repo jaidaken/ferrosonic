@@ -8,13 +8,14 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
 pub struct FakeMpv {
     pub socket_path: PathBuf,
     _tempdir: TempDir,
     state: Arc<Mutex<FakeMpvState>>,
+    changed: Arc<Notify>,
     _accept_task: JoinHandle<()>,
 }
 
@@ -42,17 +43,21 @@ impl FakeMpv {
             duration: 180.0,
             ..Default::default()
         }));
+        let changed = Arc::new(Notify::new());
         let state_for_task = state.clone();
+        let changed_for_task = changed.clone();
         let accept_task = tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let state = state_for_task.clone();
-                tokio::spawn(handle_connection(stream, state));
+                let changed = changed_for_task.clone();
+                tokio::spawn(handle_connection(stream, state, changed));
             }
         });
         Self {
             socket_path,
             _tempdir: tempdir,
             state,
+            changed,
             _accept_task: accept_task,
         }
     }
@@ -77,63 +82,93 @@ impl FakeMpv {
         self.state.lock().await.commands.clone()
     }
 
-    /// Poll captured commands against `predicate` until it returns true or `timeout_ms` elapses.
+    /// Wait until `predicate` over captured commands is true or `timeout_ms` elapses.
     pub async fn wait_for<F>(&self, timeout_ms: u64, predicate: F) -> bool
     where
         F: Fn(&[Vec<Value>]) -> bool,
     {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
-        loop {
-            {
-                let s = self.state.lock().await;
-                if predicate(&s.commands) {
-                    return true;
+        tokio::time::timeout(
+            std::time::Duration::from_millis(timeout_ms),
+            async {
+                loop {
+                    let waiter = self.changed.notified();
+                    {
+                        let s = self.state.lock().await;
+                        if predicate(&s.commands) {
+                            return true;
+                        }
+                    }
+                    waiter.await;
                 }
-            }
-            if std::time::Instant::now() >= deadline {
-                return false;
-            }
-            // polling primitive: deadline-bounded poll interval, not a fixed-duration sync.
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
+            },
+        )
+        .await
+        .unwrap_or(false)
     }
 
     pub async fn set_duration(&self, secs: f64) {
-        self.state.lock().await.duration = secs;
+        {
+            let mut s = self.state.lock().await;
+            s.duration = secs;
+        }
+        self.changed.notify_one();
     }
 
     pub async fn set_property(&self, name: &str, value: Value) {
-        self.state
-            .lock()
-            .await
-            .properties
-            .insert(name.to_string(), value);
+        {
+            let mut s = self.state.lock().await;
+            s.properties.insert(name.to_string(), value);
+        }
+        self.changed.notify_one();
     }
 
     pub async fn set_loaded_file(&self, path: &str) {
-        let mut s = self.state.lock().await;
-        s.loaded_file = Some(path.to_string());
-        s.playlist = vec![path.to_string()];
+        {
+            let mut s = self.state.lock().await;
+            s.loaded_file = Some(path.to_string());
+            s.playlist = vec![path.to_string()];
+        }
+        self.changed.notify_one();
     }
 
     pub async fn set_position(&self, secs: f64) {
-        self.state.lock().await.position = secs;
+        {
+            let mut s = self.state.lock().await;
+            s.position = secs;
+        }
+        self.changed.notify_one();
     }
 
     pub async fn set_playlist_pos(&self, pos: i64) {
-        self.state.lock().await.playlist_pos = pos;
+        {
+            let mut s = self.state.lock().await;
+            s.playlist_pos = pos;
+        }
+        self.changed.notify_one();
     }
 
     pub async fn set_playlist(&self, items: Vec<String>) {
-        self.state.lock().await.playlist = items;
+        {
+            let mut s = self.state.lock().await;
+            s.playlist = items;
+        }
+        self.changed.notify_one();
     }
 
     pub async fn set_fail_loadfile(&self, fail: bool) {
-        self.state.lock().await.fail_loadfile = fail;
+        {
+            let mut s = self.state.lock().await;
+            s.fail_loadfile = fail;
+        }
+        self.changed.notify_one();
     }
 }
 
-async fn handle_connection(stream: UnixStream, state: Arc<Mutex<FakeMpvState>>) {
+async fn handle_connection(
+    stream: UnixStream,
+    state: Arc<Mutex<FakeMpvState>>,
+    changed: Arc<Notify>,
+) {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
@@ -159,6 +194,7 @@ async fn handle_connection(stream: UnixStream, state: Arc<Mutex<FakeMpvState>>) 
             .unwrap_or_default();
         let request_id = req.get("request_id").and_then(|v| v.as_u64()).unwrap_or(0);
         let (error, data) = process_command(&state, &command).await;
+        changed.notify_one();
         let resp = match data {
             Some(d) => json!({ "request_id": request_id, "error": error, "data": d }),
             None => json!({ "request_id": request_id, "error": error }),
