@@ -94,7 +94,8 @@ async fn can_control_always_true() {
 #[tokio::test]
 async fn open_uri_returns_ok_silently() {
     let (player, _, _) = build_player();
-    player.open_uri("http://nope.example".into()).await.unwrap();
+    let result = player.open_uri("http://nope.example".into()).await;
+    assert!(result.is_ok());
 }
 
 #[tokio::test]
@@ -130,7 +131,8 @@ async fn root_quit_sets_should_quit_flag() {
 #[tokio::test]
 async fn root_raise_is_silent_noop() {
     let (player, _, _) = build_player();
-    player.raise().await.unwrap();
+    let result = player.raise().await;
+    assert!(result.is_ok());
 }
 
 #[tokio::test]
@@ -148,7 +150,9 @@ async fn root_can_set_fullscreen_is_false() {
 #[tokio::test]
 async fn root_set_fullscreen_is_silent_noop() {
     let (player, _, _) = build_player();
-    player.set_fullscreen(true).await.unwrap();
+    let result = player.set_fullscreen(true).await;
+    assert!(result.is_ok());
+    assert!(!player.fullscreen().await.unwrap());
 }
 
 #[tokio::test]

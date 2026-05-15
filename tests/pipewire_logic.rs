@@ -71,5 +71,6 @@ async fn set_rate_to_same_value_short_circuits() {
 
 #[test]
 fn pipewire_controller_default_is_constructible() {
-    let _ctrl = PipeWireController::default();
+    let ctrl = PipeWireController::default();
+    assert!(ctrl.get_current_rate().is_none());
 }

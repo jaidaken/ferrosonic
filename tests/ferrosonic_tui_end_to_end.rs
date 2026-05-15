@@ -71,17 +71,22 @@ async fn ferrosonic_binary_event_loop_exits_on_sigterm_through_pty() {
     }
 
     let deadline = std::time::Instant::now() + Duration::from_secs(8);
-    let mut exited = false;
+    let mut exit_status: Option<std::process::ExitStatus> = None;
     while std::time::Instant::now() < deadline {
-        if let Ok(Some(_)) = child.try_wait() {
-            exited = true;
+        if let Ok(Some(s)) = child.try_wait() {
+            exit_status = Some(s);
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    if !exited {
+    let Some(status) = exit_status else {
         let _ = child.kill();
         let _ = child.wait();
         panic!("ferrosonic did not exit on SIGTERM through PTY within 8s");
-    }
+    };
+    assert!(
+        status.success() || status.code() == Some(0) || status.code().is_none(),
+        "ferrosonic exited with unexpected status: {:?}",
+        status
+    );
 }

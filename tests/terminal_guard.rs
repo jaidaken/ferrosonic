@@ -28,7 +28,9 @@ fn cleanup_runs_exactly_once() {
     assert_eq!(count.load(Ordering::SeqCst), 1);
 }
 
+/// Smoke: TerminalGuard::new_crossterm constructor does not panic; Drop is suppressed via mem::forget to avoid mutating the test runner's terminal state.
 #[test]
-fn crossterm_constructor_returns_runnable_guard() {
-    let _g = TerminalGuard::new_crossterm();
+fn crossterm_constructor_does_not_panic() {
+    let guard = TerminalGuard::new_crossterm();
+    std::mem::forget(guard);
 }

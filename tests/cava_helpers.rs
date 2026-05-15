@@ -37,15 +37,10 @@ fn generate_cava_config_contains_all_eight_gradients() {
 fn generate_cava_config_includes_required_sections() {
     let zeros: [String; 8] = std::array::from_fn(|_| "#000000".into());
     let cfg = generate_cava_config(&zeros, &zeros);
-    for section in ["[general]", "[input]", "[output]", "[color]", "[smoothing]"] {
-        if cfg.contains(section) {
-            continue;
-        }
-        if section == "[smoothing]" {
-            continue;
-        }
-        panic!("config missing section: {}\n---\n{}", section, cfg);
-    }
+    assert!(cfg.contains("[general]"), "missing [general]:\n{}", cfg);
+    assert!(cfg.contains("[input]"), "missing [input]:\n{}", cfg);
+    assert!(cfg.contains("[output]"), "missing [output]:\n{}", cfg);
+    assert!(cfg.contains("[color]"), "missing [color]:\n{}", cfg);
 }
 
 fn cava_available() -> bool {

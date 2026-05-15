@@ -73,8 +73,9 @@ async fn multiple_listeners_set_should_quit_independently() {
     assert!(cs.read().await.should_quit);
 }
 
+/// Smoke: dropping an unpolled wait_for_unix_quit_signal future has no observable side effect (no signal handler installed until first poll).
 #[tokio::test]
-async fn wait_for_unix_quit_signal_can_be_dropped_without_panic() {
+async fn wait_for_unix_quit_signal_unpolled_drop_does_not_panic() {
     use ferrosonic::app::wait_for_unix_quit_signal;
     let fut = wait_for_unix_quit_signal();
     drop(fut);

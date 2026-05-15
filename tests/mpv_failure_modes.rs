@@ -54,5 +54,12 @@ async fn stop_on_unconnected_returns_error() {
 async fn with_socket_path_preserves_provided_path() {
     let tempdir = tempfile::tempdir().unwrap();
     let path = tempdir.path().join("custom.sock");
-    let _mpv = MpvController::with_socket_path(path.clone());
+    let mut mpv = MpvController::with_socket_path(path.clone());
+    let err = mpv.connect_to_existing().await.unwrap_err();
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains(&path.display().to_string()),
+        "error message did not mention provided socket path: msg={msg} path={}",
+        path.display()
+    );
 }
