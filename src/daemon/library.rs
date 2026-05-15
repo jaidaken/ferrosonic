@@ -27,6 +27,15 @@ impl<V: Clone> LruCache<V> {
             order: VecDeque::new(),
         }
     }
+    /// Look up `key`. Returns `None` on miss; on hit, promotes the entry to MRU end before returning a borrow.
+    ///
+    /// ```
+    /// use ferrosonic::daemon::library::LruCache;
+    /// let mut c: LruCache<i32> = LruCache::new();
+    /// assert!(c.get("missing").is_none());
+    /// c.insert("k".to_string(), 7, 4);
+    /// assert_eq!(c.get("k").copied(), Some(7));
+    /// ```
     pub fn get(&mut self, key: &str) -> Option<&V> {
         if !self.map.contains_key(key) {
             return None;
@@ -40,6 +49,19 @@ impl<V: Clone> LruCache<V> {
         }
         self.map.get(key)
     }
+    /// Insert `key=val` bounded by `cap`. If `key` already exists the value is replaced and the entry promoted to MRU. If inserting would exceed `cap`, evicts least-recently-used entries first.
+    ///
+    /// ```
+    /// use ferrosonic::daemon::library::LruCache;
+    /// let mut c: LruCache<i32> = LruCache::new();
+    /// c.insert("a".to_string(), 1, 2);
+    /// c.insert("b".to_string(), 2, 2);
+    /// c.insert("c".to_string(), 3, 2);
+    /// assert!(c.get("a").is_none(), "a should be evicted by cap=2");
+    /// assert_eq!(c.get("b").copied(), Some(2));
+    /// assert_eq!(c.get("c").copied(), Some(3));
+    /// assert_eq!(c.len(), 2);
+    /// ```
     pub fn insert(&mut self, key: String, val: V, cap: usize) {
         if self.map.contains_key(&key) {
             if let Some(pos) = self.order.iter().position(|k| k == &key) {
@@ -60,6 +82,15 @@ impl<V: Clone> LruCache<V> {
         self.order.push_back(key.clone());
         self.map.insert(key, val);
     }
+    /// Number of resident entries. Always equals `order.len()`.
+    ///
+    /// ```
+    /// use ferrosonic::daemon::library::LruCache;
+    /// let mut c: LruCache<()> = LruCache::new();
+    /// assert_eq!(c.len(), 0);
+    /// c.insert("x".to_string(), (), 4);
+    /// assert_eq!(c.len(), 1);
+    /// ```
     pub fn len(&self) -> usize {
         self.map.len()
     }

@@ -79,7 +79,14 @@ impl MpvController {
         Self::with_socket_path(mpv_socket_path())
     }
 
-    /// Test seam: point the controller at a specific socket path.
+    /// Test seam: point the controller at a specific socket path. Does not spawn mpv or connect; call [`start`](Self::start) or [`connect_to_existing`](Self::connect_to_existing) to begin IPC.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// use ferrosonic::audio::mpv::MpvController;
+    /// let mut ctrl = MpvController::with_socket_path(PathBuf::from("/tmp/ferrosonic-doctest.sock"));
+    /// assert!(!ctrl.is_running(), "fresh controller has no IPC yet");
+    /// ```
     pub fn with_socket_path(socket_path: PathBuf) -> Self {
         let (event_tx, _) = tokio::sync::broadcast::channel(EVENT_CHANNEL_CAP);
         Self {
@@ -93,6 +100,15 @@ impl MpvController {
         }
     }
 
+    /// Subscribe to the typed event stream. Multiple subscribers are supported; each gets every event from subscription onwards. Channel capacity is fixed at [`EVENT_CHANNEL_CAP`]; slow consumers see `RecvError::Lagged`.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// use ferrosonic::audio::mpv::MpvController;
+    /// let ctrl = MpvController::with_socket_path(PathBuf::from("/tmp/ferrosonic-doctest-sub.sock"));
+    /// let rx = ctrl.subscribe_events();
+    /// assert_eq!(rx.len(), 0, "no events have been emitted yet");
+    /// ```
     pub fn subscribe_events(&self) -> tokio::sync::broadcast::Receiver<MpvEventKind> {
         self.event_tx.subscribe()
     }

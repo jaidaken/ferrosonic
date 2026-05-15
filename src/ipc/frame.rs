@@ -57,8 +57,23 @@ pub enum FrameError {
     Closed,
 }
 
-/// `Closed` is clean EOF between frames; distinct from mid-frame
-/// disconnects which surface as `Io(UnexpectedEof)`.
+/// `Closed` is clean EOF between frames; distinct from mid-frame disconnects which surface as `Io(UnexpectedEof)`.
+///
+/// ```
+/// use ferrosonic::ipc::frame::{read_frame, write_frame, Frame};
+/// use ferrosonic::ipc::protocol::DaemonRequest;
+/// tokio_test::block_on(async {
+///     let original = Frame::Request { id: 42, req: DaemonRequest::Ping };
+///     let mut buf: Vec<u8> = Vec::new();
+///     write_frame(&mut buf, &original).await.unwrap();
+///     let mut reader = buf.as_slice();
+///     let decoded = read_frame(&mut reader).await.unwrap();
+///     match decoded {
+///         Frame::Request { id, .. } => assert_eq!(id, 42),
+///         other => panic!("expected Request, got {:?}", other),
+///     }
+/// });
+/// ```
 pub async fn read_frame<R>(reader: &mut R) -> Result<Frame, FrameError>
 where
     R: AsyncReadExt + Unpin,
@@ -68,9 +83,24 @@ where
     Ok(frame)
 }
 
-/// Reads the next frame and attempts a typed parse; on unknown
-/// variants returns the envelope metadata so the caller can keep the
-/// connection alive.
+/// Reads the next frame and attempts a typed parse; on unknown variants returns the envelope metadata so the caller can keep the connection alive.
+///
+/// ```
+/// use ferrosonic::ipc::frame::{read_frame_lenient, FrameRead};
+/// tokio_test::block_on(async {
+///     let body = serde_json::json!({
+///         "Request": { "id": 99, "req": { "TotallyNewCommand": "hello" } }
+///     }).to_string();
+///     let mut buf = Vec::new();
+///     buf.extend_from_slice(&(body.len() as u32).to_le_bytes());
+///     buf.extend_from_slice(body.as_bytes());
+///     let mut reader = buf.as_slice();
+///     match read_frame_lenient(&mut reader).await.unwrap() {
+///         FrameRead::UnknownRequest { id, .. } => assert_eq!(id, 99),
+///         other => panic!("expected UnknownRequest, got {:?}", other),
+///     }
+/// });
+/// ```
 pub async fn read_frame_lenient<R>(reader: &mut R) -> Result<FrameRead, FrameError>
 where
     R: AsyncReadExt + Unpin,
@@ -78,6 +108,20 @@ where
     read_frame_lenient_with_cap(reader, MAX_FRAME_BYTES).await
 }
 
+/// Like [`read_frame_lenient`] but enforces a caller-supplied length cap. Used by the daemon to apply a tighter [`MAX_REQUEST_FRAME_BYTES`] than the global [`MAX_FRAME_BYTES`] on inbound requests.
+///
+/// ```
+/// use ferrosonic::ipc::frame::{read_frame_lenient_with_cap, FrameError};
+/// tokio_test::block_on(async {
+///     let oversized_len: u32 = 65;
+///     let cap: usize = 32;
+///     let mut buf = Vec::new();
+///     buf.extend_from_slice(&oversized_len.to_le_bytes());
+///     let mut reader = buf.as_slice();
+///     let err = read_frame_lenient_with_cap(&mut reader, cap).await.unwrap_err();
+///     assert!(matches!(err, FrameError::TooLarge(n) if n == oversized_len as usize));
+/// });
+/// ```
 pub async fn read_frame_lenient_with_cap<R>(
     reader: &mut R,
     cap: usize,

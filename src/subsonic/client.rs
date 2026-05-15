@@ -356,6 +356,20 @@ impl SubsonicClient {
         Ok(bytes.to_vec())
     }
 
+    /// Build the signed `rest/stream` URL for `song_id`. Adds Subsonic auth params (`u`, `t`, `s`, `v`, `c`) plus the song `id`. No network IO; this is pure URL assembly.
+    ///
+    /// ```
+    /// use ferrosonic::secret::Secret;
+    /// use ferrosonic::subsonic::client::SubsonicClient;
+    /// let pw = Secret::from_string("pw".to_string());
+    /// let c = SubsonicClient::new("https://example.com/", "alice", &pw).unwrap();
+    /// let url = c.get_stream_url("song-42").unwrap();
+    /// assert!(url.starts_with("https://example.com/rest/stream?"));
+    /// assert!(url.contains("id=song-42"));
+    /// assert!(url.contains("u=alice"));
+    /// assert!(url.contains("&t="));
+    /// assert!(url.contains("&s="));
+    /// ```
     pub fn get_stream_url(&self, song_id: &str) -> Result<String, SubsonicError> {
         let mut url = self.base_url.join("rest/stream")?;
 

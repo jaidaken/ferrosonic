@@ -48,6 +48,28 @@ impl PipeWireController {
         Self::with_runner(Arc::new(PwMetadataCommand))
     }
 
+    /// Construct with an injected runner. Probes `clock.force-rate` once at construction time so [`get_original_rate`](Self::get_original_rate) can restore it on drop; a failing probe leaves `original_rate` as `None` so a missing pw-metadata binary stays non-fatal.
+    ///
+    /// ```
+    /// use std::process::Output;
+    /// use std::sync::Arc;
+    /// use async_trait::async_trait;
+    /// use ferrosonic::audio::pipewire::{CommandRunner, PipeWireController};
+    /// use ferrosonic::error::AudioError;
+    /// struct FailRunner;
+    /// #[async_trait]
+    /// impl CommandRunner for FailRunner {
+    ///     async fn run(&self, _: &[&str]) -> Result<Output, AudioError> {
+    ///         Err(AudioError::PipeWire("doc-test".into()))
+    ///     }
+    ///     fn run_blocking(&self, _: &[&str]) -> Result<Output, AudioError> {
+    ///         Err(AudioError::PipeWire("doc-test".into()))
+    ///     }
+    /// }
+    /// let ctrl = PipeWireController::with_runner(Arc::new(FailRunner));
+    /// assert_eq!(ctrl.get_original_rate(), None);
+    /// assert_eq!(ctrl.get_current_rate(), None);
+    /// ```
     pub fn with_runner(runner: Arc<dyn CommandRunner>) -> Self {
         // The blocking pw-metadata fork+exec+wait would park a tokio
         // worker for tens of ms; only use block_in_place on a multi-
@@ -121,6 +143,16 @@ impl PipeWireController {
 }
 
 /// Parses `value:'<rate>'` from pw-metadata output. Returns 0 if absent.
+///
+/// The function scans every line for both `clock.force-rate` and `value:'<digits>'` markers; any malformed or missing match yields `0` so callers degrade gracefully when pw-metadata is unavailable.
+///
+/// ```
+/// use ferrosonic::audio::pipewire::parse_force_rate_from_output;
+/// let happy = "key:'clock.force-rate' value:'48000' type:''";
+/// assert_eq!(parse_force_rate_from_output(happy), 48000);
+/// assert_eq!(parse_force_rate_from_output(""), 0);
+/// assert_eq!(parse_force_rate_from_output("clock.force-rate value:'oops'"), 0);
+/// ```
 pub fn parse_force_rate_from_output(stdout: &str) -> u32 {
     for line in stdout.lines() {
         if line.contains("clock.force-rate") && line.contains("value:") {

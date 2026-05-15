@@ -50,6 +50,17 @@ pub struct NowPlaying {
 }
 
 impl NowPlaying {
+    /// Position as a fraction of duration, clamped to `0.0..=1.0`. Returns `0.0` when duration is non-positive so callers never divide-by-zero or render negative progress.
+    ///
+    /// ```
+    /// use ferrosonic::daemon::state::NowPlaying;
+    /// let mut np = NowPlaying::default();
+    /// np.duration = 100.0;
+    /// np.position = 25.0;
+    /// assert!((np.progress_percent() - 0.25).abs() < 1e-9);
+    /// np.duration = 0.0;
+    /// assert_eq!(np.progress_percent(), 0.0);
+    /// ```
     pub fn progress_percent(&self) -> f64 {
         if self.duration > 0.0 {
             (self.position / self.duration).clamp(0.0, 1.0)
@@ -58,15 +69,39 @@ impl NowPlaying {
         }
     }
 
+    /// Current position formatted `MM:SS` (or `HH:MM:SS` if at least one hour).
+    ///
+    /// ```
+    /// use ferrosonic::daemon::state::NowPlaying;
+    /// let mut np = NowPlaying::default();
+    /// np.position = 65.0;
+    /// assert_eq!(np.format_position(), "01:05");
+    /// ```
     pub fn format_position(&self) -> String {
         format_duration(self.position)
     }
 
+    /// Track duration formatted `MM:SS` (or `HH:MM:SS` if at least one hour).
+    ///
+    /// ```
+    /// use ferrosonic::daemon::state::NowPlaying;
+    /// let mut np = NowPlaying::default();
+    /// np.duration = 3665.0;
+    /// assert_eq!(np.format_duration(), "01:01:05");
+    /// ```
     pub fn format_duration(&self) -> String {
         format_duration(self.duration)
     }
 }
 
+/// Format `seconds` as `MM:SS` under one hour, `HH:MM:SS` at one hour or above. Fractional seconds are truncated.
+///
+/// ```
+/// use ferrosonic::daemon::state::format_duration;
+/// assert_eq!(format_duration(59.9), "00:59");
+/// assert_eq!(format_duration(125.0), "02:05");
+/// assert_eq!(format_duration(3600.0), "01:00:00");
+/// ```
 pub fn format_duration(seconds: f64) -> String {
     let total_secs = seconds as u64;
     let hours = total_secs / 3600;

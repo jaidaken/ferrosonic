@@ -4,6 +4,19 @@ use zeroize::Zeroize;
 use crate::secret::Secret;
 
 /// Returns `(salt, md5(password + salt))`. Token buffer is zeroized before drop.
+///
+/// Salt is 16 lowercase-alphanumeric chars; token is the 32-char lowercase hex MD5 digest of `password || salt`.
+///
+/// ```
+/// use ferrosonic::secret::Secret;
+/// use ferrosonic::subsonic::auth::generate_auth_params;
+/// let pw = Secret::from_string("hunter2".to_string());
+/// let (salt, token) = generate_auth_params(&pw);
+/// assert_eq!(salt.len(), 16);
+/// assert_eq!(token.len(), 32);
+/// assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+/// assert!(salt.chars().all(|c| c.is_ascii_alphanumeric()));
+/// ```
 pub fn generate_auth_params(password: &Secret) -> (String, String) {
     let salt = generate_salt();
     let token = generate_token(password, &salt);
