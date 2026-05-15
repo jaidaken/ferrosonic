@@ -579,3 +579,17 @@ fn classify_event(ev: &MpvEvent) -> MpvEventKind {
         other => MpvEventKind::Other(other.to_string()),
     }
 }
+
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+
+    /// Arbitrary bytes must never panic either reply parser.
+    #[test]
+    fn fuzz_mpv_reply_never_panics() {
+        bolero::check!().with_type::<Vec<u8>>().for_each(|input| {
+            let _ = serde_json::from_slice::<MpvResponse>(input);
+            let _ = serde_json::from_slice::<MpvEvent>(input);
+        });
+    }
+}
