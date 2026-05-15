@@ -1,5 +1,7 @@
 # Build artifacts
 /target/
+mutants.out/
+mutants.out.*/
 
 # IDE
 .idea/
