@@ -19,7 +19,6 @@ impl App {
         };
 
         let field = state.client.server_state.selected_field;
-        let is_text_field = field <= 2;
 
         match key.code {
             KeyCode::Up if field > 0 => {
@@ -31,7 +30,7 @@ impl App {
             KeyCode::Tab => {
                 state.client.server_state.selected_field = (field + 1) % 5;
             }
-            KeyCode::Char(c) if is_text_field => match field {
+            KeyCode::Char(c) => match field {
                 0 => {
                     let t = &mut state.client.server_state.base_url;
                     if t.len() < MAX_FIELD_LEN {
@@ -50,9 +49,9 @@ impl App {
                         s.push_char(c);
                     }
                 }
-                _ => return Ok(()),
+                _ => {}
             },
-            KeyCode::Backspace if is_text_field => match field {
+            KeyCode::Backspace => match field {
                 0 => {
                     state.client.server_state.base_url.pop();
                 }

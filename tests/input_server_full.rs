@@ -230,8 +230,112 @@ async fn char_on_button_field_is_noop() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.server_state.selected_field = 3;
+        cs.server_state.base_url = "url".into();
+        cs.server_state.username = "user".into();
+        cs.server_state.password = "pw".into();
     }
     fx.app.handle_key(key(KeyCode::Char('q'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.server_state.base_url, "url");
+    assert_eq!(cs.server_state.username, "user");
+    assert_eq!(cs.server_state.password.reveal(), "pw");
+    assert_eq!(cs.server_state.selected_field, 3);
+}
+
+#[tokio::test]
+#[serial]
+async fn char_on_save_field_is_noop() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.server_state.selected_field = 4;
+        cs.server_state.base_url = "u".into();
+        cs.server_state.username = "n".into();
+        cs.server_state.password = "p".into();
+    }
+    fx.app.handle_key(key(KeyCode::Char('x'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.server_state.base_url, "u");
+    assert_eq!(cs.server_state.username, "n");
+    assert_eq!(cs.server_state.password.reveal(), "p");
+}
+
+#[tokio::test]
+#[serial]
+async fn backspace_on_test_button_field_is_noop() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.server_state.selected_field = 3;
+        cs.server_state.base_url = "abc".into();
+        cs.server_state.username = "user".into();
+        cs.server_state.password = "pw".into();
+    }
+    fx.app.handle_key(key(KeyCode::Backspace)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.server_state.base_url, "abc");
+    assert_eq!(cs.server_state.username, "user");
+    assert_eq!(cs.server_state.password.reveal(), "pw");
+}
+
+#[tokio::test]
+#[serial]
+async fn backspace_on_save_field_is_noop() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.server_state.selected_field = 4;
+        cs.server_state.base_url = "abc".into();
+        cs.server_state.username = "user".into();
+        cs.server_state.password = "pw".into();
+    }
+    fx.app.handle_key(key(KeyCode::Backspace)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.server_state.base_url, "abc");
+    assert_eq!(cs.server_state.username, "user");
+    assert_eq!(cs.server_state.password.reveal(), "pw");
+}
+
+#[tokio::test]
+#[serial]
+async fn base_url_push_at_max_field_len_does_not_grow() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.server_state.selected_field = 0;
+        cs.server_state.base_url = "a".repeat(1024);
+    }
+    fx.app.handle_key(key(KeyCode::Char('b'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.server_state.base_url.len(), 1024);
+}
+
+#[tokio::test]
+#[serial]
+async fn username_push_at_max_field_len_does_not_grow() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.server_state.selected_field = 1;
+        cs.server_state.username = "a".repeat(1024);
+    }
+    fx.app.handle_key(key(KeyCode::Char('b'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.server_state.username.len(), 1024);
+}
+
+#[tokio::test]
+#[serial]
+async fn password_push_at_max_field_len_does_not_grow() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.server_state.selected_field = 2;
+        cs.server_state.password = "a".repeat(1024).into();
+    }
+    fx.app.handle_key(key(KeyCode::Char('b'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.server_state.password.len(), 1024);
 }
 
 #[tokio::test]
