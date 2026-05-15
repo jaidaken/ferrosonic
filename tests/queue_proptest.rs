@@ -97,3 +97,60 @@ async fn random_op_sequences_preserve_invariants() {
         })
         .expect("proptest should not find a counterexample");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
+async fn move_queue_item_preserves_current_song_identity() {
+    let mut runner = proptest::test_runner::TestRunner::default();
+    runner
+        .run(
+            &(
+                1usize..8,
+                0usize..8,
+                0usize..8,
+                0usize..8,
+            ),
+            |(len, pos, from, to)| {
+                let len = len.max(1);
+                let pos = pos % len;
+                let from = from % len;
+                let to = to % len;
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        let td = TestDaemon::new().await;
+                        {
+                            let mut s = td.state.write().await;
+                            s.queue = (0..len).map(|i| song(&format!("id-{}", i), &format!("t-{}", i))).collect();
+                            s.queue_position = Some(pos);
+                        }
+                        let before_id = {
+                            let s = td.state.read().await;
+                            s.queue[pos].id.clone()
+                        };
+                        td.core.move_queue_item(from, to).await;
+                        let after = {
+                            let s = td.state.read().await;
+                            (s.queue_position, s.queue.clone())
+                        };
+                        let (new_pos_opt, new_queue) = after;
+                        let new_pos = new_pos_opt.expect("queue_position must remain Some after move");
+                        assert!(
+                            new_pos < new_queue.len(),
+                            "queue_position {} out of bounds (len {}) after move {}->{}",
+                            new_pos,
+                            new_queue.len(),
+                            from,
+                            to
+                        );
+                        assert_eq!(
+                            new_queue[new_pos].id, before_id,
+                            "move {}->{} with pos {} broke identity: was {}, now {}",
+                            from, to, pos, before_id, new_queue[new_pos].id
+                        );
+                    });
+                });
+                Ok(())
+            },
+        )
+        .expect("move_queue_item must preserve the currently-playing song's identity");
+}

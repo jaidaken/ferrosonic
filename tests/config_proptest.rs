@@ -148,3 +148,25 @@ fn next_handlers_return_none_on_empty_queue_always() {
         })
         .unwrap();
 }
+
+#[test]
+fn prev_wrap_matches_documented_contract() {
+    let mut runner = proptest::test_runner::TestRunner::default();
+    runner
+        .run(
+            &(arb_repeat_mode(), 1usize..1000),
+            |(mode, queue_len)| {
+                let got = mode.prev_wrap(queue_len);
+                match mode {
+                    RepeatMode::Off => prop_assert_eq!(got, None),
+                    RepeatMode::One | RepeatMode::All => {
+                        prop_assert_eq!(got, Some(queue_len - 1));
+                        let idx = got.expect("wrap mode must return Some on non-empty queue");
+                        prop_assert!(idx < queue_len, "prev_wrap index {} out of bounds for len {}", idx, queue_len);
+                    }
+                }
+                Ok(())
+            },
+        )
+        .expect("prev_wrap contract: Off -> None, One/All -> last index");
+}
