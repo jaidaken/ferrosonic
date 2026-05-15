@@ -1,6 +1,4 @@
-//! UI rendering smoke tests via ratatui TestBackend.
-//! Asserts that each page renders without panicking and includes
-//! load-bearing text. Snapshot variants are in ui_snapshots.rs.
+//! UI page snapshot tests via ratatui TestBackend.
 
 mod common;
 
@@ -23,10 +21,7 @@ fn library_page_renders_without_panic() {
     let (daemon, mut client) = build_state();
     client.page = Page::Library;
     let frame = render(80, 24, &daemon, &mut client);
-    assert!(
-        !frame.is_empty(),
-        "library page must render at least one row"
-    );
+    insta::assert_snapshot!(frame);
 }
 
 #[test]
@@ -34,7 +29,7 @@ fn queue_page_renders_without_panic() {
     let (daemon, mut client) = build_state();
     client.page = Page::Queue;
     let frame = render(80, 24, &daemon, &mut client);
-    assert!(!frame.is_empty());
+    insta::assert_snapshot!(frame);
 }
 
 #[test]
@@ -42,7 +37,7 @@ fn quickplay_page_renders_without_panic() {
     let (daemon, mut client) = build_state();
     client.page = Page::QuickPlay;
     let frame = render(80, 24, &daemon, &mut client);
-    assert!(!frame.is_empty());
+    insta::assert_snapshot!(frame);
 }
 
 #[test]
@@ -50,7 +45,7 @@ fn playlists_page_renders_without_panic() {
     let (daemon, mut client) = build_state();
     client.page = Page::Playlists;
     let frame = render(80, 24, &daemon, &mut client);
-    assert!(!frame.is_empty());
+    insta::assert_snapshot!(frame);
 }
 
 #[test]
@@ -58,7 +53,7 @@ fn server_page_renders_without_panic() {
     let (daemon, mut client) = build_state();
     client.page = Page::Server;
     let frame = render(80, 24, &daemon, &mut client);
-    assert!(!frame.is_empty());
+    insta::assert_snapshot!(frame);
 }
 
 #[test]
@@ -66,7 +61,7 @@ fn settings_page_renders_without_panic() {
     let (daemon, mut client) = build_state();
     client.page = Page::Settings;
     let frame = render(80, 24, &daemon, &mut client);
-    assert!(!frame.is_empty());
+    insta::assert_snapshot!(frame);
 }
 
 #[test]
@@ -84,4 +79,5 @@ fn now_playing_widget_renders_with_a_loaded_track() {
         "track title must appear; got:\n{}",
         frame
     );
+    insta::assert_snapshot!(frame);
 }
