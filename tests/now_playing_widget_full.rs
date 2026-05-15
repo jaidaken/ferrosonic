@@ -12,6 +12,16 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
 
+fn buf_to_string(buf: &Buffer) -> String {
+    let mut s = String::new();
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            s.push_str(buf[(x, y)].symbol());
+        }
+    }
+    s
+}
+
 fn song(id: &str, title: &str) -> Child {
     Child {
         id: id.into(),
@@ -51,6 +61,7 @@ fn render_with_no_song_shows_no_track_message() {
     let widget = NowPlayingWidget::new(&np, colors());
     let mut buf = Buffer::empty(Rect::new(0, 0, 60, 7));
     widget.render(buf.area, &mut buf);
+    assert!(buf_to_string(&buf).contains("No track playing"));
 }
 
 #[test]
@@ -59,6 +70,7 @@ fn render_too_small_area_returns_early() {
     let widget = NowPlayingWidget::new(&np, colors());
     let mut buf = Buffer::empty(Rect::new(0, 0, 19, 3));
     widget.render(buf.area, &mut buf);
+    assert_eq!(buf_to_string(&buf).trim(), "");
 }
 
 #[test]
@@ -85,6 +97,9 @@ fn render_with_height_three_uses_compressed_layout() {
     let widget = NowPlayingWidget::new(&np, colors());
     let mut buf = Buffer::empty(Rect::new(0, 0, 80, 5));
     widget.render(buf.area, &mut buf);
+    let s = buf_to_string(&buf);
+    assert!(s.contains("Now Playing"));
+    assert!(s.contains("Joy Division"));
 }
 
 #[test]
@@ -93,6 +108,9 @@ fn render_with_height_two_uses_compact_layout() {
     let widget = NowPlayingWidget::new(&np, colors());
     let mut buf = Buffer::empty(Rect::new(0, 0, 80, 4));
     widget.render(buf.area, &mut buf);
+    let s = buf_to_string(&buf);
+    assert!(s.contains("Now Playing"));
+    assert!(s.contains('T'));
 }
 
 #[test]
@@ -101,22 +119,33 @@ fn render_with_height_one_renders_title_only() {
     let widget = NowPlayingWidget::new(&np, colors());
     let mut buf = Buffer::empty(Rect::new(0, 0, 80, 4));
     widget.render(buf.area, &mut buf);
+    let s = buf_to_string(&buf);
+    assert!(s.contains("Now Playing"));
 }
 
 #[test]
 fn focused_widget_uses_focused_border_color() {
     let np = np_with_song(song("a", "T"));
-    let widget = NowPlayingWidget::new(&np, colors()).focused(true);
+    let theme = colors();
+    let widget = NowPlayingWidget::new(&np, theme.clone()).focused(true);
     let mut buf = Buffer::empty(Rect::new(0, 0, 80, 7));
     widget.render(buf.area, &mut buf);
+    let top_left_fg = buf[(0, 0)].fg;
+    assert_eq!(top_left_fg, theme.border_focused);
 }
 
 #[test]
 fn art_reserved_cols_shrinks_info_area() {
-    let np = np_with_song(song("a", "T"));
-    let widget = NowPlayingWidget::new(&np, colors()).art_reserved_cols(20);
-    let mut buf = Buffer::empty(Rect::new(0, 0, 80, 7));
-    widget.render(buf.area, &mut buf);
+    let np = np_with_song(song("a", "Distinctive Title Here"));
+    let widget_full = NowPlayingWidget::new(&np, colors());
+    let mut buf_full = Buffer::empty(Rect::new(0, 0, 80, 7));
+    widget_full.render(buf_full.area, &mut buf_full);
+
+    let widget_reserved = NowPlayingWidget::new(&np, colors()).art_reserved_cols(40);
+    let mut buf_reserved = Buffer::empty(Rect::new(0, 0, 80, 7));
+    widget_reserved.render(buf_reserved.area, &mut buf_reserved);
+
+    assert_ne!(buf_to_string(&buf_full), buf_to_string(&buf_reserved));
 }
 
 #[test]
@@ -154,31 +183,46 @@ fn art_rect_returns_none_when_inner_height_under_two() {
 fn art_rect_handles_zero_cell_size_via_max_one() {
     let area = Rect::new(0, 0, 80, 8);
     let r = art_rect(area, 16, (0, 0));
-    let _ = r;
+    assert!(r.is_some());
 }
 
 #[test]
 fn render_progress_bar_renders_filled_segment() {
     let mut buf = Buffer::empty(Rect::new(0, 0, 60, 1));
     render_progress_bar(buf.area, &mut buf, 0.5, "01:00", "02:00", &colors());
+    let s = buf_to_string(&buf);
+    assert!(s.contains('━'));
+    assert!(s.contains('─'));
+    assert!(s.contains("01:00"));
+    assert!(s.contains("02:00"));
 }
 
 #[test]
 fn render_progress_bar_at_zero_progress_is_all_unfilled() {
     let mut buf = Buffer::empty(Rect::new(0, 0, 60, 1));
     render_progress_bar(buf.area, &mut buf, 0.0, "00:00", "03:00", &colors());
+    let s = buf_to_string(&buf);
+    assert!(!s.contains('━'));
+    assert!(s.contains('─'));
 }
 
 #[test]
 fn render_progress_bar_at_one_progress_is_all_filled() {
     let mut buf = Buffer::empty(Rect::new(0, 0, 60, 1));
     render_progress_bar(buf.area, &mut buf, 1.0, "03:00", "03:00", &colors());
+    let s = buf_to_string(&buf);
+    assert!(s.contains('━'));
+    assert!(!s.contains('─'));
 }
 
 #[test]
 fn render_progress_bar_returns_early_when_too_narrow() {
     let mut buf = Buffer::empty(Rect::new(0, 0, 14, 1));
     render_progress_bar(buf.area, &mut buf, 0.5, "01:00", "02:00", &colors());
+    let s = buf_to_string(&buf);
+    assert!(!s.contains('━'));
+    assert!(!s.contains('─'));
+    assert!(!s.contains("01:00"));
 }
 
 #[test]
@@ -191,6 +235,10 @@ fn render_with_quality_string_when_bit_depth_and_format_present() {
     let widget = NowPlayingWidget::new(&np, colors());
     let mut buf = Buffer::empty(Rect::new(0, 0, 100, 8));
     widget.render(buf.area, &mut buf);
+    let s = buf_to_string(&buf);
+    assert!(s.contains("FLAC"));
+    assert!(s.contains("24"));
+    assert!(s.contains("96"));
 }
 
 #[test]
@@ -200,4 +248,6 @@ fn render_with_sample_rate_non_integer_khz_formats_with_one_decimal() {
     let widget = NowPlayingWidget::new(&np, colors());
     let mut buf = Buffer::empty(Rect::new(0, 0, 100, 8));
     widget.render(buf.area, &mut buf);
+    let s = buf_to_string(&buf);
+    assert!(s.contains("44.1"));
 }

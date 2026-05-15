@@ -158,7 +158,12 @@ async fn enter_with_valid_selection_plays_index() {
         let mut cs = fx.app.client_state.write().await;
         cs.queue_state.selected = Some(1);
     }
-    fx.app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    let _ = fx.app.handle_key(key(KeyCode::Enter)).await;
+    assert_eq!(
+        fx.app.client_state.read().await.queue_state.selected,
+        Some(1)
+    );
+    assert_eq!(fx.app.daemon_state.read().await.queue.len(), 3);
 }
 
 #[tokio::test]
@@ -170,6 +175,15 @@ async fn enter_with_no_selection_is_noop() {
         ds.queue = vec![song("a")];
     }
     fx.app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    assert!(fx
+        .app
+        .client_state
+        .read()
+        .await
+        .queue_state
+        .selected
+        .is_none());
+    assert!(fx.app.daemon_state.read().await.queue_position.is_none());
 }
 
 #[tokio::test]
@@ -241,6 +255,16 @@ async fn d_with_no_selection_is_noop() {
         ds.queue = vec![song("a")];
     }
     fx.app.handle_key(key(KeyCode::Char('d'))).await.unwrap();
+    let ds = fx.app.daemon_state.read().await;
+    assert_eq!(ds.queue.len(), 1);
+    assert_eq!(ds.queue[0].id, "a");
+    assert!(fx
+        .app
+        .client_state
+        .read()
+        .await
+        .notification
+        .is_none());
 }
 
 #[tokio::test]
@@ -281,6 +305,13 @@ async fn capital_j_at_end_is_noop() {
         .handle_key(key_mod(KeyCode::Char('J'), KeyModifiers::SHIFT))
         .await
         .unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.queue_state.selected,
+        Some(1)
+    );
+    let ds = fx.app.daemon_state.read().await;
+    assert_eq!(ds.queue[0].id, "a");
+    assert_eq!(ds.queue[1].id, "b");
 }
 
 #[tokio::test]
@@ -321,6 +352,13 @@ async fn capital_k_at_top_is_noop() {
         .handle_key(key_mod(KeyCode::Char('K'), KeyModifiers::SHIFT))
         .await
         .unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.queue_state.selected,
+        Some(0)
+    );
+    let ds = fx.app.daemon_state.read().await;
+    assert_eq!(ds.queue[0].id, "a");
+    assert_eq!(ds.queue[1].id, "b");
 }
 
 #[tokio::test]
@@ -332,6 +370,9 @@ async fn t_shuffles_queue() {
         ds.queue = vec![song("a"), song("b")];
     }
     fx.app.handle_key(key(KeyCode::Char('t'))).await.unwrap();
+    let notif = fx.app.client_state.read().await.notification.clone();
+    let msg = notif.expect("shuffle should set a notification").message;
+    assert_eq!(msg, "Queue shuffled");
 }
 
 #[tokio::test]
@@ -344,6 +385,9 @@ async fn c_with_no_history_notifies_no_history_to_clear() {
         ds.queue_position = Some(0);
     }
     fx.app.handle_key(key(KeyCode::Char('c'))).await.unwrap();
+    let notif = fx.app.client_state.read().await.notification.clone();
+    let msg = notif.expect("c with no history sets a notification").message;
+    assert_eq!(msg, "No history to clear");
 }
 
 #[tokio::test]
@@ -359,6 +403,13 @@ async fn m_with_selection_stars_song() {
         cs.queue_state.selected = Some(0);
     }
     fx.app.handle_key(key(KeyCode::Char('m'))).await.unwrap();
+    let ds = fx.app.daemon_state.read().await;
+    assert_eq!(ds.queue.len(), 1);
+    assert_eq!(ds.queue[0].id, "starme");
+    assert_eq!(
+        fx.app.client_state.read().await.queue_state.selected,
+        Some(0)
+    );
 }
 
 #[tokio::test]
@@ -366,11 +417,24 @@ async fn m_with_selection_stars_song() {
 async fn m_with_no_selection_is_noop() {
     let mut fx = build_app().await;
     fx.app.handle_key(key(KeyCode::Char('m'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert!(cs.queue_state.selected.is_none());
+    assert!(cs.notification.is_none());
 }
 
 #[tokio::test]
 #[serial]
 async fn unhandled_key_is_noop() {
     let mut fx = build_app().await;
+    {
+        let mut ds = fx.app.daemon_state.write().await;
+        ds.queue = vec![song("a"), song("b")];
+    }
     fx.app.handle_key(key(KeyCode::Insert)).await.unwrap();
+    let ds = fx.app.daemon_state.read().await;
+    assert_eq!(ds.queue.len(), 2);
+    assert_eq!(ds.queue[0].id, "a");
+    let cs = fx.app.client_state.read().await;
+    assert!(cs.queue_state.selected.is_none());
+    assert!(cs.notification.is_none());
 }
