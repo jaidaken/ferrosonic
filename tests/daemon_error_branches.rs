@@ -111,6 +111,12 @@ async fn load_artist_handles_error_gracefully() {
         .expect_error("getArtist", 70, "missing")
         .await;
     td.core.load_artist("a-bad").await;
+    let s = td.state.read().await;
+    assert!(
+        !s.library.albums_cache.contains_key("a-bad"),
+        "failed load must not populate albums_cache"
+    );
+    assert!(s.library.albums_cache.is_empty());
 }
 
 #[tokio::test]
@@ -238,6 +244,11 @@ async fn preload_next_track_with_subsonic_error_is_safe() {
         s.queue_position = Some(0);
     }
     td.core.preload_next_track(0).await;
+    let s = td.state.read().await;
+    assert_eq!(s.queue.len(), 2, "preload must not mutate queue");
+    assert_eq!(s.queue[0].id, "a");
+    assert_eq!(s.queue[1].id, "b");
+    assert_eq!(s.queue_position, Some(0));
 }
 
 #[tokio::test]
@@ -275,6 +286,10 @@ async fn move_queue_item_with_invalid_indices_is_noop() {
     }
     td.core.move_queue_item(99, 0).await;
     td.core.move_queue_item(0, 99).await;
+    let s = td.state.read().await;
+    assert_eq!(s.queue.len(), 2, "OOB move must preserve queue length");
+    assert_eq!(s.queue[0].id, "a", "OOB move must preserve order");
+    assert_eq!(s.queue[1].id, "b", "OOB move must preserve order");
 }
 
 #[tokio::test]
@@ -282,6 +297,9 @@ async fn move_queue_item_with_invalid_indices_is_noop() {
 async fn shuffle_queue_with_empty_queue_is_noop() {
     let td = TestDaemon::new().await;
     td.core.shuffle_queue().await;
+    let s = td.state.read().await;
+    assert!(s.queue.is_empty(), "empty-queue shuffle must stay empty");
+    assert_eq!(s.queue_position, None);
 }
 
 #[tokio::test]

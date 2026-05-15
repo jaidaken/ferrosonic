@@ -361,6 +361,10 @@ async fn scroll_on_server_page_is_noop() {
     }
     fx.app.handle_mouse(scroll(true)).await.unwrap();
     fx.app.handle_mouse(scroll(false)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.page, Page::Server, "scroll on Server must not change page");
+    assert!(!cs.should_quit);
+    assert!(cs.queue_state.selected.is_none());
 }
 
 #[tokio::test]
@@ -373,12 +377,17 @@ async fn scroll_on_settings_page_is_noop() {
     }
     fx.app.handle_mouse(scroll(true)).await.unwrap();
     fx.app.handle_mouse(scroll(false)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.page, Page::Settings, "scroll on Settings must not change page");
+    assert!(!cs.should_quit);
+    assert!(cs.queue_state.selected.is_none());
 }
 
 #[tokio::test]
 #[serial]
 async fn unhandled_mouse_kind_is_noop() {
     let mut fx = build_app().await;
+    let initial_page = fx.app.client_state.read().await.page;
     let evt = MouseEvent {
         kind: MouseEventKind::Up(crossterm::event::MouseButton::Left),
         column: 5,
@@ -386,4 +395,8 @@ async fn unhandled_mouse_kind_is_noop() {
         modifiers: KeyModifiers::NONE,
     };
     fx.app.handle_mouse(evt).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.page, initial_page, "unhandled mouse kind must not navigate");
+    assert!(!cs.should_quit);
+    assert!(cs.queue_state.selected.is_none());
 }

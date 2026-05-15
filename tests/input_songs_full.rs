@@ -126,6 +126,12 @@ async fn up_with_no_option_selected_does_nothing() {
         cs.songs.selected_option = None;
     }
     fx.app.handle_key(key(KeyCode::Up)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert!(
+        cs.songs.selected_option.is_none(),
+        "Up with no option must not invent a selection"
+    );
+    assert_eq!(cs.songs.focus, 0, "Up must not change focus pane");
 }
 
 #[tokio::test]
@@ -296,6 +302,13 @@ async fn right_with_songs_focuses_one() {
 async fn m_with_no_selection_is_noop() {
     let mut fx = build_app().await;
     fx.app.handle_key(key(KeyCode::Char('m'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    let ds = fx.app.daemon_state.read().await;
+    assert!(
+        cs.songs.selected_index.is_none(),
+        "'m' with no selection must not invent one"
+    );
+    assert!(ds.library.starred_songs.is_empty());
 }
 
 #[tokio::test]
@@ -313,6 +326,19 @@ async fn m_with_valid_selection_stars_song() {
         cs.songs.selected_index = Some(0);
     }
     fx.app.handle_key(key(KeyCode::Char('m'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    let ds = fx.app.daemon_state.read().await;
+    assert_eq!(
+        cs.songs.selected_index,
+        Some(0),
+        "'m' on valid selection must preserve selection"
+    );
+    assert_eq!(cs.songs.focus, 1, "'m' must not move focus");
+    assert_eq!(
+        ds.library.random_songs.first().map(|s| s.id.as_str()),
+        Some("starme"),
+        "'m' must not remove song from random list"
+    );
 }
 
 #[tokio::test]
@@ -320,4 +346,14 @@ async fn m_with_valid_selection_stars_song() {
 async fn unhandled_key_is_noop() {
     let mut fx = build_app().await;
     fx.app.handle_key(key(KeyCode::Insert)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(
+        cs.songs.focus, 0,
+        "unhandled key must not move focus from default"
+    );
+    assert!(
+        cs.songs.selected_index.is_none(),
+        "unhandled key must not invent a selection"
+    );
+    assert!(!cs.should_quit);
 }
