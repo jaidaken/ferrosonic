@@ -51,6 +51,11 @@ listed separately and treated as non-kills.
 | `src/audio/pipewire.rs`    |     93.5% |     29 |      2 |        3 |       1 |
 | `src/daemon/library.rs`    |      100% |     12 |      0 |        1 |       0 |
 | `src/ipc/protocol.rs`      |         - |      - |      - |        - |       - |
+| `src/audio/mpv.rs`         |     94.8% |     55 |      3 |        5 |       0 |
+| `src/config/mod.rs`        |     94.4% |     67 |      4 |        2 |       0 |
+| `src/daemon/queue_ops.rs`  |     80.6% |     29 |      7 |        1 |       0 |
+| `src/daemon/state.rs`      |     92.3% |     24 |      2 |        1 |       0 |
+| `src/ipc/frame.rs`         |     72.7% |     16 |      6 |        3 |       0 |
 
 `src/app/input_server.rs` row is the prior A1.c result (commit
 `8c90f99`) preserved here for the consolidated picture.
@@ -97,28 +102,58 @@ SubsonicClient pattern. The single timeout (`&&` to `||` in the
 drop body) is the same path; the nextest run blocked beyond the
 120s --timeout, signal absent.
 
-## Deferred (no baseline captured this run)
+## F3 sweep (2026-05-15)
 
-Per-file budget of about 30 minutes wall is required for files
-with >25 mutants under the current build time (about 90 s build
-+ 45 to 70 s test per mutant on this host). The interactive
-session budget was about 90 minutes total; these files are
-queued for follow-up:
+A follow-up sweep covering the 5 remaining critical files completed
+at 225 mutants in about 4 hours 15 minutes wall, with `--jobs 2
+--timeout 180`. The 6 RepeatMode timeouts from the prior 120 s run
+all resolved cleanly under the larger budget.
 
-| File                       | Mutant count | Notes                                |
-| -------------------------- | -----------: | ------------------------------------ |
-| `src/daemon/state.rs`      |           27 | Lock-protected state struct.         |
-| `src/daemon/queue_ops.rs`  |           37 | Queue mutators, hot path.            |
-| `src/ipc/frame.rs`         |           25 | Length-prefix framing, security hot. |
-| `src/audio/mpv.rs`         |          ~80 | Largest critical file (595 LOC).     |
-| `src/config/mod.rs`        |         ~90  | Config + RepeatMode (714 LOC).       |
-| `src/daemon/playback_tick.rs` |       ~70 | Playback state machine (495 LOC).    |
+Aggregate: 191 caught / 22 missed / 0 timeout / 12 unviable across
+the 5 files. Combined kill rate (this sweep only) 89.7 percent.
 
-Counts marked with `~` are estimates from `cargo mutants --list`
-on the first invocation; exact totals will be confirmed by the
-next baseline run.
+Per-file results are in the table above. Notable per-file outcomes:
 
-## Re-running this baseline
+- `src/daemon/queue_ops.rs` (80.6 percent): 7 survivors are
+  boundary checks (`<`/`>` to `<=`/`>=`) on
+  `move_queue_item` and `shuffle_queue` plus body-deletion on the
+  shuffle methods. The boundary mutants survive because tests
+  exercise typical positions but never the exact wrap-edge index.
+- `src/ipc/frame.rs` (72.7 percent): 6 survivors include 3 `*` to
+  `+` mutants in the length calculation at lines 11 and 12, plus
+  the `UnexpectedEof` ErrorKind match-guard and 2 size-check
+  boundary `>` to `>=` mutants. Security-relevant; the multiplication
+  mutants in particular should not be left long-term because they
+  affect the 16 MiB frame cap arithmetic.
+- `src/audio/mpv.rs` (94.8 percent): 3 survivors are body-deletion
+  on `tear_down_connection` and `Drop::drop` (both unobservable
+  from current tests, same pattern as pipewire and secret) plus
+  `||` to `&&` in `get_bit_depth` (defensive defaulting path).
+- `src/config/mod.rs` (94.4 percent): 4 survivors are
+  `Config::as_on_disk` boolean operator + 3 inside
+  `write_password_file_atomic` (cleanup discriminator and 2
+  `!` deletions). Same family as the io_util durability gap.
+- `src/daemon/state.rs` (92.3 percent): 2 boundary mutants in
+  `progress_percent` (`>` to `>=` on the zero-division guard) and
+  `format_duration` (the hour-vs-minute branch swap).
+
+## Still deferred
+
+`src/daemon/playback_tick.rs` was dropped from F3 to avoid eating
+most of the 120 s timeout budget under `--jobs 4` cargo cache
+pressure. Phase H commit `d980a8b` adds 5 inline proptest properties
+covering priority order, preload precondition, action preconditions
+and no-panic. A separate scoped run will confirm the post-H baseline:
+
+```
+cargo mutants \
+  --file src/daemon/playback_tick.rs \
+  --test-tool=nextest --baseline=skip --no-shuffle \
+  --timeout 180 --jobs 1 \
+  --cargo-test-arg '-E' --cargo-test-arg 'not binary(stress_proptest)'
+```
+
+## Re-running the post-A1.c baseline
 
 ```
 rm -rf mutants.out
@@ -133,11 +168,31 @@ cargo mutants \
   --timeout 120 \
   --jobs 2 \
   --cargo-test-arg '-E' \
-  --cargo-test-arg 'not binary(stress_tests)'
+  --cargo-test-arg 'not binary(stress_proptest)'
 ```
 
 Expected wall time: about 70 to 80 minutes on a 24-core host with
 140 GB free /tmp.
+
+## Re-running F3 (5 critical files)
+
+```
+rm -rf mutants.out
+cargo mutants \
+  --file src/daemon/state.rs \
+  --file src/daemon/queue_ops.rs \
+  --file src/ipc/frame.rs \
+  --file src/audio/mpv.rs \
+  --file src/config/mod.rs \
+  --test-tool=nextest --baseline=skip --no-shuffle \
+  --timeout 180 --jobs 2 \
+  --cargo-test-arg '-E' \
+  --cargo-test-arg 'not binary(stress_proptest)'
+```
+
+Expected wall time: about 4 hours on a 24-core host with 140 GB
+free /tmp at run start. /tmp peak draw was about 65 GB across two
+concurrent build dirs.
 
 ## Verification
 
