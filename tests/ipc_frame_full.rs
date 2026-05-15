@@ -12,7 +12,10 @@ async fn read_frame_lenient_recognises_known_event() {
     write_frame(&mut buf, &frame).await.unwrap();
     let mut reader = buf.as_slice();
     let decoded = read_frame_lenient(&mut reader).await.unwrap();
-    matches!(decoded, FrameRead::Ok(Frame::Event(_)));
+    match decoded {
+        FrameRead::Ok(Frame::Event(ferrosonic::ipc::protocol::DaemonEvent::Shutdown)) => {}
+        other => panic!("expected Ok(Event(Shutdown)), got {:?}", other),
+    }
 }
 
 #[tokio::test]
@@ -25,7 +28,13 @@ async fn read_frame_lenient_recognises_request() {
     write_frame(&mut buf, &frame).await.unwrap();
     let mut reader = buf.as_slice();
     let decoded = read_frame_lenient(&mut reader).await.unwrap();
-    matches!(decoded, FrameRead::Ok(Frame::Request { id: 99, .. }));
+    match decoded {
+        FrameRead::Ok(Frame::Request { id, req }) => {
+            assert_eq!(id, 99);
+            assert!(matches!(req, DaemonRequest::Ping));
+        }
+        other => panic!("expected Ok(Request {{ id: 99, Ping }}), got {:?}", other),
+    }
 }
 
 #[tokio::test]
@@ -64,7 +73,11 @@ async fn read_frame_lenient_unknown_event_variant() {
     buf.extend_from_slice(body);
     let mut reader = buf.as_slice();
     let r = read_frame_lenient(&mut reader).await.unwrap();
-    matches!(r, FrameRead::UnknownEvent { .. });
+    assert!(
+        matches!(r, FrameRead::UnknownEvent { .. }),
+        "expected UnknownEvent, got {:?}",
+        r
+    );
 }
 
 #[tokio::test]
@@ -83,7 +96,11 @@ async fn read_frame_lenient_returns_closed_on_clean_eof() {
     let empty: Vec<u8> = Vec::new();
     let mut reader = empty.as_slice();
     let r = read_frame_lenient(&mut reader).await;
-    matches!(r, Err(FrameError::Closed));
+    assert!(
+        matches!(r, Err(FrameError::Closed)),
+        "expected Err(Closed), got {:?}",
+        r
+    );
 }
 
 #[tokio::test]
@@ -93,7 +110,10 @@ async fn read_frame_lenient_returns_too_large_for_oversize_len() {
     buf.extend_from_slice(&oversize.to_le_bytes());
     let mut reader = buf.as_slice();
     let r = read_frame_lenient(&mut reader).await;
-    matches!(r, Err(FrameError::TooLarge(_)));
+    match r {
+        Err(FrameError::TooLarge(n)) => assert_eq!(n, MAX_FRAME_BYTES + 1),
+        other => panic!("expected Err(TooLarge), got {:?}", other),
+    }
 }
 
 #[tokio::test]
@@ -105,7 +125,12 @@ async fn write_frame_rejects_oversize_when_body_exceeds_limit() {
     };
     let mut buf: Vec<u8> = Vec::new();
     let r = write_frame(&mut buf, &frame).await;
-    matches!(r, Err(FrameError::TooLarge(_)));
+    assert!(
+        matches!(r, Err(FrameError::TooLarge(_))),
+        "expected Err(TooLarge), got {:?}",
+        r
+    );
+    assert!(buf.is_empty(), "no bytes should be written on oversize");
 }
 
 #[tokio::test]
@@ -137,13 +162,13 @@ async fn round_trip_response_ok_pong() {
     write_frame(&mut buf, &frame).await.unwrap();
     let mut reader = buf.as_slice();
     let decoded = read_frame_lenient(&mut reader).await.unwrap();
-    matches!(
-        decoded,
+    match decoded {
         FrameRead::Ok(Frame::Response {
-            id: 1,
-            payload: Ok(_)
-        })
-    );
+            id,
+            payload: Ok(DaemonResponse::Pong),
+        }) => assert_eq!(id, 1),
+        other => panic!("expected Ok(Response {{ id: 1, Pong }}), got {:?}", other),
+    }
 }
 
 #[tokio::test]

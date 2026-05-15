@@ -127,7 +127,18 @@ fn enqueue_mode_round_trips_through_serde() {
     runner
         .run(&arb_enqueue_mode(), |mode| {
             let bytes = serde_json::to_vec(&mode).unwrap();
-            let _back: EnqueueMode = serde_json::from_slice(&bytes).unwrap();
+            let back: EnqueueMode = serde_json::from_slice(&bytes).unwrap();
+            match (&mode, &back) {
+                (
+                    EnqueueMode::Replace { play_from: a },
+                    EnqueueMode::Replace { play_from: b },
+                ) => prop_assert_eq!(a, b),
+                (EnqueueMode::Append, EnqueueMode::Append) => {}
+                (EnqueueMode::InsertAfter(a), EnqueueMode::InsertAfter(b)) => {
+                    prop_assert_eq!(a, b)
+                }
+                (a, b) => prop_assert!(false, "variant mismatch: {:?} vs {:?}", a, b),
+            }
             Ok(())
         })
         .unwrap();
