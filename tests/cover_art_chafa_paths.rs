@@ -54,6 +54,7 @@ fn render_with_chafa_cache_blits_cells_to_buffer() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 8, 4), &mutex);
         })
         .unwrap();
+    insta::assert_snapshot!(format!("{:?}", terminal.backend().buffer()));
 }
 
 #[test]
@@ -67,6 +68,7 @@ fn render_area_smaller_than_cache_clips_to_area() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 4, 2), &mutex);
         })
         .unwrap();
+    insta::assert_snapshot!(format!("{:?}", terminal.backend().buffer()));
 }
 
 #[test]
@@ -80,6 +82,7 @@ fn render_area_larger_than_cache_clips_to_cache() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 20, 10), &mutex);
         })
         .unwrap();
+    insta::assert_snapshot!(format!("{:?}", terminal.backend().buffer()));
 }
 
 #[test]
@@ -99,6 +102,7 @@ fn chafa_cache_size_mismatch_triggers_reencode_or_falls_through() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 12, 6), &mutex);
         })
         .unwrap();
+    insta::assert_snapshot!(format!("{:?}", terminal.backend().buffer()));
 }
 
 #[test]

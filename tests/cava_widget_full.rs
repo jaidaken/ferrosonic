@@ -22,6 +22,7 @@ fn cava_widget_with_zero_area_returns_early() {
     let w = CavaWidget::new(&rows);
     let mut buf = Buffer::empty(Rect::new(0, 0, 0, 5));
     w.render(buf.area, &mut buf);
+    insta::assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
@@ -30,6 +31,7 @@ fn cava_widget_with_empty_screen_returns_early() {
     let w = CavaWidget::new(&rows);
     let mut buf = Buffer::empty(Rect::new(0, 0, 20, 5));
     w.render(buf.area, &mut buf);
+    insta::assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
@@ -40,6 +42,7 @@ fn cava_widget_renders_indexed_color() {
     let w = CavaWidget::new(&rows);
     let mut buf = Buffer::empty(Rect::new(0, 0, 10, 2));
     w.render(buf.area, &mut buf);
+    insta::assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
@@ -54,6 +57,7 @@ fn cava_widget_renders_rgb_color() {
     let w = CavaWidget::new(&rows);
     let mut buf = Buffer::empty(Rect::new(0, 0, 10, 2));
     w.render(buf.area, &mut buf);
+    insta::assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
@@ -64,6 +68,7 @@ fn cava_widget_renders_default_color() {
     let w = CavaWidget::new(&rows);
     let mut buf = Buffer::empty(Rect::new(0, 0, 10, 2));
     w.render(buf.area, &mut buf);
+    insta::assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
@@ -74,6 +79,7 @@ fn cava_widget_truncates_text_overflowing_width() {
     let w = CavaWidget::new(&rows);
     let mut buf = Buffer::empty(Rect::new(0, 0, 5, 1));
     w.render(buf.area, &mut buf);
+    insta::assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
@@ -92,6 +98,7 @@ fn cava_widget_breaks_at_height_overflow() {
     let w = CavaWidget::new(&rows);
     let mut buf = Buffer::empty(Rect::new(0, 0, 10, 2));
     w.render(buf.area, &mut buf);
+    insta::assert_snapshot!(format!("{buf:?}"));
 }
 
 #[test]
@@ -106,4 +113,5 @@ fn cava_widget_renders_multiple_spans_in_a_row() {
     let w = CavaWidget::new(&rows);
     let mut buf = Buffer::empty(Rect::new(0, 0, 30, 2));
     w.render(buf.area, &mut buf);
+    insta::assert_snapshot!(format!("{buf:?}"));
 }

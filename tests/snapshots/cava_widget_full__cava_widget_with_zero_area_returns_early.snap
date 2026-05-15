@@ -1,0 +1,7 @@
+---
+source: tests/cava_widget_full.rs
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 0, height: 5 }
+}

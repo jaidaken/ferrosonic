@@ -1,0 +1,32 @@
+---
+source: tests/cover_art_chafa_paths.rs
+expression: "format!(\"{:?}\", terminal.backend().buffer())"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 40, height: 20 },
+    content: [
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+        "                                        ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

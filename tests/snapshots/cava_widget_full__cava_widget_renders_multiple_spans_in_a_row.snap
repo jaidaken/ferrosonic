@@ -1,0 +1,17 @@
+---
+source: tests/cava_widget_full.rs
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 30, height: 2 },
+    content: [
+        "AAABBBCCC                     ",
+        "                              ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Indexed(1), bg: Reset, underline: Reset, modifier: NONE,
+        x: 3, y: 0, fg: Indexed(2), bg: Reset, underline: Reset, modifier: NONE,
+        x: 6, y: 0, fg: Rgb(10, 20, 30), bg: Reset, underline: Reset, modifier: NONE,
+        x: 9, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}

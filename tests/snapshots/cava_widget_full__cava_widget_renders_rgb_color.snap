@@ -1,0 +1,15 @@
+---
+source: tests/cava_widget_full.rs
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 10, height: 2 },
+    content: [
+        "Y         ",
+        "          ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Rgb(255, 128, 0), bg: Rgb(0, 0, 0), underline: Reset, modifier: NONE,
+        x: 1, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+    ]
+}
