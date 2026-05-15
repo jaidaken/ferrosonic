@@ -489,7 +489,158 @@ mod playback_tick_tests {
 
     #[test]
     fn enum_must_use_attrs_present() {
-        let _ = TickContinuation::Stop;
-        let _ = GaplessOutcome::Advanced;
+        assert_eq!(TickContinuation::Stop, TickContinuation::Stop);
+        assert_ne!(TickContinuation::Stop, TickContinuation::Continue);
+        assert_eq!(GaplessOutcome::Advanced, GaplessOutcome::Advanced);
+        assert_ne!(GaplessOutcome::Advanced, GaplessOutcome::QueueRanOut);
+    }
+}
+
+#[cfg(test)]
+mod prop {
+    use super::*;
+    use proptest::prelude::*;
+
+    prop_compose! {
+        fn arb_inputs()(
+            is_active in any::<bool>(),
+            is_playing in any::<bool>(),
+            mpv_running in any::<bool>(),
+            time_remaining in -10.0f64..120.0,
+            has_next in any::<bool>(),
+            position in -1.0f64..600.0,
+            playlist_count in prop_oneof![Just(None), (0usize..8).prop_map(Some)],
+            playlist_pos in prop_oneof![Just(None), (-1i64..8).prop_map(Some)],
+            mpv_idle in prop_oneof![Just(None), any::<bool>().prop_map(Some)],
+            queue_position in prop_oneof![Just(None), (0usize..32).prop_map(Some)],
+            prebuffer_loading in any::<bool>(),
+            just_loaded in any::<bool>(),
+        ) -> PlaybackTickInputs {
+            PlaybackTickInputs {
+                is_active,
+                is_playing,
+                mpv_running,
+                time_remaining,
+                has_next,
+                position,
+                playlist_count,
+                playlist_pos,
+                mpv_idle,
+                queue_position,
+                prebuffer_loading,
+                just_loaded,
+            }
+        }
+    }
+
+    fn is_known_variant(action: PlaybackTickAction) -> bool {
+        matches!(
+            action,
+            PlaybackTickAction::Skip
+                | PlaybackTickAction::AdvanceEarly
+                | PlaybackTickAction::Preload { .. }
+                | PlaybackTickAction::GaplessAdvance
+                | PlaybackTickAction::AdvanceOnIdle
+                | PlaybackTickAction::Continue
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn never_panics_on_arbitrary_inputs(inputs in arb_inputs()) {
+            let action = DaemonCore::decide_playback_tick_action(&inputs);
+            prop_assert!(is_known_variant(action));
+        }
+
+        #[test]
+        fn preload_only_when_playlist_count_one(inputs in arb_inputs()) {
+            let action = DaemonCore::decide_playback_tick_action(&inputs);
+            if let PlaybackTickAction::Preload { from_pos } = action {
+                prop_assert_eq!(inputs.playlist_count, Some(1));
+                prop_assert_eq!(Some(from_pos), inputs.queue_position);
+                prop_assert!(inputs.is_active);
+                prop_assert!(inputs.is_playing);
+                prop_assert!(inputs.mpv_running);
+            }
+        }
+
+        #[test]
+        fn action_preconditions_hold(inputs in arb_inputs()) {
+            let action = DaemonCore::decide_playback_tick_action(&inputs);
+            match action {
+                PlaybackTickAction::Skip => {
+                    prop_assert!(!inputs.is_active || !inputs.mpv_running);
+                }
+                PlaybackTickAction::AdvanceEarly => {
+                    prop_assert!(inputs.is_active && inputs.mpv_running && inputs.is_playing);
+                    prop_assert!(inputs.has_next);
+                    prop_assert!(inputs.position > 0.5);
+                    prop_assert!(inputs.time_remaining > 0.0 && inputs.time_remaining < 2.0);
+                    prop_assert!(matches!(inputs.playlist_count, Some(c) if c < 2));
+                }
+                PlaybackTickAction::Preload { .. } => {
+                    prop_assert!(inputs.is_active && inputs.mpv_running && inputs.is_playing);
+                    prop_assert_eq!(inputs.playlist_count, Some(1));
+                    prop_assert!(inputs.queue_position.is_some());
+                }
+                PlaybackTickAction::GaplessAdvance => {
+                    prop_assert!(inputs.is_active && inputs.mpv_running && inputs.is_playing);
+                    prop_assert_eq!(inputs.playlist_pos, Some(1));
+                }
+                PlaybackTickAction::AdvanceOnIdle => {
+                    prop_assert!(inputs.is_active && inputs.mpv_running && inputs.is_playing);
+                    prop_assert_eq!(inputs.mpv_idle, Some(true));
+                    prop_assert!(!inputs.prebuffer_loading);
+                    prop_assert!(!inputs.just_loaded);
+                }
+                PlaybackTickAction::Continue => {}
+            }
+        }
+
+        #[test]
+        fn priority_preserved_when_advance_early_eligible(
+            from_pos in 0usize..16,
+            playlist_pos_val in 0i64..4,
+        ) {
+            let inputs = PlaybackTickInputs {
+                is_active: true,
+                is_playing: true,
+                mpv_running: true,
+                has_next: true,
+                position: 1.0,
+                time_remaining: 1.0,
+                playlist_count: Some(1),
+                queue_position: Some(from_pos),
+                playlist_pos: Some(playlist_pos_val),
+                mpv_idle: Some(true),
+                prebuffer_loading: false,
+                just_loaded: false,
+            };
+            let action = DaemonCore::decide_playback_tick_action(&inputs);
+            prop_assert_eq!(action, PlaybackTickAction::AdvanceEarly);
+        }
+
+        #[test]
+        fn priority_preload_beats_lower_when_eligible(
+            from_pos in 0usize..16,
+            time_remaining in 5.0f64..60.0,
+        ) {
+            let inputs = PlaybackTickInputs {
+                is_active: true,
+                is_playing: true,
+                mpv_running: true,
+                has_next: false,
+                time_remaining,
+                position: 10.0,
+                playlist_count: Some(1),
+                queue_position: Some(from_pos),
+                playlist_pos: Some(1),
+                mpv_idle: Some(true),
+                prebuffer_loading: false,
+                just_loaded: false,
+            };
+            let action = DaemonCore::decide_playback_tick_action(&inputs);
+            prop_assert_eq!(action, PlaybackTickAction::Preload { from_pos });
+        }
     }
 }
