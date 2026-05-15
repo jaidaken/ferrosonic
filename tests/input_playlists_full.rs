@@ -353,11 +353,21 @@ async fn m_in_song_pane_stars_selected_song() {
         cs.playlists.selected_song = Some(0);
     }
     fx.app.handle_key(key(KeyCode::Char('m'))).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.playlists.selected_song, Some(0));
+    assert_eq!(cs.playlists.focus, 1);
+    assert_eq!(cs.playlists.songs.len(), 1);
+    assert_eq!(cs.playlists.songs[0].id, "starme");
 }
 
 #[tokio::test]
 #[serial]
-async fn unhandled_key_is_silently_ignored() {
+async fn unhandled_key_is_silent() {
     let mut fx = build_app().await;
+    let focus_before = fx.app.client_state.read().await.playlists.focus;
     fx.app.handle_key(key(KeyCode::Insert)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.playlists.focus, focus_before);
+    assert!(cs.playlists.songs.is_empty());
+    assert!(cs.playlists.selected_song.is_none());
 }

@@ -334,6 +334,8 @@ async fn t_on_song_in_search_mode_replays_the_song() {
         cs.artists.selected_index = Some(0);
     }
     fx.app.handle_key(key(KeyCode::Char('t'))).await.unwrap();
+    let ds = fx.app.daemon_state.read().await;
+    assert!(ds.queue.iter().any(|s| s.id == "s0"));
 }
 
 #[tokio::test]

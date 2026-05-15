@@ -31,6 +31,17 @@ async fn seek_relative_negative_offset_does_not_crash() {
 async fn set_volume_persists_via_mpv() {
     let td = TestDaemon::new().await;
     td.core.set_volume(60).await.unwrap();
+    let saw_set_volume = td
+        .fake_mpv
+        .wait_for(500, |cmds| {
+            cmds.iter().any(|c| {
+                c.first().and_then(|v| v.as_str()) == Some("set_property")
+                    && c.get(1).and_then(|v| v.as_str()) == Some("volume")
+                    && c.get(2).and_then(serde_json::Value::as_f64) == Some(60.0)
+            })
+        })
+        .await;
+    assert!(saw_set_volume, "set_volume(60) must dispatch volume=60 to mpv");
 }
 
 #[tokio::test]
@@ -97,10 +108,17 @@ async fn stop_playback_clears_queue_and_state() {
 #[serial]
 async fn play_queue_position_oob_index_returns_error_or_ignores() {
     let td = TestDaemon::new().await;
-    let _ = td
+    let result = td
         .core
         .play_queue_position(99, ferrosonic::daemon::core::PlayMode::Direct)
         .await;
+    let s = td.state.read().await;
+    assert!(s.queue.is_empty());
+    assert!(s.queue_position.is_none());
+    assert!(
+        result.is_err() || s.now_playing.song.is_none(),
+        "oob play_queue_position must return Err or leave now_playing empty"
+    );
 }
 
 #[tokio::test]

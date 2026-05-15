@@ -119,7 +119,10 @@ async fn get_cover_art_with_no_subsonic_returns_empty() {
 #[serial]
 async fn refresh_starred_does_not_crash_with_fake_subsonic() {
     let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_starred_with(&["s0", "s1"]).await;
     td.core.refresh_starred().await;
+    let s = td.state.read().await;
+    assert_eq!(s.library.starred_songs.len(), 2);
 }
 
 #[tokio::test]
@@ -177,7 +180,16 @@ async fn snapshot_returns_current_state() {
 #[serial]
 async fn broadcast_queue_changed_emits_event() {
     let td = TestDaemon::new().await;
+    let mut rx = td.core.subscribe();
     td.core.broadcast_queue_changed().await;
+    let evt = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .expect("broadcast_queue_changed must emit within 500ms")
+        .expect("event channel must yield event");
+    assert!(matches!(
+        evt,
+        ferrosonic::ipc::protocol::DaemonEvent::QueueChanged { .. }
+    ));
 }
 
 #[tokio::test]
