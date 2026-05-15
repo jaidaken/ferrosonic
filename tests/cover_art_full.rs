@@ -92,15 +92,29 @@ fn clear_resets_all_fields() {
 
 #[test]
 fn render_with_locked_mutex_returns_early() {
-    let s = Mutex::new(state_with_protocol(ProtocolType::Halfblocks));
-    let _guard = s.lock().unwrap();
     let backend = TestBackend::new(40, 20);
     let mut terminal = Terminal::new(backend).unwrap();
     let inner = Mutex::new(state_with_protocol(ProtocolType::Halfblocks));
-    let _ = terminal.draw(|frame| {
-        ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 10, 10), &inner);
-    });
-    drop(_guard);
+    terminal
+        .draw(|frame| {
+            ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 10, 10), &inner);
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let non_empty = (0..buf.area.height)
+        .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+        .filter(|(x, y)| buf[(*x, *y)].symbol() != " ")
+        .count();
+    assert_eq!(
+        non_empty, 0,
+        "no image and no protocol: render must not write any glyph; got {} non-empty",
+        non_empty
+    );
+    let guard = inner.lock().unwrap();
+    assert!(
+        guard.image.is_none(),
+        "render must not synthesise an image when none was loaded"
+    );
 }
 
 #[test]
@@ -114,6 +128,19 @@ fn render_with_no_protocol_and_no_image_does_nothing() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 8, 4), &mutex);
         })
         .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let non_empty = (0..buf.area.height)
+        .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+        .filter(|(x, y)| buf[(*x, *y)].symbol() != " ")
+        .count();
+    assert_eq!(
+        non_empty, 0,
+        "no image + no protocol: render must write no glyphs; got {} non-empty",
+        non_empty
+    );
+    let guard = mutex.lock().unwrap();
+    assert!(guard.chafa_cache.is_none());
+    assert!(guard.protocol.is_none());
 }
 
 #[test]
@@ -128,6 +155,20 @@ fn render_with_loaded_image_uses_stateful_protocol_when_chafa_unavailable() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 12, 6), &mutex);
         })
         .unwrap();
+    let guard = mutex.lock().unwrap();
+    assert_eq!(
+        guard.protocol_type,
+        Some(ProtocolType::Kitty),
+        "Kitty protocol type must persist across render"
+    );
+    assert!(
+        guard.protocol.is_some(),
+        "Kitty + loaded image must route through StatefulProtocol, leaving it populated"
+    );
+    assert!(
+        guard.chafa_cache.is_none(),
+        "Kitty (not Halfblocks) must never use the chafa cache path"
+    );
 }
 
 #[test]

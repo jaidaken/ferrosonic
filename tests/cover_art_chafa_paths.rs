@@ -87,7 +87,12 @@ fn render_area_larger_than_cache_clips_to_cache() {
 
 #[test]
 fn chafa_ext_is_available_returns_bool() {
-    let _ = chafa_ext::is_available();
+    let first = chafa_ext::is_available();
+    let second = chafa_ext::is_available();
+    assert_eq!(
+        first, second,
+        "is_available must be stable across calls within one process"
+    );
 }
 
 #[test]
@@ -106,7 +111,18 @@ fn chafa_cache_size_mismatch_triggers_reencode_or_falls_through() {
 }
 
 #[test]
-fn init_state_in_subprocess_does_not_panic_without_terminal() {
+fn init_state_in_subprocess_returns_sane_state_without_terminal() {
     let s = CoverArtState::init();
-    let _ = s;
+    assert!(
+        s.picker.is_some(),
+        "init must always populate a picker, even when terminal probe fails"
+    );
+    assert!(
+        s.cell_size.0 > 0 && s.cell_size.1 > 0,
+        "init must always set a positive cell size; got {:?}",
+        s.cell_size
+    );
+    assert!(s.image.is_none(), "init must not pre-load any image");
+    assert!(s.current_id.is_none());
+    assert!(s.chafa_cache.is_none());
 }

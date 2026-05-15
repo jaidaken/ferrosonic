@@ -89,7 +89,17 @@ fn render_with_chafa_loaded_and_image_uses_blit_cells_path() {
         })
         .unwrap();
     let g = mutex.lock().unwrap();
-    let _ = g.chafa_cache.is_some();
+    let cache = g
+        .chafa_cache
+        .as_ref()
+        .expect("chafa loaded + halfblocks + image must populate cache");
+    assert_eq!(cache.width, 8);
+    assert_eq!(cache.height, 4);
+    assert_eq!(
+        cache.cells.len(),
+        8 * 4,
+        "chafa cache cell count must equal width * height"
+    );
 }
 
 #[test]
@@ -108,11 +118,31 @@ fn second_render_with_same_dimensions_reuses_cache() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 8, 4), &mutex);
         })
         .unwrap();
+    let cells_ptr_before = {
+        let g = mutex.lock().unwrap();
+        let cache = g
+            .chafa_cache
+            .as_ref()
+            .expect("first render must populate cache");
+        cache.cells.as_ptr() as usize
+    };
     terminal
         .draw(|frame| {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 8, 4), &mutex);
         })
         .unwrap();
+    let g = mutex.lock().unwrap();
+    let cache = g
+        .chafa_cache
+        .as_ref()
+        .expect("second render must keep cache");
+    assert_eq!(
+        cache.cells.as_ptr() as usize,
+        cells_ptr_before,
+        "same dimensions must reuse identical Vec allocation, not re-encode"
+    );
+    assert_eq!(cache.width, 8);
+    assert_eq!(cache.height, 4);
 }
 
 #[test]
@@ -131,9 +161,28 @@ fn render_with_changing_dimensions_re_encodes() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 8, 4), &mutex);
         })
         .unwrap();
+    {
+        let g = mutex.lock().unwrap();
+        let cache = g.chafa_cache.as_ref().expect("first render populates cache");
+        assert_eq!(cache.width, 8);
+        assert_eq!(cache.height, 4);
+        assert_eq!(cache.cells.len(), 32);
+    }
     terminal
         .draw(|frame| {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 16, 8), &mutex);
         })
         .unwrap();
+    let g = mutex.lock().unwrap();
+    let cache = g
+        .chafa_cache
+        .as_ref()
+        .expect("second render must repopulate cache with new dimensions");
+    assert_eq!(cache.width, 16, "dimension change must update cache.width");
+    assert_eq!(cache.height, 8, "dimension change must update cache.height");
+    assert_eq!(
+        cache.cells.len(),
+        16 * 8,
+        "cells must be re-encoded at new dimensions"
+    );
 }

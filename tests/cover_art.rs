@@ -94,6 +94,12 @@ fn render_with_image_into_test_buffer_writes_cells() {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, 10, 10), &mutex);
         })
         .unwrap();
+    let guard = mutex.lock().expect("lock");
+    assert!(
+        guard.protocol.is_some(),
+        "loaded image must leave protocol populated for the StatefulImage render path"
+    );
+    assert_eq!(guard.current_id.as_deref(), Some("abc"));
 }
 
 fn preload_chafa() {

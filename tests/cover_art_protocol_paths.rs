@@ -31,7 +31,7 @@ fn state_with_protocol(pt: ProtocolType) -> CoverArtState {
     }
 }
 
-fn render(state: CoverArtState, w: u16, h: u16) {
+fn render_and_return_mutex(state: CoverArtState, w: u16, h: u16) -> Mutex<CoverArtState> {
     let mutex = Mutex::new(state);
     let backend = TestBackend::new(40, 20);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -40,39 +40,97 @@ fn render(state: CoverArtState, w: u16, h: u16) {
             ferrosonic::ui::cover_art::render(frame, Rect::new(0, 0, w, h), &mutex);
         })
         .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let non_empty = (0..buf.area.height)
+        .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+        .filter(|(x, y)| buf[(*x, *y)].symbol() != " ")
+        .count();
+    assert!(
+        non_empty == 0 || non_empty <= (buf.area.width as usize * buf.area.height as usize),
+        "buffer non-empty cell count out of range: {}",
+        non_empty
+    );
+    mutex
 }
 
 #[test]
 fn halfblocks_protocol_without_image_renders_nothing() {
-    render(state_with_protocol(ProtocolType::Halfblocks), 10, 10);
+    let mutex = render_and_return_mutex(state_with_protocol(ProtocolType::Halfblocks), 10, 10);
+    let guard = mutex.lock().expect("lock");
+    assert!(
+        guard.image.is_none(),
+        "no image was loaded; render must not populate one"
+    );
+    assert!(
+        guard.protocol.is_none(),
+        "no image means no StatefulProtocol should ever be created"
+    );
+    assert!(
+        guard.chafa_cache.is_none(),
+        "chafa cache must remain absent when no image is present"
+    );
 }
 
 #[test]
 fn halfblocks_protocol_with_image_falls_back_to_stateful_protocol_when_chafa_absent() {
     let mut state = state_with_protocol(ProtocolType::Halfblocks);
     state.load("a".into(), &tiny_png());
-    render(state, 12, 6);
+    let mutex = render_and_return_mutex(state, 12, 6);
+    let guard = mutex.lock().expect("lock");
+    assert_eq!(guard.protocol_type, Some(ProtocolType::Halfblocks));
+    assert!(
+        guard.protocol.is_some(),
+        "load+render must keep StatefulProtocol populated as fallback when chafa is absent"
+    );
+    assert!(
+        guard.image.is_some(),
+        "image must remain decoded for re-encode through chafa later"
+    );
 }
 
 #[test]
 fn kitty_protocol_with_image_uses_stateful_protocol() {
     let mut state = state_with_protocol(ProtocolType::Kitty);
     state.load("a".into(), &tiny_png());
-    render(state, 12, 6);
+    let mutex = render_and_return_mutex(state, 12, 6);
+    let guard = mutex.lock().expect("lock");
+    assert_eq!(guard.protocol_type, Some(ProtocolType::Kitty));
+    assert!(
+        guard.protocol.is_some(),
+        "Kitty protocol always renders via StatefulProtocol; field must be populated"
+    );
+    assert!(
+        guard.chafa_cache.is_none(),
+        "non-halfblocks protocol must never populate chafa cache"
+    );
 }
 
 #[test]
 fn iterm2_protocol_with_image_uses_stateful_protocol() {
     let mut state = state_with_protocol(ProtocolType::Iterm2);
     state.load("a".into(), &tiny_png());
-    render(state, 12, 6);
+    let mutex = render_and_return_mutex(state, 12, 6);
+    let guard = mutex.lock().expect("lock");
+    assert_eq!(guard.protocol_type, Some(ProtocolType::Iterm2));
+    assert!(
+        guard.protocol.is_some(),
+        "Iterm2 protocol always renders via StatefulProtocol; field must be populated"
+    );
+    assert!(guard.chafa_cache.is_none());
 }
 
 #[test]
 fn sixel_protocol_with_image_uses_stateful_protocol() {
     let mut state = state_with_protocol(ProtocolType::Sixel);
     state.load("a".into(), &tiny_png());
-    render(state, 12, 6);
+    let mutex = render_and_return_mutex(state, 12, 6);
+    let guard = mutex.lock().expect("lock");
+    assert_eq!(guard.protocol_type, Some(ProtocolType::Sixel));
+    assert!(
+        guard.protocol.is_some(),
+        "Sixel protocol always renders via StatefulProtocol; field must be populated"
+    );
+    assert!(guard.chafa_cache.is_none());
 }
 
 #[test]
