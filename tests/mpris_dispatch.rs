@@ -12,7 +12,7 @@ use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::config::Config;
 use ferrosonic::ipc::protocol::DaemonRequest;
 use ferrosonic::mpris::server::MprisPlayer;
-use mpris_server::{PlaybackStatus, PlayerInterface, Time};
+use mpris_server::{PlaybackStatus, PlayerInterface, Time, TrackId};
 
 fn build_player() -> (MprisPlayer, Arc<RecordingClient>, SharedDaemonState) {
     let config = Config::new();
@@ -102,6 +102,21 @@ async fn mpris_seek_dispatches_seek_relative_with_seconds() {
             assert!((*s - 2.5).abs() < 1e-6, "expected 2.5s, got {}", s);
         }
         other => panic!("expected SeekRelative(2.5), got {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn mpris_set_position_dispatches_absolute_seek_with_seconds() {
+    let (player, rec, _) = build_player();
+    let track = TrackId::try_from("/org/mpris/MediaPlayer2/Track/x").unwrap();
+    player
+        .set_position(track, Time::from_micros(2_500_000))
+        .await
+        .unwrap();
+    drain_fire(&rec, 1).await;
+    match rec.requests().await.as_slice() {
+        [DaemonRequest::Seek(s)] => assert!((*s - 2.5).abs() < 1e-6, "expected 2.5s, got {}", s),
+        other => panic!("expected Seek(2.5), got {:?}", other),
     }
 }
 

@@ -56,6 +56,41 @@ async fn insert_after_current_repreloads_the_new_next() {
 
 #[tokio::test]
 #[serial]
+async fn resync_drops_the_stale_preload_before_re_preloading() {
+    let td = TestDaemon::new().await;
+    let client = InProcessClient::new(td.core.clone());
+    set_playing(&td, songs("t", 3), 0).await;
+    // Seed an existing gapless preload: mpv playlist = [current, old-next].
+    td.fake_mpv
+        .set_playlist(vec!["current".into(), "old-next".into()])
+        .await;
+
+    client
+        .request(DaemonRequest::EnqueueSongs {
+            songs: vec![song("xins", "Inserted")],
+            mode: EnqueueMode::InsertAfter(0),
+        })
+        .await
+        .unwrap();
+
+    let dropped_stale = td
+        .fake_mpv
+        .wait_for(2000, |cmds| {
+            cmds.iter().any(|c| {
+                c.first().and_then(Value::as_str) == Some("playlist-remove")
+                    && c.get(1).and_then(Value::as_u64) == Some(1)
+            })
+        })
+        .await;
+    assert!(
+        dropped_stale,
+        "resync must drop the stale slot-1 preload before re-preloading; commands: {:?}",
+        td.fake_mpv.commands().await
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn insert_before_current_keeps_now_playing_pointer() {
     let td = TestDaemon::new().await;
     let client = InProcessClient::new(td.core.clone());
@@ -78,6 +113,28 @@ async fn insert_before_current_keeps_now_playing_pointer() {
     assert_eq!(
         s.queue[3].id, "t-2",
         "queue_position must still point at the playing track"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn resync_does_not_remove_when_nothing_is_preloaded() {
+    let td = TestDaemon::new().await;
+    // Playing the only track: mpv playlist holds just the current entry, so
+    // there is no slot-1 preload to drop.
+    set_playing(&td, songs("t", 1), 0).await;
+    td.fake_mpv.set_playlist(vec!["current".into()]).await;
+
+    td.core.shuffle_queue().await; // resync runs synchronously here
+
+    let removed_slot1 = td.fake_mpv.commands().await.iter().any(|c| {
+        c.first().and_then(Value::as_str) == Some("playlist-remove")
+            && c.get(1).and_then(Value::as_u64) == Some(1)
+    });
+    assert!(
+        !removed_slot1,
+        "resync must not remove slot 1 when only the current track is loaded; commands: {:?}",
+        td.fake_mpv.commands().await
     );
 }
 
