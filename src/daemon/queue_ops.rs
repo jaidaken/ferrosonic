@@ -77,6 +77,7 @@ impl DaemonCore {
         }
         drop(state);
         self.emit_queue().await;
+        self.resync_gapless_preload().await;
     }
 
     /// Drain entries before `queue_position`. Returns count removed.
@@ -144,5 +145,6 @@ impl DaemonCore {
             }
         }
         self.emit_queue().await;
+        self.resync_gapless_preload().await;
     }
 }

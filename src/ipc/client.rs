@@ -91,12 +91,16 @@ impl DaemonClient for InProcessClient {
                 let was_playing;
                 let new_len;
                 let must_stop;
+                let removed_next_up;
                 {
                     let mut state = self.core.state.write().await;
                     if pos >= state.queue.len() {
                         return Ok(DaemonResponse::Ok);
                     }
                     was_playing = state.queue_position == Some(pos);
+                    // The gapless preload is stale only when the removed entry
+                    // was the next-up track (one past the current position).
+                    removed_next_up = pos > 0 && state.queue_position == Some(pos - 1);
                     state.queue.remove(pos);
                     new_len = state.queue.len();
                     if let Some(cur) = state.queue_position {
@@ -135,6 +139,9 @@ impl DaemonClient for InProcessClient {
                     self.core.broadcast_queue_changed().await;
                 } else {
                     self.core.broadcast_queue_changed().await;
+                    if removed_next_up {
+                        self.core.resync_gapless_preload().await;
+                    }
                 }
                 Ok(DaemonResponse::Ok)
             }
@@ -325,21 +332,43 @@ impl InProcessClient {
                     .map_err(err)?;
             }
             EnqueueMode::Append => {
-                {
+                let resync = {
                     let mut state = self.core.state.write().await;
+                    let old_len = state.queue.len();
                     state.queue.extend(songs);
-                }
+                    // The appended block becomes the next track only when the
+                    // current track was the last entry.
+                    matches!(state.queue_position, Some(cur) if cur + 1 == old_len)
+                };
                 self.core.broadcast_queue_changed().await;
+                if resync {
+                    self.core.resync_gapless_preload().await;
+                }
             }
             EnqueueMode::InsertAfter(pos) => {
-                {
+                let resync = {
                     let mut state = self.core.state.write().await;
                     let insert_at = (pos + 1).min(state.queue.len());
+                    let n = songs.len();
                     for (i, song) in songs.into_iter().enumerate() {
                         state.queue.insert(insert_at + i, song);
                     }
-                }
+                    // Keep the now-playing pointer on the same song; the gapless
+                    // preload is stale only when we insert into the next slot.
+                    match state.queue_position {
+                        Some(cur) => {
+                            if insert_at <= cur {
+                                state.queue_position = Some(cur + n);
+                            }
+                            insert_at == cur + 1
+                        }
+                        None => false,
+                    }
+                };
                 self.core.broadcast_queue_changed().await;
+                if resync {
+                    self.core.resync_gapless_preload().await;
+                }
             }
         }
         Ok(DaemonResponse::Ok)

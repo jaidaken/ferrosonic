@@ -247,6 +247,30 @@ impl DaemonCore {
         }
     }
 
+    /// Re-align mpv's preloaded next track with the current queue after a queue mutation, so a gapless advance plays the queue's next track and not a stale preload. No-op unless actively `Playing`; drops mpv's slot-1 preload and re-preloads the repeat-aware next.
+    pub async fn resync_gapless_preload(self: &Arc<Self>) {
+        use crate::daemon::state::PlaybackState;
+        let pos = {
+            let state = self.state.read().await;
+            if state.now_playing.state != PlaybackState::Playing {
+                return;
+            }
+            match state.queue_position {
+                Some(p) => p,
+                None => return,
+            }
+        };
+        {
+            let mut mpv = self.mpv.lock().await;
+            if let Ok(count) = mpv.get_playlist_count().await {
+                if count > 1 {
+                    let _ = mpv.playlist_remove(1).await;
+                }
+            }
+        }
+        self.preload_next_track(pos).await;
+    }
+
     /// End-of-queue stop: halt mpv, mark `Stopped`, emit, and release the PipeWire pin so the idle daemon stops holding the device at the last track's rate.
     async fn finish_at_queue_end(self: &Arc<Self>) {
         use crate::daemon::state::PlaybackState;
