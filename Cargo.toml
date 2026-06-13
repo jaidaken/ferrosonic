@@ -131,6 +131,13 @@ lto = true
 codegen-units = 1
 strip = true
 
+# Test/dev builds statically link the full lib + 385 deps into each of
+# 151 integration-test binaries. Full DWARF (cargo default debug=2) made
+# each ~185MB / target ~30G. line-tables keeps file:line in panics and
+# backtraces, drops local-variable symbols, roughly halves binary size.
+[profile.dev]
+debug = "line-tables-only"
+
 # Correctness lints learned from the 2026-05-13 audit. Tightened over
 # time as warnings are cleaned up. See docs/AUDIT-2026-05-13.md.
 [lints.clippy]
