@@ -7,17 +7,17 @@ use ferrosonic::daemon::state::PlaybackState;
 use serde_json::Value;
 use serial_test::serial;
 
-async fn saw_pause(td: &TestDaemon, value: bool) -> bool {
-    td.fake_mpv.commands().await.iter().any(|c| {
-        c.first().and_then(Value::as_str) == Some("set_property")
-            && c.get(1).and_then(Value::as_str) == Some("pause")
-            && c.get(2).and_then(Value::as_bool) == Some(value)
-    })
+async fn saw_cmd(td: &TestDaemon, name: &str) -> bool {
+    td.fake_mpv
+        .commands()
+        .await
+        .iter()
+        .any(|c| c.first().and_then(Value::as_str) == Some(name))
 }
 
 #[tokio::test]
 #[serial]
-async fn pause_from_playing_flips_state_and_sends_mpv_pause() {
+async fn pause_from_playing_stops_mpv_to_free_device() {
     let td = TestDaemon::new().await;
     {
         let mut s = td.state.write().await;
@@ -33,8 +33,8 @@ async fn pause_from_playing_flips_state_and_sends_mpv_pause() {
         PlaybackState::Paused
     );
     assert!(
-        saw_pause(&td, true).await,
-        "pause must send pause=true to mpv"
+        saw_cmd(&td, "stop").await,
+        "pause must stop mpv so it releases the audio device"
     );
 }
 
@@ -50,14 +50,14 @@ async fn pause_when_not_playing_is_noop() {
     td.core.pause_playback().await.unwrap();
 
     assert!(
-        !saw_pause(&td, true).await,
-        "pause from Paused state must not fire mpv pause again"
+        !saw_cmd(&td, "stop").await,
+        "pause from a non-Playing state must not stop mpv"
     );
 }
 
 #[tokio::test]
 #[serial]
-async fn resume_from_paused_flips_state_and_sends_unpause() {
+async fn resume_from_paused_reloads_and_plays() {
     let td = TestDaemon::new().await;
     {
         let mut s = td.state.write().await;
@@ -72,7 +72,10 @@ async fn resume_from_paused_flips_state_and_sends_unpause() {
         td.state.read().await.now_playing.state,
         PlaybackState::Playing
     );
-    assert!(saw_pause(&td, false).await, "resume must send pause=false");
+    assert!(
+        saw_cmd(&td, "loadfile").await,
+        "resume from Paused must reload the track via mpv loadfile"
+    );
 }
 
 #[tokio::test]

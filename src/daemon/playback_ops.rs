@@ -8,110 +8,75 @@ use crate::daemon::core::{DaemonCore, PlayMode};
 use crate::error::Error;
 
 impl DaemonCore {
+    /// Toggle pause by current state: `Playing` pauses, `Paused` resumes, `Stopped` with a queued position starts playback. Delegates so the PipeWire pin release/re-apply lives in one place per direction.
     pub async fn toggle_pause(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         let (playback_state, queue_pos) = {
             let state = self.state.read().await;
             (state.now_playing.state, state.queue_position)
         };
-        if playback_state == PlaybackState::Stopped {
-            if let Some(pos) = queue_pos {
-                return self.play_queue_position(pos, PlayMode::Direct).await;
-            }
-            return Ok(());
+        match playback_state {
+            PlaybackState::Playing => self.pause_playback().await,
+            PlaybackState::Paused => self.resume_playback().await,
+            PlaybackState::Stopped => match queue_pos {
+                Some(pos) => self.play_queue_position(pos, PlayMode::Direct).await,
+                None => Ok(()),
+            },
         }
-        if playback_state != PlaybackState::Playing && playback_state != PlaybackState::Paused {
-            return Ok(());
-        }
-
-        let mut mpv = self.mpv.lock().await;
-        match mpv.toggle_pause().await {
-            Ok(now_paused) => {
-                drop(mpv);
-                // R1+R2: re-check state under the write lock; a concurrent Stop between the initial read and the mpv ack must not be overwritten by the pause toggle.
-                let updated = {
-                    let mut state = self.state.write().await;
-                    let cur = state.now_playing.state;
-                    if cur != PlaybackState::Playing && cur != PlaybackState::Paused {
-                        false
-                    } else {
-                        state.now_playing.state = if now_paused {
-                            PlaybackState::Paused
-                        } else {
-                            PlaybackState::Playing
-                        };
-                        debug!("toggle_pause: now {:?}", state.now_playing.state);
-                        true
-                    }
-                };
-                if updated {
-                    self.emit_now_playing().await;
-                }
-            }
-            Err(e) => {
-                error!("Failed to toggle pause: {}", e);
-            }
-        }
-        Ok(())
     }
 
+    /// Pause playback. Stops mpv so it disconnects its PipeWire stream and the audio device can re-rate to other apps; the playhead is kept in `now_playing.position` and resume reloads + seeks back. Commits `Paused` before the stop so the idle tick (gated on `is_playing`) cannot read the stop as a track-end and auto-advance.
     pub async fn pause_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
-        // R1: take the write lock upfront so the Playing check and the eventual Paused commit cover one consistent snapshot.
-        let mut state = self.state.write().await;
-        if state.now_playing.state != PlaybackState::Playing {
+        let was_playing = {
+            let mut state = self.state.write().await;
+            if state.now_playing.state == PlaybackState::Playing {
+                state.now_playing.state = PlaybackState::Paused;
+                true
+            } else {
+                false
+            }
+        };
+        if !was_playing {
             return Ok(());
         }
-        drop(state);
-        let mut mpv = self.mpv.lock().await;
-        match mpv.pause().await {
-            Ok(()) => {
-                drop(mpv);
-                state = self.state.write().await;
-                if state.now_playing.state != PlaybackState::Playing {
-                    return Ok(());
-                }
-                state.now_playing.state = PlaybackState::Paused;
-                drop(state);
-                self.emit_now_playing().await;
+        {
+            let mut mpv = self.mpv.lock().await;
+            if let Err(e) = mpv.stop().await {
+                error!("Failed to stop mpv on pause: {}", e);
             }
-            Err(e) => error!("Failed to pause: {}", e),
         }
+        self.emit_now_playing().await;
+        self.release_pipewire_rate().await;
         Ok(())
     }
 
+    /// Resume from pause by reloading the current track and seeking back to the saved position (mpv was stopped on pause to free the audio device), which re-pins the rate via the normal play path. From `Stopped` with a queued position, starts that track from the top.
     pub async fn resume_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
-        let (playback_state, queue_pos) = {
+        let (playback_state, queue_pos, resume_at) = {
             let state = self.state.read().await;
-            (state.now_playing.state, state.queue_position)
+            (
+                state.now_playing.state,
+                state.queue_position,
+                state.now_playing.position,
+            )
         };
-        if playback_state == PlaybackState::Stopped {
-            if let Some(pos) = queue_pos {
-                return self.play_queue_position(pos, PlayMode::Direct).await;
-            }
+        if playback_state != PlaybackState::Paused && playback_state != PlaybackState::Stopped {
             return Ok(());
         }
-        if playback_state != PlaybackState::Paused {
+        let Some(pos) = queue_pos else {
             return Ok(());
-        }
-        let mut mpv = self.mpv.lock().await;
-        match mpv.resume().await {
-            Ok(()) => {
-                drop(mpv);
-                let mut state = self.state.write().await;
-                state.now_playing.state = PlaybackState::Playing;
-                drop(state);
-                self.emit_now_playing().await;
-            }
-            Err(e) => error!("Failed to resume: {}", e),
+        };
+        self.play_queue_position(pos, PlayMode::Direct).await?;
+        if playback_state == PlaybackState::Paused && resume_at > 0.0 {
+            self.seek(resume_at).await?;
         }
         Ok(())
     }
 
     /// Manual skip. Ignores `repeat=One` (user wants to move).
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::daemon::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
             (
@@ -136,21 +101,12 @@ impl DaemonCore {
                 return Ok(());
             }
         }
-        info!("Reached end of queue");
-        let mut mpv = self.mpv.lock().await;
-        let _ = mpv.stop().await;
-        drop(mpv);
-        let mut state = self.state.write().await;
-        state.now_playing.state = PlaybackState::Stopped;
-        state.now_playing.position = 0.0;
-        drop(state);
-        self.emit_now_playing().await;
+        self.finish_at_queue_end().await;
         Ok(())
     }
 
     /// Auto-end advance. Honours `repeat=One` and `repeat=All`.
     pub async fn advance_auto(self: &Arc<Self>) -> Result<(), Error> {
-        use crate::daemon::state::PlaybackState;
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
             (
@@ -175,15 +131,7 @@ impl DaemonCore {
                 return Ok(());
             }
         }
-        info!("Reached end of queue");
-        let mut mpv = self.mpv.lock().await;
-        let _ = mpv.stop().await;
-        drop(mpv);
-        let mut state = self.state.write().await;
-        state.now_playing.state = PlaybackState::Stopped;
-        state.now_playing.position = 0.0;
-        drop(state);
-        self.emit_now_playing().await;
+        self.finish_at_queue_end().await;
         Ok(())
     }
 
@@ -231,6 +179,7 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Load and play the queue entry at `pos`; drives the `PipeWire` rate switch.
     pub async fn play_queue_position(
         self: &Arc<Self>,
         pos: usize,
@@ -298,6 +247,24 @@ impl DaemonCore {
         }
     }
 
+    /// End-of-queue stop: halt mpv, mark `Stopped`, emit, and release the PipeWire pin so the idle daemon stops holding the device at the last track's rate.
+    async fn finish_at_queue_end(self: &Arc<Self>) {
+        use crate::daemon::state::PlaybackState;
+        info!("Reached end of queue");
+        {
+            let mut mpv = self.mpv.lock().await;
+            let _ = mpv.stop().await;
+        }
+        {
+            let mut state = self.state.write().await;
+            state.now_playing.state = PlaybackState::Stopped;
+            state.now_playing.position = 0.0;
+        }
+        self.emit_now_playing().await;
+        self.release_pipewire_rate().await;
+    }
+
+    /// Stop playback, unload the track, and broadcast the state change.
     pub async fn stop_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         {
@@ -320,6 +287,7 @@ impl DaemonCore {
         drop(state);
         self.emit_now_playing().await;
         self.emit_queue().await;
+        self.release_pipewire_rate().await;
         Ok(())
     }
 
@@ -338,6 +306,7 @@ impl DaemonCore {
             state.now_playing.position = 0.0;
         }
         self.emit_now_playing().await;
+        self.release_pipewire_rate().await;
         Ok(())
     }
 
@@ -362,8 +331,10 @@ impl DaemonCore {
             state.now_playing.channels = None;
         }
         self.emit_now_playing().await;
+        self.release_pipewire_rate().await;
     }
 
+    /// Seek to an absolute position in seconds.
     pub async fn seek(self: &Arc<Self>, pos: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         if let Err(e) = mpv.seek(pos).await {
@@ -376,12 +347,14 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Seek by a signed offset in seconds.
     pub async fn seek_relative(self: &Arc<Self>, offset: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.seek_relative(offset).await;
         Ok(())
     }
 
+    /// Set mpv volume as a percentage.
     pub async fn set_volume(self: &Arc<Self>, vol: i32) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.set_volume(vol).await;

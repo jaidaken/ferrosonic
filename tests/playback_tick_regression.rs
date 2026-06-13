@@ -25,20 +25,25 @@ async fn skip_path_does_not_mutate_state() {
 
 #[tokio::test]
 #[serial]
-async fn paused_path_runs_tail_updates_and_syncs_position() {
+async fn paused_path_preserves_saved_resume_position() {
     let td = TestDaemon::new().await;
+    // Pause stops mpv, so a stray mpv playhead (42.0 here) must NOT
+    // overwrite the saved resume point that resume seeks back to.
     td.fake_mpv.set_loaded_file("/fake/song-a.flac").await;
     td.fake_mpv.set_position(42.0).await;
     {
         let mut s = td.state.write().await;
         s.now_playing.state = PlaybackState::Paused;
         s.now_playing.duration = 100.0;
-        s.now_playing.position = 0.0;
+        s.now_playing.position = 12.5;
         s.queue.push(song("a", "A"));
         s.queue_position = Some(0);
     }
     td.core.update_playback_info().await;
-    assert!((td.state.read().await.now_playing.position - 42.0).abs() < 0.01);
+    assert!(
+        (td.state.read().await.now_playing.position - 12.5).abs() < 0.01,
+        "paused tick must keep the saved resume position, not sync mpv's playhead"
+    );
 }
 
 #[tokio::test]

@@ -260,16 +260,25 @@ impl DaemonCore {
 
     /// Emit a PositionTick event with mpv's current playhead.
     async fn tick_emit_position(self: &Arc<Self>) {
+        use crate::daemon::state::PlaybackState;
         let pos_opt = {
             let mut mpv = self.mpv.lock().await;
             mpv.get_time_pos().await.ok()
         };
         if let Some(position) = pos_opt {
-            {
+            // Only track position while Playing; a stopped-for-pause mpv reports 0 and would clobber the saved resume point.
+            let emit = {
                 let mut state = self.state.write().await;
-                state.now_playing.position = position;
+                if state.now_playing.state == PlaybackState::Playing {
+                    state.now_playing.position = position;
+                    true
+                } else {
+                    false
+                }
+            };
+            if emit {
+                self.emit(DaemonEvent::PositionTick(position));
             }
-            self.emit(DaemonEvent::PositionTick(position));
         }
     }
 

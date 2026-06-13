@@ -11,11 +11,13 @@ use ferrosonic::app::state::{
     new_shared_daemon_state, new_shared_daemon_state_with_restored_queue, SharedDaemonState,
 };
 use ferrosonic::audio::mpv::MpvController;
+use ferrosonic::audio::pipewire::PipeWireController;
 use ferrosonic::config::Config;
 use ferrosonic::daemon::DaemonCore;
 
 use super::fake_mpv::FakeMpv;
 use super::fake_subsonic::FakeSubsonic;
+use super::pw_recorder::RecordingPwRunner;
 
 pub struct TestDaemon {
     pub core: Arc<DaemonCore>,
@@ -28,14 +30,29 @@ pub struct TestDaemon {
 impl TestDaemon {
     pub async fn new() -> Self {
         let config_dir = tempfile::tempdir().expect("create config tempdir");
-        Self::build(config_dir, false).await
+        Self::build(config_dir, false, PipeWireController::new()).await
     }
 
     pub async fn new_with_config_dir(config_dir: TempDir) -> Self {
-        Self::build(config_dir, true).await
+        Self::build(config_dir, true, PipeWireController::new()).await
     }
 
-    async fn build(config_dir: TempDir, restore_queue: bool) -> Self {
+    /// Build a daemon whose `PipeWire` controller records every
+    /// `pw-metadata` call, so tests can assert the force-rate pin is
+    /// set on play and cleared on pause/stop.
+    pub async fn new_with_pw_recorder() -> (Self, RecordingPwRunner) {
+        let recorder = RecordingPwRunner::new();
+        let pipewire = PipeWireController::with_runner(Arc::new(recorder.clone()));
+        let config_dir = tempfile::tempdir().expect("create config tempdir");
+        let td = Self::build(config_dir, false, pipewire).await;
+        (td, recorder)
+    }
+
+    async fn build(
+        config_dir: TempDir,
+        restore_queue: bool,
+        pipewire: PipeWireController,
+    ) -> Self {
         std::env::set_var("FERROSONIC_CONFIG_DIR", config_dir.path());
 
         let fake_mpv = FakeMpv::start().await;
@@ -57,7 +74,7 @@ impl TestDaemon {
             .await
             .expect("connect to fake mpv socket");
 
-        let core = DaemonCore::new_with_mpv(state.clone(), &config, mpv);
+        let core = DaemonCore::new_with_mpv_and_pipewire(state.clone(), &config, mpv, pipewire);
 
         Self {
             core,

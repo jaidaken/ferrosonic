@@ -117,11 +117,17 @@ impl Drop for CancelSlotCleaner {
     }
 }
 
+/// Heart of the daemon: owns mpv, `PipeWire`, the Subsonic client, and state.
 pub struct DaemonCore {
+    /// Shared daemon state mirror.
     pub state: SharedDaemonState,
+    /// mpv process and IPC controller.
     pub mpv: Mutex<MpvController>,
+    /// `PipeWire` sample-rate controller.
     pub pipewire: Mutex<PipeWireController>,
+    /// Subsonic client; `None` until the server is configured.
     pub subsonic: RwLock<Option<SubsonicClient>>,
+    /// Broadcast channel feeding `DaemonEvent`s to subscribers.
     pub event_tx: broadcast::Sender<DaemonEvent>,
     /// Trailing-edge debounce: `try_send(())` on every queue change;
     /// the persistence task drains, sleeps briefly, writes once.
@@ -161,6 +167,7 @@ pub struct DaemonCore {
 }
 
 impl DaemonCore {
+    /// Build the core with a production mpv controller.
     pub fn new(state: SharedDaemonState, config: &Config) -> Arc<Self> {
         Self::new_with_mpv(state, config, MpvController::new())
     }
@@ -170,6 +177,16 @@ impl DaemonCore {
         state: SharedDaemonState,
         config: &Config,
         mpv: MpvController,
+    ) -> Arc<Self> {
+        Self::new_with_mpv_and_pipewire(state, config, mpv, PipeWireController::new())
+    }
+
+    /// Test seam: build a DaemonCore around pre-built mpv + `PipeWire` controllers, so tests can inject a recording `pw-metadata` runner and assert the force-rate pin is set on play and cleared on pause/stop.
+    pub fn new_with_mpv_and_pipewire(
+        state: SharedDaemonState,
+        config: &Config,
+        mpv: MpvController,
+        pipewire: PipeWireController,
     ) -> Arc<Self> {
         let subsonic = if config.is_configured() {
             match SubsonicClient::new(&config.base_url, &config.username, &config.password) {
@@ -189,7 +206,7 @@ impl DaemonCore {
         let core = Arc::new(Self {
             state,
             mpv: Mutex::new(mpv),
-            pipewire: Mutex::new(PipeWireController::new()),
+            pipewire: Mutex::new(pipewire),
             subsonic: RwLock::new(subsonic),
             event_tx,
             queue_save_tx,
@@ -258,6 +275,7 @@ impl DaemonCore {
         mpv.start().await.map_err(Into::into)
     }
 
+    /// Spawn the task that converts mpv end-file events into auto-advance.
     pub async fn spawn_mpv_event_listener(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         let core = self.clone();
         let mut rx = core.mpv.lock().await.subscribe_events();
@@ -303,12 +321,14 @@ impl DaemonCore {
         })
     }
 
+    /// Flag shutdown and terminate the mpv process.
     pub async fn quit_mpv(&self) {
         self.request_shutdown();
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.quit().await;
     }
 
+    /// Subscribe to the daemon's event broadcast.
     pub fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
         self.event_tx.subscribe()
     }
@@ -317,6 +337,7 @@ impl DaemonCore {
         let _ = self.event_tx.send(event);
     }
 
+    /// Push the current now-playing state to all subscribers.
     pub async fn broadcast_now_playing(&self) {
         self.emit_now_playing().await;
     }
@@ -772,7 +793,7 @@ impl DaemonCore {
     }
 
     /// Query mpv for sample rate / bit depth / format / channels and,
-    /// if available, write them into state, drive the PipeWire rate
+    /// if available, write them into state, drive the `PipeWire` rate
     /// switch, and emit `NowPlayingChanged`. Returns `true` when audio
     /// properties were populated this call.
     pub(super) async fn fetch_audio_properties(self: &Arc<Self>) -> bool {
@@ -806,6 +827,14 @@ impl DaemonCore {
         }
         self.emit_now_playing().await;
         true
+    }
+
+    /// Drop the `PipeWire` force-rate pin so the graph follows live streams again; call when playback leaves `Playing` (pause/stop) so an idle daemon stops holding the device at the track's rate.
+    pub(super) async fn release_pipewire_rate(self: &Arc<Self>) {
+        let mut pw = self.pipewire.lock().await;
+        if let Err(e) = pw.clear_forced_rate().await {
+            warn!("Failed to clear PipeWire forced rate: {}", e);
+        }
     }
 
 }
