@@ -59,3 +59,16 @@ fn settings_degrades_instead_of_blanking_in_a_short_area() {
         "settings page blanked in a short area instead of degrading:\n{frame}"
     );
 }
+
+#[test]
+fn settings_clips_rows_that_do_not_fit_instead_of_overflowing() {
+    let (daemon, mut client) = state(Page::Settings);
+    // Short area fits only the top rows; later rows must clip at the row
+    // limit, not overflow past the panel into the widgets below.
+    let frame = render(80, 14, &daemon, &mut client);
+    assert!(frame.contains("Theme"), "top rows must still render:\n{frame}");
+    assert!(
+        !frame.contains("Auto-continue"),
+        "rows past the row limit must clip, not overflow:\n{frame}"
+    );
+}
