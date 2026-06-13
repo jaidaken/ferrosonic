@@ -181,6 +181,24 @@ async fn mpris_set_volume_dispatches_set_volume_request() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mpris_handler_off_tokio_runtime_does_not_panic() {
+    // Regression for #27: zbus drives handlers off the tokio runtime, where
+    // the old fire()'s tokio::spawn panicked ("there is no reactor running").
+    let (player, rec, _) = build_player();
+    let player = Arc::new(player);
+    let p = player.clone();
+    let result = std::thread::spawn(move || futures::executor::block_on(p.next()))
+        .join()
+        .expect("MPRIS handler must not panic when invoked off the tokio runtime");
+    assert!(result.is_ok(), "off-runtime next() errored: {:?}", result);
+    drain_fire(&rec, 1).await;
+    assert!(
+        matches!(rec.requests().await.as_slice(), [DaemonRequest::Next]),
+        "off-runtime next() must still dispatch DaemonRequest::Next"
+    );
+}
+
 #[tokio::test]
 async fn mpris_position_reflects_daemon_state_in_microseconds() {
     let (player, _, daemon_state) = build_player();

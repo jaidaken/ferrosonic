@@ -47,10 +47,15 @@ pub struct MprisPlayer {
     daemon_state: SharedDaemonState,
     client_state: SharedClientState,
     client: Arc<dyn DaemonClient>,
+    /// Handle to the tokio runtime captured at construction. zbus invokes
+    /// these handlers on its own async-io executor, where `tokio::spawn`
+    /// panics with "no reactor"; spawning through this handle runs the
+    /// daemon request (which needs tokio I/O) on a real tokio worker.
+    rt: tokio::runtime::Handle,
 }
 
 impl MprisPlayer {
-    /// Bundle the shared state handles into a player.
+    /// Bundle the shared state handles into a player. Must be called from within a tokio runtime; captures its handle for dispatching D-Bus control requests.
     pub fn new(
         daemon_state: SharedDaemonState,
         client_state: SharedClientState,
@@ -60,7 +65,18 @@ impl MprisPlayer {
             daemon_state,
             client_state,
             client,
+            rt: tokio::runtime::Handle::current(),
         }
+    }
+
+    /// Dispatch a fire-and-forget daemon request onto the captured tokio runtime. Errors are logged, not propagated, since D-Bus media keys expect no reply.
+    fn fire(&self, req: DaemonRequest) {
+        let client = self.client.clone();
+        self.rt.spawn(async move {
+            if let Err(e) = client.request(req).await {
+                tracing::warn!("MPRIS request failed: {}", e);
+            }
+        });
     }
 
     async fn get_state(&self) -> (NowPlaying, Option<Child>, Config) {
@@ -130,55 +146,46 @@ impl RootInterface for MprisPlayer {
     }
 }
 
-/// Spawn the request — MPRIS handler futures must be `Send + Sync`
-/// but `DaemonClient::request` returns only `Send`.
-fn fire(client: &Arc<dyn DaemonClient>, req: DaemonRequest) {
-    let client = client.clone();
-    tokio::spawn(async move {
-        let _ = client.request(req).await;
-    });
-}
-
 impl PlayerInterface for MprisPlayer {
     async fn next(&self) -> fdo::Result<()> {
-        fire(&self.client, DaemonRequest::Next);
+        self.fire(DaemonRequest::Next);
         Ok(())
     }
 
     async fn previous(&self) -> fdo::Result<()> {
-        fire(&self.client, DaemonRequest::Previous);
+        self.fire(DaemonRequest::Previous);
         Ok(())
     }
 
     async fn pause(&self) -> fdo::Result<()> {
-        fire(&self.client, DaemonRequest::Pause);
+        self.fire(DaemonRequest::Pause);
         Ok(())
     }
 
     async fn play_pause(&self) -> fdo::Result<()> {
-        fire(&self.client, DaemonRequest::TogglePause);
+        self.fire(DaemonRequest::TogglePause);
         Ok(())
     }
 
     async fn stop(&self) -> fdo::Result<()> {
-        fire(&self.client, DaemonRequest::Stop);
+        self.fire(DaemonRequest::Stop);
         Ok(())
     }
 
     async fn play(&self) -> fdo::Result<()> {
-        fire(&self.client, DaemonRequest::Resume);
+        self.fire(DaemonRequest::Resume);
         Ok(())
     }
 
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
         let offset_secs = offset.as_micros() as f64 / 1_000_000.0;
-        fire(&self.client, DaemonRequest::SeekRelative(offset_secs));
+        self.fire(DaemonRequest::SeekRelative(offset_secs));
         Ok(())
     }
 
     async fn set_position(&self, _track_id: TrackId, position: Time) -> fdo::Result<()> {
         let position_secs = position.as_micros() as f64 / 1_000_000.0;
-        fire(&self.client, DaemonRequest::Seek(position_secs));
+        self.fire(DaemonRequest::Seek(position_secs));
         Ok(())
     }
 
@@ -261,7 +268,7 @@ impl PlayerInterface for MprisPlayer {
 
     async fn set_volume(&self, volume: Volume) -> Result<()> {
         let volume_int = (volume * 100.0) as i32;
-        fire(&self.client, DaemonRequest::SetVolume(volume_int));
+        self.fire(DaemonRequest::SetVolume(volume_int));
         Ok(())
     }
 
