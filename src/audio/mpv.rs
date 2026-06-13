@@ -80,6 +80,29 @@ pub struct MpvController {
     event_tx: tokio::sync::broadcast::Sender<MpvEventKind>,
 }
 
+/// Make `cmd`'s child receive `SIGKILL` when this process dies, even on a
+/// SIGKILL or crash where `Drop` never runs; without it an orphaned mpv keeps
+/// holding the audio device. Linux-only; a no-op elsewhere.
+pub fn set_die_with_parent(cmd: &mut Command) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: the closure runs in the forked child before exec; prctl,
+        // getppid and _exit are async-signal-safe.
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                if libc::getppid() == 1 {
+                    libc::_exit(1);
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = cmd;
+}
+
 impl MpvController {
     /// Construct against the default runtime-dir socket path.
     pub fn new() -> Self {
@@ -155,8 +178,8 @@ impl MpvController {
         let _ = std::fs::remove_file(&self.socket_path);
         info!("Starting MPV with socket: {}", self.socket_path.display());
 
-        let child = Command::new("mpv")
-            .arg("--idle")
+        let mut cmd = Command::new("mpv");
+        cmd.arg("--idle")
             .arg("--no-video")
             .arg("--no-terminal")
             .arg("--gapless-audio=yes")
@@ -174,9 +197,9 @@ impl MpvController {
             .arg("--cache-pause=no")
             .arg(format!("--input-ipc-server={}", self.socket_path.display()))
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(AudioError::MpvSpawn)?;
+            .stderr(Stdio::null());
+        set_die_with_parent(&mut cmd);
+        let child = cmd.spawn().map_err(AudioError::MpvSpawn)?;
         self.process = Some(child);
 
         for _ in 0..50 {
