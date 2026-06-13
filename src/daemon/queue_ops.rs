@@ -63,7 +63,7 @@ impl DaemonCore {
         }
         let song = state.queue.remove(from);
         state.queue.insert(to, song);
-        if let Some(cur) = state.queue_position {
+        let next_maybe_changed = if let Some(cur) = state.queue_position {
             let new_cur = if cur == from {
                 to
             } else if from < cur && to >= cur {
@@ -74,10 +74,17 @@ impl DaemonCore {
                 cur
             };
             state.queue_position = Some(new_cur);
-        }
+            // The preloaded next (queue[cur + 1]) only changes when the moved
+            // range touches the current track or the slot right after it.
+            !(from.max(to) < cur || from.min(to) > cur + 1)
+        } else {
+            false
+        };
         drop(state);
         self.emit_queue().await;
-        self.resync_gapless_preload().await;
+        if next_maybe_changed {
+            self.resync_gapless_preload().await;
+        }
     }
 
     /// Drain entries before `queue_position`. Returns count removed.

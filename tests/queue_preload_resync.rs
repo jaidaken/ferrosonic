@@ -196,6 +196,25 @@ async fn moving_a_track_into_next_slot_repreloads() {
 
 #[tokio::test]
 #[serial]
+async fn moving_far_from_the_playhead_does_not_repreload() {
+    let td = TestDaemon::new().await;
+    set_playing(&td, songs("t", 5), 0).await; // playing t-0, next t-1
+
+    td.core.move_queue_item(3, 2).await; // entirely past the next slot
+
+    let preloaded = td.fake_mpv.commands().await.iter().any(|c| {
+        c.first().and_then(Value::as_str) == Some("loadfile")
+            && c.get(2).and_then(Value::as_str) == Some("append")
+    });
+    assert!(
+        !preloaded,
+        "moving items away from the playhead must not re-preload; commands: {:?}",
+        td.fake_mpv.commands().await
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn shuffle_queue_repreloads_the_new_next() {
     let td = TestDaemon::new().await;
     set_playing(&td, songs("t", 4), 0).await;
