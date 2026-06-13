@@ -6,9 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::subsonic::models::{Album, Artist, Child, Playlist};
 
+/// Max artists whose album lists stay cached.
 pub const ALBUMS_CACHE_CAP: usize = 50;
+/// Max albums whose song lists stay cached.
 pub const ALBUM_SONGS_CACHE_CAP: usize = 100;
+/// Max playlists whose song lists stay cached.
 pub const PLAYLIST_SONGS_CACHE_CAP: usize = 50;
+/// Max cover art images held in memory.
 pub const COVER_ART_CACHE_CAP: usize = 64;
 
 /// True LRU cache: most-recently-used end is the back of `order`. The
@@ -21,6 +25,7 @@ pub struct LruCache<V> {
 }
 
 impl<V: Clone> LruCache<V> {
+    /// Empty cache.
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -125,23 +130,34 @@ pub fn cache_insert<V: Clone>(
     map.insert(key, val);
 }
 
+/// All library data fetched from the Subsonic server, with bounded caches.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LibraryCache {
+    /// Starred songs in server order.
     pub starred_songs: Vec<Child>,
     /// O(1) lookup index over `starred_songs`. Rebuild via
     /// `rebuild_starred_index` after mutating `starred_songs`.
     #[serde(default)]
     pub starred_ids: HashSet<String>,
+    /// Latest random-songs batch.
     pub random_songs: Vec<Child>,
+    /// Full artist index.
     pub artists: Vec<Artist>,
+    /// Album lists keyed by artist ID.
     pub albums_cache: HashMap<String, Vec<Album>>,
+    /// LRU order for `albums_cache`, least-recent first.
     #[serde(default)]
     pub albums_cache_order: VecDeque<String>,
+    /// Song lists keyed by album ID.
     pub album_songs_cache: HashMap<String, Vec<Child>>,
+    /// LRU order for `album_songs_cache`, least-recent first.
     #[serde(default)]
     pub album_songs_cache_order: VecDeque<String>,
+    /// All playlists visible to the account.
     pub playlists: Vec<Playlist>,
+    /// Song lists keyed by playlist ID.
     pub playlist_songs_cache: HashMap<String, Vec<Child>>,
+    /// LRU order for `playlist_songs_cache`, least-recent first.
     #[serde(default)]
     pub playlist_songs_cache_order: VecDeque<String>,
 }

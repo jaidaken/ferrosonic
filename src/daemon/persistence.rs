@@ -6,13 +6,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::subsonic::models::Child;
 
+/// On-disk snapshot of the play queue, restored at daemon boot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueueSnapshot {
+    /// Queue contents at save time.
     pub queue: Vec<Child>,
+    /// Playing position at save time, if any.
     pub position: Option<usize>,
 }
 
 impl QueueSnapshot {
+    /// Read the snapshot from disk; `None` when absent or corrupt.
     pub fn load() -> Option<Self> {
         let path = crate::config::paths::queue_file()?;
         let bytes = match std::fs::read(&path) {

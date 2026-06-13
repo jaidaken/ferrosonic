@@ -10,6 +10,7 @@ use crate::ipc::protocol::DaemonEvent;
 use crate::subsonic::SubsonicClient;
 
 impl DaemonCore {
+    /// Persist new credentials, swap in a fresh Subsonic client, refresh the library.
     pub async fn update_server_config(
         self: &Arc<Self>,
         base_url: &str,
@@ -53,6 +54,7 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Probe credentials without persisting; returns (ok, message).
     pub async fn test_server_connection(
         self: &Arc<Self>,
         base_url: &str,
@@ -68,6 +70,7 @@ impl DaemonCore {
         }
     }
 
+    /// Persist the theme choice and broadcast the config change.
     pub async fn set_theme(self: &Arc<Self>, name: &str) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -78,6 +81,7 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Persist the cava on/off toggle and broadcast the config change.
     pub async fn set_cava_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -99,6 +103,7 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Persist the auto-continue toggle and broadcast the config change.
     pub async fn set_auto_continue(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -135,6 +140,7 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Persist the cover art toggle and broadcast the config change.
     pub async fn set_cover_art_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -145,6 +151,7 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Persist the cover art size, clamped to 8-24 rows.
     pub async fn set_cover_art_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
         let clamped = size.clamp(8, 24);
         {
@@ -156,6 +163,7 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Persist the cava size, clamped to 10-80 rows.
     pub async fn set_cava_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
         let clamped = size.clamp(10, 80);
         {

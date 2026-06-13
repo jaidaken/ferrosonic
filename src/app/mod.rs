@@ -46,11 +46,14 @@ pub use lifecycle::{
 };
 pub use state::*;
 
+/// The TUI application: daemon client, UI state, cava plumbing.
 pub struct App {
     /// `Some` in-process, `None` when talking to a remote daemon.
     pub(crate) core: Option<Arc<DaemonCore>>,
     pub(crate) client: Arc<dyn DaemonClient>,
+    /// Mirror of the daemon state, updated by events.
     pub daemon_state: SharedDaemonState,
+    /// Client-local UI state.
     pub client_state: SharedClientState,
     pub(crate) cava_process: Option<std::process::Child>,
     pub(crate) cava_pty_master: Option<std::fs::File>,
@@ -64,6 +67,7 @@ pub struct App {
 }
 
 impl App {
+    /// Standalone-mode constructor: daemon core runs in-process.
     pub fn new(config: Config) -> Self {
         let daemon_state = new_shared_daemon_state_with_restored_queue(config.clone());
         let client_state = new_shared_client_state(&config);
@@ -172,6 +176,7 @@ impl App {
         }
     }
 
+    /// Run the TUI event loop until quit.
     pub async fn run(&mut self) -> Result<(), Error> {
         self.spawn_signal_quit();
         let _term_guard = TerminalGuard::new_crossterm();
@@ -297,6 +302,7 @@ impl App {
         }
     }
 
+    /// Prefetch cover art for the current song so first render has it.
     pub async fn seed_cover_art(&self) {
         let (id, enabled) = {
             let ds = self.daemon_state.read().await;
@@ -389,6 +395,7 @@ impl App {
         });
     }
 
+    /// Request a snapshot plus initial library refreshes from the daemon.
     pub async fn load_initial_data(&mut self) {
         {
             let mut cs = self.client_state.write().await;

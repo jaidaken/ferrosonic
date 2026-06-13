@@ -8,6 +8,7 @@ use crate::daemon::core::DaemonCore;
 use crate::ipc::protocol::DaemonEvent;
 
 impl DaemonCore {
+    /// Fetch an album's songs into the cache; empty Vec on failure.
     pub async fn load_album_songs(
         self: &Arc<Self>,
         album_id: &str,
@@ -45,6 +46,7 @@ impl DaemonCore {
         }
     }
 
+    /// Server-side search; empty results on failure or no server.
     pub async fn search(
         self: &Arc<Self>,
         query: &str,
@@ -67,6 +69,7 @@ impl DaemonCore {
         }
     }
 
+    /// Fetch a playlist's songs into the cache; empty Vec on failure.
     pub async fn load_playlist_songs(
         self: &Arc<Self>,
         playlist_id: &str,

@@ -9,30 +9,51 @@ use tracing::{error, info, warn};
 
 use crate::config::paths;
 
+/// Resolved color palette used by every widget.
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeColors {
+    /// Primary UI accent, used for titles and key labels.
     pub primary: Color,
+    /// Secondary accent for supporting text.
     pub secondary: Color,
+    /// Accent for interactive highlights.
     pub accent: Color,
+    /// Color for artist names.
     pub artist: Color,
+    /// Color for album titles.
     pub album: Color,
+    /// Color for song titles.
     pub song: Color,
+    /// Dimmed color for de-emphasized text.
     pub muted: Color,
+    /// Background of the selected row.
     pub highlight_bg: Color,
+    /// Foreground of the selected row.
     pub highlight_fg: Color,
+    /// Color for success notifications.
     pub success: Color,
+    /// Color for error notifications.
     pub error: Color,
+    /// Color marking the currently playing song.
     pub playing: Color,
+    /// Color marking already-played queue entries.
     pub played: Color,
+    /// Border color of the focused pane.
     pub border_focused: Color,
+    /// Border color of unfocused panes.
     pub border_unfocused: Color,
 }
 
+/// A named theme: palette plus cava gradient definitions.
 #[derive(Debug, Clone)]
 pub struct ThemeData {
+    /// Theme name shown in settings.
     pub name: String,
+    /// Widget color palette.
     pub colors: ThemeColors,
+    /// Eight-stop vertical gradient for the cava visualizer.
     pub cava_gradient: [String; 8],
+    /// Eight-stop horizontal gradient for the cava visualizer.
     pub cava_horizontal_gradient: [String; 8],
 }
 
@@ -139,6 +160,7 @@ impl ThemeData {
         })
     }
 
+    /// The built-in fallback theme.
     pub fn default_theme() -> Self {
         ThemeData {
             name: "Default".to_string(),
@@ -183,6 +205,7 @@ impl ThemeData {
     }
 }
 
+/// All themes: the built-in default plus valid TOML files from the themes dir.
 pub fn load_themes() -> Vec<ThemeData> {
     let mut themes = vec![ThemeData::default_theme()];
 

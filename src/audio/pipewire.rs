@@ -13,10 +13,13 @@ use crate::error::AudioError;
 /// uses `PwMetadataCommand`; tests use a fake that returns scripted output.
 #[async_trait]
 pub trait CommandRunner: Send + Sync {
+    /// Run `pw-metadata` with `args` asynchronously.
     async fn run(&self, args: &[&str]) -> Result<Output, AudioError>;
+    /// Run `pw-metadata` with `args`, blocking the calling thread.
     fn run_blocking(&self, args: &[&str]) -> Result<Output, AudioError>;
 }
 
+/// Production [`CommandRunner`] shelling out to `pw-metadata`.
 pub struct PwMetadataCommand;
 
 #[async_trait]
@@ -37,6 +40,7 @@ impl CommandRunner for PwMetadataCommand {
     }
 }
 
+/// Manages the `PipeWire` `clock.force-rate` setting via `pw-metadata`.
 pub struct PipeWireController {
     original_rate: Option<u32>,
     current_rate: Option<u32>,
@@ -44,6 +48,7 @@ pub struct PipeWireController {
 }
 
 impl PipeWireController {
+    /// Construct with the production `pw-metadata` runner.
     pub fn new() -> Self {
         Self::with_runner(Arc::new(PwMetadataCommand))
     }
@@ -95,14 +100,17 @@ impl PipeWireController {
         Ok(parse_force_rate_from_output(&stdout))
     }
 
+    /// Rate this controller last set, if any.
     pub fn get_current_rate(&self) -> Option<u32> {
         self.current_rate
     }
 
+    /// Force-rate value probed at construction, restored on drop.
     pub fn get_original_rate(&self) -> Option<u32> {
         self.original_rate
     }
 
+    /// Pin the graph to `rate` Hz via `clock.force-rate`.
     pub async fn set_rate(&mut self, rate: u32) -> Result<(), AudioError> {
         // No cache short-circuit: external pw-metadata changes would
         // make the cache stale and bit-perfect would silently break.
@@ -124,6 +132,7 @@ impl PipeWireController {
     }
 
 
+    /// Release the rate pin so the graph follows streams again.
     pub async fn clear_forced_rate(&mut self) -> Result<(), AudioError> {
         info!("Clearing PipeWire forced sample rate");
         let output = self

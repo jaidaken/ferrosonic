@@ -8,18 +8,22 @@ pub fn config_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|p| p.join("ferrosonic"))
 }
 
+/// Path of `config.toml` under the XDG config dir.
 pub fn config_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("config.toml"))
 }
 
+/// Path of the user themes directory.
 pub fn themes_dir() -> Option<PathBuf> {
     config_dir().map(|p| p.join("themes"))
 }
 
+/// Path of the daemon log file.
 pub fn log_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("ferrosonic.log"))
 }
 
+/// Path of the mpv IPC socket under the runtime dir.
 pub fn mpv_socket_path() -> PathBuf {
     // Prefer $XDG_RUNTIME_DIR (per-user, mode 0700) when present;
     // otherwise UID-scope the /tmp path so two users on the same host
@@ -34,10 +38,12 @@ pub fn mpv_socket_path() -> PathBuf {
     std::env::temp_dir().join(format!("ferrosonic-mpv-{}.sock", uid))
 }
 
+/// Path of the persisted queue snapshot.
 pub fn queue_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("queue.json"))
 }
 
+/// Create the config directory if missing and return it.
 pub fn ensure_config_dir() -> std::io::Result<PathBuf> {
     let dir = config_dir().ok_or_else(|| {
         std::io::Error::new(

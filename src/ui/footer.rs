@@ -11,6 +11,7 @@ use ratatui::{
 use crate::app::state::{Notification, Page};
 use crate::ui::theme::ThemeColors;
 
+/// Footer bar widget: shortcuts, sample rate, repeat mode, notifications.
 pub struct Footer<'a> {
     page: Page,
     sample_rate: Option<u32>,
@@ -20,6 +21,7 @@ pub struct Footer<'a> {
 }
 
 impl<'a> Footer<'a> {
+    /// Footer for `page` with the theme palette.
     pub fn new(page: Page, colors: ThemeColors) -> Self {
         Self {
             page,
@@ -30,16 +32,19 @@ impl<'a> Footer<'a> {
         }
     }
 
+    /// Builder: show the active sample rate.
     pub fn sample_rate(mut self, rate: Option<u32>) -> Self {
         self.sample_rate = rate;
         self
     }
 
+    /// Builder: show a transient notification.
     pub fn notification(mut self, notification: Option<&'a Notification>) -> Self {
         self.notification = notification;
         self
     }
 
+    /// Builder: show the repeat mode indicator.
     pub fn repeat_mode(mut self, mode: crate::config::RepeatMode) -> Self {
         self.repeat_mode = mode;
         self

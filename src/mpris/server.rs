@@ -20,6 +20,7 @@ use crate::subsonic::models::Child;
 const API_VERSION: &str = "1.16.1";
 const CLIENT_NAME: &str = "ferrosonic";
 
+/// Authenticated getCoverArt URL for MPRIS metadata; None when unconfigured.
 pub fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String> {
     if config.base_url.is_empty() || cover_art_id.is_empty() {
         return None;
@@ -41,6 +42,7 @@ pub fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String
 
 const PLAYER_NAME: &str = "ferrosonic";
 
+/// MPRIS2 player implementation bridging D-Bus to the daemon client.
 pub struct MprisPlayer {
     daemon_state: SharedDaemonState,
     client_state: SharedClientState,
@@ -48,6 +50,7 @@ pub struct MprisPlayer {
 }
 
 impl MprisPlayer {
+    /// Bundle the shared state handles into a player.
     pub fn new(
         daemon_state: SharedDaemonState,
         client_state: SharedClientState,
@@ -308,6 +311,7 @@ impl PlayerInterface for MprisPlayer {
     }
 }
 
+/// Register the MPRIS2 player on the session bus.
 pub async fn start_mpris_server(
     daemon_state: SharedDaemonState,
     client_state: SharedClientState,
@@ -329,9 +333,13 @@ pub async fn start_mpris_server(
 /// Extracted so tests can verify the construction without D-Bus.
 #[derive(Debug)]
 pub struct MprisPropertySnapshot {
+    /// Current playback status.
     pub playback: PlaybackStatus,
+    /// Whether a next track exists.
     pub can_go_next: bool,
+    /// Whether a previous track exists.
     pub can_go_prev: bool,
+    /// Track metadata, when a song is loaded.
     pub metadata: Option<Metadata>,
 }
 

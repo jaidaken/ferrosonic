@@ -1,3 +1,5 @@
+//! Now-playing strip widget with progress bar and cover art.
+
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
@@ -9,6 +11,7 @@ use ratatui::{
 use crate::daemon::state::NowPlaying;
 use crate::ui::theme::ThemeColors;
 
+/// Now-playing strip: title, artist, format info, progress bar.
 pub struct NowPlayingWidget<'a> {
     now_playing: &'a NowPlaying,
     focused: bool,
@@ -20,6 +23,7 @@ pub struct NowPlayingWidget<'a> {
 }
 
 impl<'a> NowPlayingWidget<'a> {
+    /// Widget over the current now-playing state.
     pub fn new(now_playing: &'a NowPlaying, colors: ThemeColors) -> Self {
         Self {
             now_playing,
@@ -29,11 +33,13 @@ impl<'a> NowPlayingWidget<'a> {
         }
     }
 
+    /// Builder: mark the pane focused for border styling.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
     }
 
+    /// Builder: reserve columns on the left for cover art.
     pub fn art_reserved_cols(mut self, cols: u16) -> Self {
         self.art_reserved_cols = cols;
         self
@@ -228,6 +234,7 @@ fn render_info(
     }
 }
 
+/// Paint the playback progress bar into `area`.
 pub fn render_progress_bar(
     area: Rect,
     buf: &mut Buffer,

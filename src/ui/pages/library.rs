@@ -13,10 +13,25 @@ use crate::ui::styled_lines::get_song_without_artist_line;
 use crate::ui::theme::ThemeColors;
 
 #[derive(Clone)]
+/// One row of the library tree.
 pub enum TreeItem {
-    Artist { artist: Artist, expanded: bool },
-    Album { album: Album },
-    Song { song: Child },
+    /// Artist row.
+    Artist {
+        /// The artist shown.
+        artist: Artist,
+        /// Whether its albums are expanded.
+        expanded: bool,
+    },
+    /// Album row under an expanded artist.
+    Album {
+        /// The album shown.
+        album: Album,
+    },
+    /// Song row in search results.
+    Song {
+        /// The song shown.
+        song: Child,
+    },
 }
 
 /// Search-results path takes over when the filter is non-empty and a
@@ -88,7 +103,8 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
     items
 }
 
-pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
+/// Render the Library page.
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     let chunks =
@@ -98,7 +114,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
-fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
+fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let artists = &state.client.artists;
 
     let focused = artists.focus == 0;
@@ -141,7 +157,7 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
 
     let tree_items = build_tree_items(state);
 
-    let items: Vec<ListItem> = tree_items
+    let items: Vec<ListItem<'_>> = tree_items
         .iter()
         .enumerate()
         .map(|(i, item)| {
@@ -227,7 +243,7 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: 
     state.client.artists.tree_scroll_offset = list_state.offset();
 }
 
-fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
+fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let artists = &state.client.artists;
 
     let focused = artists.focus == 1;
@@ -265,7 +281,7 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
         .iter()
         .any(|s| s.disc_number.map(|d| d > 1).unwrap_or(false));
 
-    let items: Vec<ListItem> = artists
+    let items: Vec<ListItem<'_>> = artists
         .songs
         .iter()
         .enumerate()

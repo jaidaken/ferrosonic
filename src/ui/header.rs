@@ -1,3 +1,5 @@
+//! Header bar: page tabs and transport buttons.
+
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
@@ -10,6 +12,7 @@ use crate::app::state::Page;
 use crate::daemon::state::PlaybackState;
 use crate::ui::theme::ThemeColors;
 
+/// Header bar widget: page tabs plus transport buttons.
 pub struct Header {
     current_page: Page,
     playback_state: PlaybackState,
@@ -17,6 +20,7 @@ pub struct Header {
 }
 
 impl Header {
+    /// Header for the current page and playback state.
     pub fn new(current_page: Page, playback_state: PlaybackState, colors: ThemeColors) -> Self {
         Self {
             current_page,
@@ -34,7 +38,7 @@ impl Widget for Header {
 
         let chunks = Layout::horizontal([Constraint::Min(40), Constraint::Length(30)]).split(area);
 
-        let titles: Vec<Line> = [
+        let titles: Vec<Line<'_>> = [
             Page::Library,
             Page::Queue,
             Page::QuickPlay,
@@ -90,16 +94,24 @@ impl Widget for Header {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Clickable region of the header, resolved from mouse coordinates.
 pub enum HeaderRegion {
+    /// A page tab.
     Tab(Page),
+    /// Previous-track button.
     PrevButton,
+    /// Play button.
     PlayButton,
+    /// Pause button.
     PauseButton,
+    /// Stop button.
     StopButton,
+    /// Next-track button.
     NextButton,
 }
 
 impl Header {
+    /// Map a click position to its header region, if any.
     pub fn region_at(area: Rect, x: u16, _y: u16) -> Option<HeaderRegion> {
         let chunks = Layout::horizontal([Constraint::Min(40), Constraint::Length(30)]).split(area);
 

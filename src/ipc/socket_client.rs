@@ -22,6 +22,7 @@ const WRITER_QUEUE_DEPTH: usize = 256;
 
 type PendingMap = Mutex<HashMap<u64, oneshot::Sender<Result<DaemonResponse, IpcError>>>>;
 
+/// `DaemonClient` over the Unix socket to a separate `ferrosonicd` process.
 pub struct SocketClient {
     next_id: AtomicU64,
     writer_tx: mpsc::Sender<Frame>,
@@ -30,6 +31,7 @@ pub struct SocketClient {
 }
 
 impl SocketClient {
+    /// Connect to the daemon socket and spawn the reader/writer tasks.
     pub async fn connect(path: &Path) -> Result<Arc<Self>, IpcError> {
         let stream = UnixStream::connect(path).await?;
         let (read_half, mut write_half) = stream.into_split();

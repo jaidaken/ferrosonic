@@ -9,11 +9,13 @@ use ratatui::{
 
 use crate::app::state::{CavaColor, CavaRow};
 
+/// Widget painting the parsed cava frame into the buffer.
 pub struct CavaWidget<'a> {
     screen: &'a [CavaRow],
 }
 
 impl<'a> CavaWidget<'a> {
+    /// Widget over the latest parsed cava rows.
     pub fn new(screen: &'a [CavaRow]) -> Self {
         Self { screen }
     }

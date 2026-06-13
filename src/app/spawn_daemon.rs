@@ -66,6 +66,7 @@ pub fn spawn_daemon() -> std::io::Result<u32> {
     Ok(pid)
 }
 
+/// Spawn ferrosonicd detached and wait until its socket accepts connections.
 pub async fn spawn_and_wait(socket: &Path, timeout: std::time::Duration) -> std::io::Result<()> {
     let pid = spawn_daemon()?;
     info!(

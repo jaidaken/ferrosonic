@@ -14,20 +14,24 @@ use crate::ipc::protocol::{DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMo
 /// subscription via `subscribe`.
 #[async_trait]
 pub trait DaemonClient: Send + Sync {
+    /// Send one command and await its reply.
     async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError>;
     /// Slow consumers may see `RecvError::Lagged`; resubscribe in that case.
     fn subscribe(&self) -> broadcast::Receiver<DaemonEvent>;
 }
 
+/// `DaemonClient` that calls a same-process `DaemonCore` directly (standalone mode).
 pub struct InProcessClient {
     core: Arc<DaemonCore>,
 }
 
 impl InProcessClient {
+    /// Wrap an existing core.
     pub fn new(core: Arc<DaemonCore>) -> Self {
         Self { core }
     }
 
+    /// Borrow the wrapped core.
     pub fn core(&self) -> &Arc<DaemonCore> {
         &self.core
     }

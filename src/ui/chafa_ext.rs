@@ -161,14 +161,19 @@ fn load() -> Option<ChafaLib> {
     }
 }
 
+/// Whether the chafa CLI is on PATH.
 pub fn is_available() -> bool {
     CHAFA.get_or_init(load).is_some()
 }
 
 #[derive(Clone)]
+/// One terminal cell of chafa output.
 pub struct EncodedCell {
+    /// Glyph for the cell.
     pub ch: char,
+    /// Foreground color.
     pub fg: Color,
+    /// Background color.
     pub bg: Color,
 }
 

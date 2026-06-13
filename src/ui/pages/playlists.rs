@@ -11,7 +11,8 @@ use ratatui::{
 use crate::app::state::AppState;
 use crate::ui::theme::ThemeColors;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
+/// Render the Playlists page.
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     let chunks =
@@ -21,7 +22,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
-fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
+fn render_playlists(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     // `playlists` is the per-page UI state (selection, focus, scroll).
     // `library_playlists` is the actual list, owned by the daemon.
     let playlists = &state.client.playlists;
@@ -47,7 +48,7 @@ fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, col
         return;
     }
 
-    let items: Vec<ListItem> = library_playlists
+    let items: Vec<ListItem<'_>> = library_playlists
         .iter()
         .enumerate()
         .map(|(i, playlist)| {
@@ -107,7 +108,7 @@ fn render_playlists(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, col
     state.client.playlists.playlist_scroll_offset = list_state.offset();
 }
 
-fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
+fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let playlists = &state.client.playlists;
 
     let focused = playlists.focus == 1;
@@ -136,7 +137,7 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
         return;
     }
 
-    let items: Vec<ListItem> = playlists
+    let items: Vec<ListItem<'_>> = playlists
         .songs
         .iter()
         .enumerate()

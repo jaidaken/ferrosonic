@@ -10,7 +10,8 @@ use ratatui::{
 use crate::app::state::AppState;
 use crate::ui::theme::ThemeColors;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
+/// Render the Server credentials page.
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     let block = Block::default()
@@ -102,7 +103,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
 }
 
 fn render_field(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     area: Rect,
     label: &str,
     value: &str,
@@ -152,7 +153,7 @@ fn render_field(
     frame.render_widget(field, field_area);
 }
 
-fn render_button(frame: &mut Frame, area: Rect, label: &str, selected: bool, colors: &ThemeColors) {
+fn render_button(frame: &mut Frame<'_>, area: Rect, label: &str, selected: bool, colors: &ThemeColors) {
     let style = if selected {
         Style::default()
             .fg(colors.highlight_fg)

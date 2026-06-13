@@ -12,7 +12,8 @@ use ratatui::{
 use crate::app::state::AppState;
 use crate::ui::theme::ThemeColors;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &AppState<'_>) {
+/// Render the Settings page.
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     let block = Block::default()

@@ -1,3 +1,5 @@
+//! cava subprocess: spawn, drain, config generation.
+
 use std::os::unix::io::FromRawFd;
 
 use tracing::{error, info};
@@ -5,6 +7,7 @@ use tracing::{error, info};
 use super::*;
 
 impl App {
+    /// Spawn cava on a pty sized to the terminal, replacing any running instance.
     pub fn start_cava(
         &mut self,
         cava_gradient: &[String; 8],
@@ -105,6 +108,7 @@ impl App {
         }
     }
 
+    /// Kill the cava subprocess and drop its pty state.
     pub fn stop_cava(&mut self) {
         if let Some(ref mut child) = self.cava_process {
             let _ = child.kill();
@@ -143,12 +147,16 @@ impl App {
     }
 }
 
+/// Result of one non-blocking drain of the cava pty.
 #[derive(Debug, PartialEq, Eq)]
 pub enum DrainOutcome {
+    /// Fresh bytes were parsed; the screen changed.
     Bytes,
+    /// Nothing available; normal between frames.
     NoData,
     /// Slave end closed; the cava subprocess has exited.
     Eof,
+    /// Unrecoverable read error; caller resets cava state.
     HardError,
 }
 
@@ -242,6 +250,7 @@ fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
     }
 }
 
+/// Render a cava config with the theme's vertical and horizontal gradients.
 pub fn generate_cava_config(g: &[String; 8], h: &[String; 8]) -> String {
     format!(
         "\

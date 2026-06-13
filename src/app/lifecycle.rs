@@ -50,11 +50,13 @@ pub async fn wait_for_unix_quit_signal() {
     }
 }
 
+/// RAII guard restoring the terminal (raw mode, alt screen, mouse) on drop.
 pub struct TerminalGuard {
     cleanup: Option<Box<dyn FnOnce() + Send>>,
 }
 
 impl TerminalGuard {
+    /// Guard that undoes crossterm raw mode, alternate screen, and mouse capture.
     pub fn new_crossterm() -> Self {
         Self {
             cleanup: Some(Box::new(|| {

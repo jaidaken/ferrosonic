@@ -1,3 +1,6 @@
+//! Persisted TOML configuration: load/save, password resolution, repeat mode.
+
+/// Well-known config and data directory paths.
 pub mod paths;
 
 use serde::{Deserialize, Serialize};
@@ -26,11 +29,14 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "CoverArtSize",
 ];
 
+/// User configuration, persisted as TOML at the path from [`paths::config_file`].
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Config {
+    /// Subsonic server base URL, scheme included.
     #[serde(rename = "BaseURL", default)]
     pub base_url: String,
 
+    /// Subsonic account username.
     #[serde(rename = "Username", default)]
     pub username: String,
 
@@ -38,6 +44,7 @@ pub struct Config {
     #[serde(rename = "Password", default)]
     pub password: Secret,
 
+    /// Path of a file holding the password; takes priority over the inline value.
     #[serde(
         rename = "PasswordFile",
         default,
@@ -45,12 +52,15 @@ pub struct Config {
     )]
     pub password_file: Option<String>,
 
+    /// Active theme name; empty selects the built-in default.
     #[serde(rename = "Theme", default)]
     pub theme: String,
 
+    /// Whether the cava visualizer is enabled.
     #[serde(rename = "Cava", default)]
     pub cava: bool,
 
+    /// Cava visualizer height in rows.
     #[serde(rename = "CavaSize", default = "Config::default_cava_size")]
     pub cava_size: u8,
 
@@ -58,12 +68,15 @@ pub struct Config {
     #[serde(rename = "Daemon", default = "Config::default_daemon")]
     pub daemon: bool,
 
+    /// Auto-continue with random songs when the queue ends.
     #[serde(rename = "AutoContinue", default)]
     pub auto_continue: bool,
 
+    /// Queue repeat mode.
     #[serde(rename = "RepeatMode", default)]
     pub repeat_mode: RepeatMode,
 
+    /// Whether cover art rendering is enabled.
     #[serde(rename = "CoverArt", default)]
     pub cover_art: bool,
 
@@ -143,15 +156,20 @@ impl Config {
     }
 }
 
+/// Queue repeat behavior.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepeatMode {
+    /// Stop at the end of the queue.
     #[default]
     Off,
+    /// Repeat the current track.
     One,
+    /// Wrap to the start at the end of the queue.
     All,
 }
 
 impl RepeatMode {
+    /// Lowercase label shown in the footer.
     pub fn label(self) -> &'static str {
         match self {
             RepeatMode::Off => "off",
@@ -272,10 +290,12 @@ impl Config {
         16
     }
 
+    /// Alias for [`Config::default`].
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Load from the default config path, falling back to defaults when absent.
     pub fn load_default() -> Result<Self, ConfigError> {
         let path = paths::config_file().ok_or_else(|| ConfigError::NotFound {
             path: "default config location".to_string(),
@@ -375,6 +395,7 @@ impl Config {
         }
     }
 
+    /// Save to the default config path.
     pub fn save_default(&self) -> Result<(), ConfigError> {
         let path = paths::config_file().ok_or_else(|| ConfigError::NotFound {
             path: "default config location".to_string(),
@@ -419,6 +440,7 @@ impl Config {
         !self.base_url.is_empty() && !self.username.is_empty() && !self.password.is_empty()
     }
 
+    /// The resolved password in plain text.
     pub fn password_str(&self) -> &str {
         self.password.reveal()
     }

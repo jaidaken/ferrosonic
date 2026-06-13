@@ -39,6 +39,7 @@ impl App {
         }
     }
 
+    /// Route one key event to the active page handler.
     pub async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;

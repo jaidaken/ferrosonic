@@ -1,3 +1,5 @@
+//! Subsonic token authentication (salt + md5 token).
+
 use rand::Rng;
 use zeroize::Zeroize;
 

@@ -1,3 +1,5 @@
+//! Styled song-row line builders shared by pages.
+
 use crate::subsonic::models::Child;
 use crate::ui::theme::ThemeColors;
 
@@ -6,6 +8,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
+/// Styled row for a song with its artist name shown.
 pub fn get_song_with_artist_line<'a>(
     song: &Child,
     is_selected: bool,
@@ -40,6 +43,7 @@ pub fn get_song_with_artist_line<'a>(
     line
 }
 
+/// Styled row for a song without the artist name.
 pub fn get_song_without_artist_line<'a>(
     song: &Child,
     is_selected: bool,

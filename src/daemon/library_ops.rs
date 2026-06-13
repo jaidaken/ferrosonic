@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::ipc::protocol::DaemonEvent;
 
 impl DaemonCore {
+    /// Re-fetch starred songs and broadcast the new list.
     pub async fn refresh_starred(self: &Arc<Self>) {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
@@ -38,6 +39,7 @@ impl DaemonCore {
         }
     }
 
+    /// Re-fetch the random-songs batch and broadcast the new list.
     pub async fn refresh_random(self: &Arc<Self>) {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
@@ -65,6 +67,7 @@ impl DaemonCore {
         }
     }
 
+    /// Re-fetch the artist index and broadcast the new list.
     pub async fn refresh_artists(self: &Arc<Self>) {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
@@ -94,6 +97,7 @@ impl DaemonCore {
         }
     }
 
+    /// Re-fetch the playlist list and broadcast the new list.
     pub async fn refresh_playlists(self: &Arc<Self>) {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
@@ -119,6 +123,7 @@ impl DaemonCore {
         }
     }
 
+    /// Star or unstar `song_id`; returns the new starred state.
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Err(Error::Subsonic(crate::error::SubsonicError::Api {
@@ -178,6 +183,7 @@ impl DaemonCore {
         Ok(new_starred)
     }
 
+    /// Fetch one artist's albums into the cache and broadcast them.
     pub async fn load_artist(self: &Arc<Self>, artist_id: &str) {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;

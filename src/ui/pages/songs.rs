@@ -1,3 +1,5 @@
+//! Quick Play page renderer.
+
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
@@ -12,7 +14,8 @@ use crate::ui::styled_lines::get_song_with_artist_line;
 use crate::ui::theme::ThemeColors;
 use strum::IntoEnumIterator;
 
-pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
+/// Render the Quick Play page.
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
     let chunks = Layout::horizontal([Constraint::Length(22), Constraint::Min(0)]).split(area);
@@ -21,7 +24,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut AppState<'_>) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
-fn render_options(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
+fn render_options(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let focus = state.client.songs.focus;
     let selected_option = state
         .client
@@ -72,7 +75,7 @@ fn render_options(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, color
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
+fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let songs_ui = &state.client.songs;
     // Resolve which library list this page is showing (Starred or Random).
     let library_songs: Vec<crate::subsonic::models::Child> = state.songs_list().to_vec();
@@ -89,7 +92,7 @@ fn render_songs(frame: &mut Frame, area: Rect, state: &mut AppState<'_>, colors:
         .title("Songs")
         .border_style(border_style);
 
-    let items: Vec<ListItem> = library_songs
+    let items: Vec<ListItem<'_>> = library_songs
         .iter()
         .enumerate()
         .map(|(i, song)| {

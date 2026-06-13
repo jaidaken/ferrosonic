@@ -6,16 +6,23 @@ use crate::config::Config;
 use crate::daemon::library::LibraryCache;
 use crate::subsonic::models::Child;
 
+/// Complete daemon-side state, snapshotted to clients over IPC.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct DaemonState {
+    /// Persisted configuration.
     pub config: Config,
+    /// Current track and playback status.
     pub now_playing: NowPlaying,
+    /// Play queue, history included.
     pub queue: Vec<Child>,
+    /// Index of the playing entry in `queue`, if any.
     pub queue_position: Option<usize>,
+    /// Cached library data fetched from the server.
     pub library: LibraryCache,
 }
 
 impl DaemonState {
+    /// Fresh state carrying `config`, everything else default.
     pub fn new(config: Config) -> Self {
         Self {
             config,
@@ -23,27 +30,40 @@ impl DaemonState {
         }
     }
 
+    /// Song at the current queue position, if any.
     pub fn current_song(&self) -> Option<&Child> {
         self.queue_position.and_then(|pos| self.queue.get(pos))
     }
 }
 
+/// Coarse playback status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PlaybackState {
+    /// Nothing loaded.
     #[default]
     Stopped,
+    /// Audio is playing.
     Playing,
+    /// A track is loaded but paused.
     Paused,
 }
 
+/// Current track plus live playback properties.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NowPlaying {
+    /// Loaded song, if any.
     pub song: Option<Child>,
+    /// Playing / paused / stopped.
     pub state: PlaybackState,
+    /// Playback position in seconds.
     pub position: f64,
+    /// Track duration in seconds.
     pub duration: f64,
+    /// Decoded sample rate in Hz.
     pub sample_rate: Option<u32>,
+    /// Decoded bit depth.
     pub bit_depth: Option<u32>,
+    /// Raw mpv audio format string.
     pub format: Option<String>,
     /// "Stereo", "Mono", "5.1ch", etc.
     pub channels: Option<String>,

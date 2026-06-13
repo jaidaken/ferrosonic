@@ -13,6 +13,7 @@ use tokio::net::UnixStream;
 const SOCKET_FILENAME: &str = "ferrosonicd.sock";
 const SUBDIR: &str = "ferrosonic";
 
+/// Resolve the daemon socket path per the order documented above.
 pub fn socket_path() -> PathBuf {
     if let Ok(custom) = std::env::var("FERROSONIC_SOCK") {
         return PathBuf::from(custom);

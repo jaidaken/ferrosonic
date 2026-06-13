@@ -5,9 +5,11 @@ use std::fmt;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::Zeroize;
 
+/// Credential bytes that zeroize on drop and mask in Debug/Serialize.
 pub struct Secret(Box<[u8]>);
 
 impl Secret {
+    /// Empty secret.
     pub fn new() -> Self {
         Self(Box::from([]))
     }
@@ -36,18 +38,22 @@ impl Secret {
         Self(b.into_boxed_slice())
     }
 
+    /// The secret as a str; empty string when not valid UTF-8.
     pub fn reveal(&self) -> &str {
         std::str::from_utf8(&self.0).unwrap_or("")
     }
 
+    /// The raw secret bytes.
     pub fn reveal_bytes(&self) -> &[u8] {
         &self.0
     }
 
+    /// Whether the secret holds no bytes.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Length of the secret in bytes.
     pub fn len(&self) -> usize {
         self.0.len()
     }

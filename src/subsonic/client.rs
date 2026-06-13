@@ -14,6 +14,7 @@ use crate::secret::Secret;
 const CLIENT_NAME: &str = "ferrosonic-rs";
 const API_VERSION: &str = "1.16.1";
 
+/// HTTP client bound to one configured Subsonic server.
 #[derive(Clone)]
 pub struct SubsonicClient {
     base_url: Url,
@@ -24,6 +25,7 @@ pub struct SubsonicClient {
 }
 
 impl SubsonicClient {
+    /// Build a client for `base_url` with token-auth credentials.
     pub fn new(base_url: &str, username: &str, password: &Secret) -> Result<Self, SubsonicError> {
         let base_url = Url::parse(base_url)?;
 
@@ -78,6 +80,7 @@ impl SubsonicClient {
         Ok(())
     }
 
+    /// Server-side search across artists, albums, and songs.
     pub async fn search3(
         &self,
         query: &str,
@@ -96,11 +99,13 @@ impl SubsonicClient {
         Ok(data.result)
     }
 
+    /// Star the song with `id`.
     pub async fn star_song(&self, id: &str) -> Result<(), SubsonicError> {
         self.request_action(&format!("star?id={}", urlencoding::encode(id)))
             .await
     }
 
+    /// Remove the star from the song with `id`.
     pub async fn unstar_song(&self, id: &str) -> Result<(), SubsonicError> {
         self.request_action(&format!("unstar?id={}", urlencoding::encode(id)))
             .await
@@ -142,6 +147,7 @@ impl SubsonicClient {
             .ok_or_else(|| SubsonicError::Parse("Empty response data".to_string()))
     }
 
+    /// Probe connectivity and credentials via the `ping` endpoint.
     pub async fn ping(&self) -> Result<(), SubsonicError> {
         let url = self.build_url("ping")?;
         debug!("Pinging server");
@@ -165,6 +171,7 @@ impl SubsonicClient {
         Ok(())
     }
 
+    /// Fetch the account's starred songs.
     pub async fn get_starred_songs(&self) -> Result<Vec<Child>, SubsonicError> {
         let data: StarredSongsData = self.request("getStarred2").await?;
         let songs = data.starred_songs.song;
@@ -173,6 +180,7 @@ impl SubsonicClient {
         Ok(songs)
     }
 
+    /// Fetch a batch of 500 random songs.
     pub async fn get_random_songs(&self) -> Result<Vec<Child>, SubsonicError> {
         let data: RandomSongsData = self.request("getRandomSongs?size=500").await?;
         let songs = data.random_songs.song;
@@ -181,6 +189,7 @@ impl SubsonicClient {
         Ok(songs)
     }
 
+    /// Fetch the full artist index, flattened across index letters.
     pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
         let data: ArtistsData = self.request("getArtists").await?;
 
@@ -195,6 +204,7 @@ impl SubsonicClient {
         Ok(artists)
     }
 
+    /// Fetch one artist and their albums.
     pub async fn get_artist(&self, id: &str) -> Result<(Artist, Vec<Album>), SubsonicError> {
         let url = self.build_url(&format!("getArtist?id={}", id))?;
         debug!("Fetching artist: {}", id);
@@ -235,6 +245,7 @@ impl SubsonicClient {
         Ok((artist, detail.album))
     }
 
+    /// Fetch one album and its songs.
     pub async fn get_album(&self, id: &str) -> Result<(Album, Vec<Child>), SubsonicError> {
         let url = self.build_url(&format!("getAlbum?id={}", id))?;
         debug!("Fetching album: {}", id);
@@ -280,6 +291,7 @@ impl SubsonicClient {
         Ok((album, detail.song))
     }
 
+    /// Fetch all playlists visible to the account.
     pub async fn get_playlists(&self) -> Result<Vec<Playlist>, SubsonicError> {
         let data: PlaylistsData = self.request("getPlaylists").await?;
         let playlists = data.playlists.playlist;
@@ -287,6 +299,7 @@ impl SubsonicClient {
         Ok(playlists)
     }
 
+    /// Fetch one playlist and its songs.
     pub async fn get_playlist(&self, id: &str) -> Result<(Playlist, Vec<Child>), SubsonicError> {
         let url = self.build_url(&format!("getPlaylist?id={}", id))?;
         debug!("Fetching playlist: {}", id);

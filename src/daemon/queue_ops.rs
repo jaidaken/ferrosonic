@@ -49,6 +49,7 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Push the current queue to all subscribers.
     pub async fn broadcast_queue_changed(self: &Arc<Self>) {
         self.emit_queue().await;
     }
@@ -95,6 +96,7 @@ impl DaemonCore {
         removed
     }
 
+    /// Replace the queue with a shuffled random-songs batch and start playing.
     pub async fn shuffle_library(self: &Arc<Self>) -> Result<(), Error> {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Ok(());

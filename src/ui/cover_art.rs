@@ -14,10 +14,15 @@ use tracing::{info, warn};
 
 use super::chafa_ext;
 
+/// Cover art rendering state: protocol picker plus current image identity.
 pub struct CoverArtState {
+    /// ratatui-image picker, when a graphics protocol is available.
     pub picker: Option<Picker>,
+    /// Detected terminal graphics protocol.
     pub protocol_type: Option<ProtocolType>,
+    /// Terminal cell size in pixels, for image scaling.
     pub cell_size: (u16, u16),
+    /// Cover art ID of the image currently held.
     pub current_id: Option<String>,
     /// Decoded image kept around so we can re-encode through chafa
     /// when the art rect resizes.
@@ -29,9 +34,13 @@ pub struct CoverArtState {
     pub chafa_cache: Option<ChafaCache>,
 }
 
+/// Cached chafa-encoded cells for one rendered image size.
 pub struct ChafaCache {
+    /// Cached render width in cells.
     pub width: u16,
+    /// Cached render height in cells.
     pub height: u16,
+    /// Encoded cells, row-major.
     pub cells: Vec<chafa_ext::EncodedCell>,
 }
 
@@ -119,6 +128,7 @@ fn find_chafa_in_nix_store() -> Option<String> {
 }
 
 impl CoverArtState {
+    /// Detect the terminal graphics protocol and build the state.
     pub fn init() -> Self {
         let queried_cell = query_cell_size();
         probe_chafa();
@@ -200,6 +210,7 @@ impl CoverArtState {
         }
     }
 
+    /// Drop the current image so the next render refetches.
     pub fn clear(&mut self) {
         self.current_id = None;
         self.image = None;
@@ -240,7 +251,8 @@ impl CoverArtState {
     }
 }
 
-pub fn render(frame: &mut Frame, area: Rect, state: &Mutex<CoverArtState>) {
+/// Render the cover art into `area` using the detected protocol.
+pub fn render(frame: &mut Frame<'_>, area: Rect, state: &Mutex<CoverArtState>) {
     // Block briefly on contention rather than silently blank the frame; the lock is never held across .await so wait is microseconds. Recover from a poisoned lock by taking the inner state.
     let mut guard = match state.lock() {
         Ok(g) => g,

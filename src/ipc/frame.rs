@@ -8,21 +8,30 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ipc::protocol::{DaemonEvent, DaemonRequest, DaemonResponse};
 
+/// Global cap on any frame body; protects readers from OOM.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+/// Tighter cap the daemon applies to inbound request frames.
 pub const MAX_REQUEST_FRAME_BYTES: usize = 1024 * 1024;
 
+/// One IPC message: request, response, or broadcast event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Frame {
+    /// Client request awaiting a matching `Response`.
     Request {
+        /// Correlation ID echoed in the response.
         id: u64,
+        /// The command itself.
         req: DaemonRequest,
     },
     /// `payload` is `Result<DaemonResponse, String>` so daemon-side
     /// errors round-trip without per-variant wire encoding.
     Response {
+        /// Correlation ID of the request being answered.
         id: u64,
+        /// The reply or a daemon-side error message.
         payload: Result<DaemonResponse, String>,
     },
+    /// Unsolicited daemon broadcast to subscribers.
     Event(DaemonEvent),
 }
 
@@ -36,23 +45,41 @@ pub enum FrameRead {
     Ok(Frame),
     /// Envelope parsed but the request body was an unknown variant.
     /// Daemon should reply with `Response { id, payload: Err(...) }`.
-    UnknownRequest { id: u64, body: String },
+    UnknownRequest {
+        /// Correlation ID from the envelope.
+        id: u64,
+        /// Raw JSON of the unrecognized request body.
+        body: String,
+    },
     /// Envelope parsed but the response body was an unknown variant.
     /// Client should resolve pending request `id` with an error.
-    UnknownResponse { id: u64, body: String },
+    UnknownResponse {
+        /// Correlation ID from the envelope.
+        id: u64,
+        /// Raw JSON of the unrecognized response payload.
+        body: String,
+    },
     /// Envelope parsed but the event was an unknown variant. Receiver
     /// should log and continue.
-    UnknownEvent { body: String },
+    UnknownEvent {
+        /// Raw JSON of the unrecognized event.
+        body: String,
+    },
 }
 
+/// Errors raised while reading or writing frames.
 #[derive(Debug, thiserror::Error)]
 pub enum FrameError {
+    /// Socket read or write failed.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// Declared frame length exceeds the cap.
     #[error("frame too large: {0} bytes")]
     TooLarge(usize),
+    /// JSON encode or decode failed.
     #[error("serialize: {0}")]
     Serialize(#[from] serde_json::Error),
+    /// Peer closed cleanly between frames.
     #[error("peer closed before frame complete")]
     Closed,
 }

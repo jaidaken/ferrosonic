@@ -1,3 +1,5 @@
+//! Daemon: core, ops modules, state, persistence, polling.
+
 pub mod core;
 pub mod library;
 pub mod library_ops;

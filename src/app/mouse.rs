@@ -5,6 +5,7 @@ use crate::error::Error;
 use super::*;
 
 impl App {
+    /// Route one mouse event to header buttons or the active page.
     pub async fn handle_mouse(&mut self, mouse: event::MouseEvent) -> Result<(), Error> {
         let x = mouse.column;
         let y = mouse.row;

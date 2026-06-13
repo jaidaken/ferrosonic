@@ -39,6 +39,7 @@ impl DaemonCore {
         })
     }
 
+    /// Spawn the 500ms tick task: position ticks, idle-advance, watchdog.
     pub fn spawn_polling_task(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         let core = self.clone();
         tokio::spawn(async move {
