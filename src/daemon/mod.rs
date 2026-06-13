@@ -9,9 +9,11 @@ pub mod playback_tick;
 pub mod persistence;
 pub mod polling;
 pub mod queue_ops;
+pub mod run;
 pub mod settings_ops;
 pub mod state;
 
 pub use core::DaemonCore;
+pub use run::run;
 pub use library::LibraryCache;
 pub use state::DaemonState;

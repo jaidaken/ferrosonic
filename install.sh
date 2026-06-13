@@ -12,7 +12,6 @@ ARCH=$(uname -m)
 case "$ARCH" in
     x86_64)
         TUI_REGEX='ferrosonic-[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*-linux-x86_64'
-        DAEMON_REGEX='ferrosonicd-[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*-linux-x86_64'
         ;;
     *)
         echo "No precompiled binary for $ARCH. Please build from source."
@@ -77,7 +76,6 @@ extract_url() {
 }
 
 TUI_URL=$(extract_url "$TUI_REGEX")
-DAEMON_URL=$(extract_url "$DAEMON_REGEX")
 
 if [ -z "$TUI_URL" ]; then
     echo "No release asset matching pattern '$TUI_REGEX' was found."
@@ -107,13 +105,6 @@ download_and_install() {
 }
 
 download_and_install "$TUI_URL" "ferrosonic"
-
-if [ -n "$DAEMON_URL" ]; then
-    download_and_install "$DAEMON_URL" "ferrosonicd"
-else
-    echo "Warning: ferrosonicd binary not found in this release. The TUI will"
-    echo "run in single-process mode (music will stop when the terminal closes)."
-fi
 
 echo ""
 echo "Ferrosonic $LATEST installed to $INSTALL_DIR/"

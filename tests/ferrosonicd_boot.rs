@@ -21,8 +21,9 @@ async fn ferrosonicd_binary_boots_serves_socket_and_responds_to_ping() {
     )
     .unwrap();
 
-    let bin = assert_cmd::cargo::cargo_bin("ferrosonicd");
+    let bin = assert_cmd::cargo::cargo_bin("ferrosonic");
     let mut child = std::process::Command::new(&bin)
+        .arg("--daemon")
         .env("FERROSONIC_CONFIG_DIR", config_dir.path())
         .env("XDG_RUNTIME_DIR", runtime_dir.path())
         .stdout(std::process::Stdio::null())

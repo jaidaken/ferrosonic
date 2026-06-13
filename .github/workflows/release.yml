@@ -32,21 +32,18 @@ jobs:
         with:
           tool: cargo-zigbuild
 
-      - name: Build release binaries
+      - name: Build release binary
         run: |
           cargo zigbuild \
             --release \
             --target x86_64-unknown-linux-musl \
-            --bin ferrosonic \
-            --bin ferrosonicd
+            --bin ferrosonic
 
-      - name: Stage versioned artifacts
+      - name: Stage versioned artifact
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cp target/x86_64-unknown-linux-musl/release/ferrosonic \
              "ferrosonic-${VERSION}-linux-x86_64"
-          cp target/x86_64-unknown-linux-musl/release/ferrosonicd \
-             "ferrosonicd-${VERSION}-linux-x86_64"
 
       - name: Extract release notes for this tag
         id: notes
@@ -69,5 +66,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md \
-            "ferrosonic-${GITHUB_REF_NAME#v}-linux-x86_64" \
-            "ferrosonicd-${GITHUB_REF_NAME#v}-linux-x86_64"
+            "ferrosonic-${GITHUB_REF_NAME#v}-linux-x86_64"

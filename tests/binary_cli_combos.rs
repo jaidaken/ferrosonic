@@ -9,10 +9,6 @@ fn ferrosonic() -> std::path::PathBuf {
     assert_cmd::cargo::cargo_bin("ferrosonic")
 }
 
-fn ferrosonicd() -> std::path::PathBuf {
-    assert_cmd::cargo::cargo_bin("ferrosonicd")
-}
-
 #[test]
 #[serial]
 fn ferrosonic_short_v_flag_is_verbose() {
@@ -28,30 +24,6 @@ fn ferrosonic_short_v_flag_is_verbose() {
 #[serial]
 fn ferrosonic_short_c_flag_is_config() {
     let output = Command::new(ferrosonic())
-        .arg("-c")
-        .arg("--help")
-        .output()
-        .unwrap();
-    let combined = String::from_utf8_lossy(&output.stdout).into_owned()
-        + &String::from_utf8_lossy(&output.stderr);
-    assert!(!combined.is_empty());
-}
-
-#[test]
-#[serial]
-fn ferrosonicd_short_v_flag_is_verbose() {
-    let output = Command::new(ferrosonicd())
-        .arg("-v")
-        .arg("--help")
-        .output()
-        .unwrap();
-    assert!(output.status.success() || !output.stdout.is_empty());
-}
-
-#[test]
-#[serial]
-fn ferrosonicd_short_c_flag_is_config() {
-    let output = Command::new(ferrosonicd())
         .arg("-c")
         .arg("--help")
         .output()
@@ -103,24 +75,3 @@ fn ferrosonic_multiple_unknown_flags_all_fail() {
     assert!(!output.status.success());
 }
 
-#[test]
-#[serial]
-fn ferrosonicd_help_via_short_h() {
-    let output = Command::new(ferrosonicd()).arg("-h").output().unwrap();
-    assert!(output.status.success());
-}
-
-#[test]
-#[serial]
-fn ferrosonicd_with_invalid_config_path_fails() {
-    let config_dir = tempfile::tempdir().unwrap();
-    let runtime_dir = tempfile::tempdir().unwrap();
-    let output = Command::new(ferrosonicd())
-        .env("FERROSONIC_CONFIG_DIR", config_dir.path())
-        .env("XDG_RUNTIME_DIR", runtime_dir.path())
-        .arg("--config")
-        .arg("/dev/null/not-a-real-path.toml")
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-}

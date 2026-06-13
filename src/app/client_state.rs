@@ -28,6 +28,11 @@ pub struct ClientState {
     pub notification: Option<Notification>,
     /// Set to end the main event loop.
     pub should_quit: bool,
+    /// Whether playback is served by a separate daemon process (vs in-process).
+    /// Gates the quit-confirm prompt: in-process has no daemon to leave running.
+    pub daemon_backed: bool,
+    /// True while the quit-confirm prompt (stop the daemon?) is showing.
+    pub quit_prompt: bool,
     /// Latest parsed cava frame, one entry per row.
     pub cava_screen: Vec<CavaRow>,
     /// Whether a cava binary was found on PATH.

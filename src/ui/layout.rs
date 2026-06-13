@@ -142,4 +142,8 @@ pub fn draw(
         .repeat_mode(state.client.settings_state.repeat_mode)
         .notification(state.client.notification.as_ref());
     frame.render_widget(footer, footer_area);
+
+    if state.client.quit_prompt {
+        super::quit_prompt::render(frame, area, &colors);
+    }
 }

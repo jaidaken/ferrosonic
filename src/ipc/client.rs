@@ -303,6 +303,9 @@ impl DaemonClient for InProcessClient {
                     self.core.quit_mpv(),
                 )
                 .await;
+                // Stop the IPC accept loop so the daemon process actually exits;
+                // without this it broadcasts Shutdown but keeps listening.
+                self.core.request_shutdown();
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::Ping => Ok(DaemonResponse::Pong),

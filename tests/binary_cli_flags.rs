@@ -49,33 +49,6 @@ fn ferrosonic_unknown_flag_returns_nonzero_with_error_message() {
 }
 
 #[test]
-fn ferrosonicd_help_lists_known_flags() {
-    let bin = assert_cmd::cargo::cargo_bin("ferrosonicd");
-    let output = std::process::Command::new(&bin)
-        .arg("--help")
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("--config") || stdout.contains("config"));
-    assert!(stdout.contains("--verbose") || stdout.contains("verbose"));
-}
-
-#[test]
-fn ferrosonicd_version_prints_a_version_string() {
-    let bin = assert_cmd::cargo::cargo_bin("ferrosonicd");
-    let output = std::process::Command::new(&bin)
-        .arg("--version")
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("ferrosonicd") || stdout.contains("0."),
-        "expected version line; got {}",
-        stdout
-    );
-}
-
-#[test]
 #[serial]
 fn ferrosonic_explicit_config_flag_is_accepted() {
     let config_dir = tempfile::tempdir().unwrap();

@@ -178,6 +178,8 @@ impl App {
 
     /// Run the TUI event loop until quit.
     pub async fn run(&mut self) -> Result<(), Error> {
+        // A remote daemon (core == None) outlives the TUI; gate the quit prompt.
+        self.client_state.write().await.daemon_backed = self.core.is_none();
         self.spawn_signal_quit();
         let _term_guard = TerminalGuard::new_crossterm();
         let _poll_task = self.core.as_ref().map(|c| c.spawn_polling_task());

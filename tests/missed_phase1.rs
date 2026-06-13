@@ -245,17 +245,6 @@ fn ferrosonic_verbose_flag_is_accepted() {
 }
 
 #[test]
-fn ferrosonicd_verbose_flag_is_accepted() {
-    let bin = assert_cmd::cargo::cargo_bin("ferrosonicd");
-    let output = std::process::Command::new(&bin)
-        .arg("--verbose")
-        .arg("--help")
-        .output()
-        .unwrap();
-    assert!(output.status.success() || !output.stdout.is_empty());
-}
-
-#[test]
 fn ferrosonic_config_with_missing_file_returns_error() {
     let config_dir = tempfile::tempdir().unwrap();
     let runtime_dir = tempfile::tempdir().unwrap();

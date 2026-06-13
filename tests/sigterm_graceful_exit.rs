@@ -18,8 +18,9 @@ async fn ferrosonicd_exits_cleanly_on_sigterm() {
     )
     .unwrap();
 
-    let bin = assert_cmd::cargo::cargo_bin("ferrosonicd");
+    let bin = assert_cmd::cargo::cargo_bin("ferrosonic");
     let mut child = std::process::Command::new(&bin)
+        .arg("--daemon")
         .env("FERROSONIC_CONFIG_DIR", config_dir.path())
         .env("XDG_RUNTIME_DIR", runtime_dir.path())
         .stdout(std::process::Stdio::null())
@@ -76,8 +77,9 @@ async fn ferrosonicd_exits_cleanly_on_sigint() {
     )
     .unwrap();
 
-    let bin = assert_cmd::cargo::cargo_bin("ferrosonicd");
+    let bin = assert_cmd::cargo::cargo_bin("ferrosonic");
     let mut child = std::process::Command::new(&bin)
+        .arg("--daemon")
         .env("FERROSONIC_CONFIG_DIR", config_dir.path())
         .env("XDG_RUNTIME_DIR", runtime_dir.path())
         .stdout(std::process::Stdio::null())

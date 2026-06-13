@@ -6,6 +6,7 @@ pub mod footer;
 pub mod header;
 pub mod layout;
 pub mod pages;
+pub mod quit_prompt;
 pub mod styled_lines;
 pub mod theme;
 mod theme_builtins;

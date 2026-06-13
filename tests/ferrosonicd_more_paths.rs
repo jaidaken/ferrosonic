@@ -4,8 +4,10 @@ use serial_test::serial;
 use std::process::Command;
 use std::time::Duration;
 
-fn ferrosonicd() -> std::path::PathBuf {
-    assert_cmd::cargo::cargo_bin("ferrosonicd")
+fn ferrosonicd() -> Command {
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin("ferrosonic"));
+    cmd.arg("--daemon");
+    cmd
 }
 
 #[test]
@@ -13,7 +15,7 @@ fn ferrosonicd() -> std::path::PathBuf {
 fn ferrosonicd_starts_with_verbose_and_writes_log() {
     let tmp = tempfile::tempdir().unwrap();
     let socket = tmp.path().join("d.sock");
-    let mut child = Command::new(ferrosonicd())
+    let mut child = ferrosonicd()
         .arg("-v")
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
         .env("XDG_RUNTIME_DIR", tempfile::tempdir().unwrap().keep())
@@ -53,7 +55,7 @@ Password = "p"
 "#,
     )
     .unwrap();
-    let mut child = Command::new(ferrosonicd())
+    let mut child = ferrosonicd()
         .arg("-c")
         .arg(&cfg_path)
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
@@ -74,7 +76,7 @@ Password = "p"
 #[test]
 #[serial]
 fn ferrosonicd_with_invalid_config_path_returns_error() {
-    let output = Command::new(ferrosonicd())
+    let output = ferrosonicd()
         .arg("--config")
         .arg("/path/that/does/not/exist.toml")
         .stdin(std::process::Stdio::null())
@@ -89,7 +91,7 @@ fn ferrosonicd_with_invalid_config_path_returns_error() {
 #[serial]
 fn ferrosonicd_handles_sigint() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut child = Command::new(ferrosonicd())
+    let mut child = ferrosonicd()
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
         .env("XDG_RUNTIME_DIR", tempfile::tempdir().unwrap().keep())
         .stdin(std::process::Stdio::null())

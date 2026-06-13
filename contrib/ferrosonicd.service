@@ -5,7 +5,7 @@ After=graphical-session.target pipewire.service
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/ferrosonicd
+ExecStart=%h/.local/bin/ferrosonic --daemon
 Restart=on-failure
 RestartSec=2
 KillSignal=SIGTERM

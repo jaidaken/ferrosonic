@@ -6,11 +6,11 @@ use clap::Parser;
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+use ferrosonic::app::spawn_daemon::spawn_and_wait;
 use ferrosonic::app::App;
 use ferrosonic::config::paths::config_dir;
 use ferrosonic::config::Config;
 use ferrosonic::ipc::path::socket_path;
-use ferrosonic::app::spawn_daemon::spawn_and_wait;
 use ferrosonic::ipc::SocketClient;
 
 const DAEMON_SPAWN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -25,20 +25,30 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
-    /// Skip ferrosonicd auto-spawn / connect; run in-process.
+    /// Skip the daemon auto-spawn / connect; run in-process.
     #[arg(long)]
     standalone: bool,
+
+    /// Internal: run as the background daemon. The TUI re-execs itself with
+    /// this; not for direct use.
+    #[arg(long, hide = true)]
+    daemon: bool,
 }
 
 /// Returned guard must outlive the program; dropping it ends the
-/// non-blocking writer task.
-fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerGuard> {
+/// non-blocking writer task. The daemon mode logs to a separate file.
+fn init_logging(verbose: bool, daemon: bool) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let log_dir = config_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
     if let Err(e) = fs::create_dir_all(&log_dir) {
         eprintln!("Warning: Could not create log directory: {}", e);
         return None;
     }
-    let log_file = log_dir.join("ferrosonic.log");
+    let log_name = if daemon {
+        "ferrosonicd.log"
+    } else {
+        "ferrosonic.log"
+    };
+    let log_file = log_dir.join(log_name);
     let file = match OpenOptions::new().create(true).append(true).open(&log_file) {
         Ok(f) => f,
         Err(e) => {
@@ -52,15 +62,15 @@ fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerG
     } else {
         EnvFilter::new("ferrosonic=info")
     };
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            fmt::layer()
-                .with_writer(non_blocking)
-                .with_ansi(false)
-                .with_target(false),
-        )
-        .init();
+    let registry = tracing_subscriber::registry().with(filter).with(
+        fmt::layer()
+            .with_writer(non_blocking)
+            .with_ansi(false)
+            .with_target(false),
+    );
+    #[cfg(feature = "console")]
+    let registry = registry.with(console_subscriber::spawn());
+    registry.init();
     if verbose {
         eprintln!("Logging to: {}", log_file.display());
     }
@@ -69,7 +79,7 @@ fn init_logging(verbose: bool) -> Option<tracing_appender::non_blocking::WorkerG
 
 /// Restore the terminal on panic so the user isn't left in raw mode
 /// after a crash.
-fn install_panic_hook() {
+fn install_tui_panic_hook() {
     let prev = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = crossterm::terminal::disable_raw_mode();
@@ -84,27 +94,45 @@ fn install_panic_hook() {
     }));
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-    let _log_guard = init_logging(args.verbose);
-    install_panic_hook();
+fn install_daemon_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!("Panic: {}", info);
+        prev(info);
+    }));
+}
 
-    info!("Ferrosonic starting...");
-
-    let config = match args.config {
+fn load_config(path: Option<&std::path::Path>) -> anyhow::Result<Config> {
+    match path {
         Some(path) => {
             info!("Loading config from {}", path.display());
-            Config::load_from_file(&path)?
+            Ok(Config::load_from_file(path)?)
         }
         None => {
             info!("Loading default config");
-            Config::load_default().unwrap_or_else(|e| {
+            Ok(Config::load_default().unwrap_or_else(|e| {
                 info!("No config found ({}), using defaults", e);
                 Config::new()
-            })
+            }))
         }
-    };
+    }
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    let _log_guard = init_logging(args.verbose, args.daemon);
+
+    let config = load_config(args.config.as_deref())?;
+
+    // Internal daemon mode: the TUI re-execs the binary with --daemon.
+    if args.daemon {
+        install_daemon_panic_hook();
+        return ferrosonic::daemon::run(config).await;
+    }
+
+    install_tui_panic_hook();
+    info!("Ferrosonic starting...");
 
     info!(
         "Server: {}",
@@ -125,14 +153,14 @@ async fn main() -> anyhow::Result<()> {
         let path = socket_path();
         match connect_or_spawn(&path).await {
             Some(client) => {
-                info!("Connected to ferrosonicd at {}", path.display());
+                info!("Connected to the daemon at {}", path.display());
                 App::with_remote_client(client, config)
             }
             None => {
                 let daemon_log = config_dir()
                     .unwrap_or_else(|| PathBuf::from("/tmp"))
                     .join("ferrosonicd.log");
-                eprintln!("ferrosonic: could not reach ferrosonicd.");
+                eprintln!("ferrosonic: could not reach the background daemon.");
                 eprintln!();
                 eprintln!("  Socket path : {}", path.display());
                 eprintln!("  Daemon log  : {}", daemon_log.display());
@@ -142,7 +170,7 @@ async fn main() -> anyhow::Result<()> {
                 eprintln!("  - Remove a stale socket: rm {}", path.display());
                 eprintln!("  - Run with --standalone to skip the daemon this session.");
                 eprintln!("  - Set Daemon=false in your config to disable persistent playback.");
-                anyhow::bail!("ferrosonicd unreachable; see message above");
+                anyhow::bail!("daemon unreachable; see message above");
             }
         }
     };

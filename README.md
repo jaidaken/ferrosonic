@@ -8,7 +8,7 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 
 - **Bit-perfect audio** - Automatic PipeWire sample rate switching to match the source material (44.1kHz, 48kHz, 96kHz, 192kHz, etc.)
 - **Gapless playback** - Seamless transitions between tracks with pre-buffered next track
-- **Persistent playback (optional)** - Optional `ferrosonicd` companion daemon owns the audio session so music keeps playing when you close the terminal. Auto-spawned by the TUI; toggle off in Settings if you want single-process mode.
+- **Persistent playback (optional)** - A background daemon owns the audio session so music keeps playing when you close the terminal. It is the same `ferrosonic` binary re-launched in the background, auto-spawned by the TUI; toggle off in Settings for single-process mode.
 - **MPRIS2 integration** - Full desktop media control support (play, pause, stop, next, previous, seek) with push-style `PropertiesChanged` notifications
 - **Library page** - Tree-based artist/album browser with expandable artists and album listings
 - **Quick Play page** - Jump straight into your **Starred** songs or a **Random** roll without browsing
@@ -54,7 +54,7 @@ Supports Arch, Fedora, and Debian/Ubuntu. Installs runtime dependencies, downloa
 curl -sSf https://raw.githubusercontent.com/jaidaken/ferrosonic/master/install.sh | sh
 ```
 
-The install drops both `ferrosonic` (the TUI) and `ferrosonicd` (the optional companion daemon) into `/usr/local/bin/`.
+The install drops a single `ferrosonic` binary into `/usr/local/bin/`. It runs as the TUI by default and re-launches itself in the background as the daemon when persistent playback is enabled.
 
 ### Build from Source
 
@@ -64,7 +64,7 @@ If you prefer to build from source, you'll also need: Rust toolchain, pkg-config
 git clone https://github.com/jaidaken/ferrosonic.git
 cd ferrosonic
 cargo build --release
-sudo cp target/release/ferrosonic target/release/ferrosonicd /usr/local/bin/
+sudo cp target/release/ferrosonic /usr/local/bin/
 ```
 
 ## Usage
@@ -85,7 +85,7 @@ ferrosonic --standalone
 
 ### Persistent playback
 
-By default, `ferrosonic` tries to connect to a `ferrosonicd` background daemon and auto-spawns one if it isn't running. Music then keeps playing when you close the terminal — reopen `ferrosonic` and you'll see the same queue at the same position.
+By default, `ferrosonic` connects to a background daemon and auto-spawns one (the same binary re-exec'd with the internal `--daemon` flag) if it isn't running. Music then keeps playing when you close the terminal. Reopen `ferrosonic` and you'll see the same queue at the same position.
 
 Turn it off in Settings (`F6 → Daemon: Off`) for a single-process mode where music stops when the TUI exits. Or use `--standalone` for a one-off launch without changing the config.
 
@@ -121,7 +121,7 @@ CoverArt = false
 | `Password` | Your server password |
 | `PasswordFile` | Optional path to a file containing the password (overrides `Password`) |
 | `Theme` | Color theme name (e.g. `Default`, `Catppuccin`, `Tokyo Night`) |
-| `Daemon` | `true` (default) auto-spawns `ferrosonicd`; `false` runs single-process |
+| `Daemon` | `true` (default) auto-spawns the background daemon; `false` runs single-process |
 | `Cava` | Enable the cava visualizer pane |
 | `CavaSize` | Cava pane height percentage (10-80, step 5) |
 | `AutoContinue` | Fetch fresh random songs and keep playing when the queue ends |

@@ -14,10 +14,6 @@ path = "src/lib.rs"
 name = "ferrosonic"
 path = "src/bin/ferrosonic.rs"
 
-[[bin]]
-name = "ferrosonicd"
-path = "src/bin/ferrosonicd.rs"
-
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full", "sync", "process", "signal"] }

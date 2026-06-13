@@ -1,51 +1,28 @@
-//! Auto-spawn `ferrosonicd` when the TUI starts and no daemon is
-//! reachable on the socket.
-
+//! Auto-spawn the daemon when the TUI starts and none is reachable on the
+//! socket. The daemon is this same binary re-exec'd with `--daemon`.
 
 use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use tracing::{info, warn};
 
-/// Tries the running exe's sibling first, then `$PATH`.
-fn locate_ferrosonicd() -> Option<PathBuf> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join("ferrosonicd");
-            if sibling.is_file() {
-                return Some(sibling);
-            }
-        }
-    }
-    which_in_path("ferrosonicd")
-}
-
-fn which_in_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-/// Spawn `ferrosonicd` detached via `setsid` so it survives SIGHUP
-/// when the parent terminal closes. Parent never reaps.
+/// Spawn the daemon by re-running the current binary with `--daemon`, detached
+/// via `setsid` so it survives SIGHUP when the parent terminal closes. The
+/// parent never reaps it; the daemon outlives the TUI.
 pub fn spawn_daemon() -> std::io::Result<u32> {
-    let Some(bin) = locate_ferrosonicd() else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "ferrosonicd binary not found in $PATH or alongside ferrosonic",
-        ));
-    };
+    let exe = std::env::current_exe()?;
+    spawn_daemon_exe(&exe)
+}
 
-    info!("Auto-spawning daemon: {}", bin.display());
+/// Test seam: spawn a specific binary as the daemon. Production passes
+/// `current_exe()`; tests pass the real `ferrosonic` binary.
+pub fn spawn_daemon_exe(exe: &Path) -> std::io::Result<u32> {
+    info!("Auto-spawning daemon: {} --daemon", exe.display());
 
-    let mut cmd = Command::new(&bin);
-    cmd.stdin(Stdio::null())
+    let mut cmd = Command::new(exe);
+    cmd.arg("--daemon")
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
@@ -61,12 +38,12 @@ pub fn spawn_daemon() -> std::io::Result<u32> {
 
     let child = cmd.spawn()?;
     let pid = child.id();
-    // Forget: don't reap, daemon outlives us.
+    // Forget: don't reap, the daemon outlives us.
     std::mem::forget(child);
     Ok(pid)
 }
 
-/// Spawn ferrosonicd detached and wait until its socket accepts connections.
+/// Spawn the daemon detached and wait until its socket accepts connections.
 pub async fn spawn_and_wait(socket: &Path, timeout: std::time::Duration) -> std::io::Result<()> {
     let pid = spawn_daemon()?;
     info!(

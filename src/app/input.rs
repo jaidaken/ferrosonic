@@ -50,6 +50,31 @@ impl App {
 
         state.client.clear_notification();
 
+        // Quit-confirm prompt: while it is up, only y/n/esc do anything.
+        if state.client.quit_prompt {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    state.client.quit_prompt = false;
+                    state.client.should_quit = true;
+                    drop(state);
+                    drop(cs);
+                    drop(ds);
+                    let _ = self.client.request(DaemonRequest::Shutdown).await;
+                    return Ok(());
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') => {
+                    state.client.quit_prompt = false;
+                    state.client.should_quit = true;
+                    return Ok(());
+                }
+                KeyCode::Esc => {
+                    state.client.quit_prompt = false;
+                    return Ok(());
+                }
+                _ => return Ok(()),
+            }
+        }
+
         // F-keys switch pages while typing; unsaved edits revert.
         let is_function_key = matches!(key.code, KeyCode::F(_));
         if is_function_key {
@@ -84,7 +109,12 @@ impl App {
 
         match (key.code, key.modifiers) {
             (KeyCode::Char('q'), KeyModifiers::NONE) => {
-                state.client.should_quit = true;
+                // A separate daemon outlives the TUI, so ask whether to stop it.
+                if state.client.daemon_backed {
+                    state.client.quit_prompt = true;
+                } else {
+                    state.client.should_quit = true;
+                }
                 return Ok(());
             }
             (KeyCode::F(1), _) => {
