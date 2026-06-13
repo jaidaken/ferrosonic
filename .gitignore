@@ -16,6 +16,7 @@ CLAUDE.md2
 CLAUDE.local.md
 .claude/
 .claudeignore
+.claude-block-count.jsonl
 .rust-audit-marker
 .rust-project-init-seen
 .rust-project-init-skip
