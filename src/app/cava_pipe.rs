@@ -16,6 +16,13 @@ impl App {
     ) {
         self.stop_cava();
 
+        // Backstop: remove cava configs leaked by a SIGKILLed prior session.
+        crate::io_util::sweep_stale_tmp_files(
+            "ferrosonic-cava-",
+            ".conf",
+            std::time::Duration::from_secs(3600),
+        );
+
         let (term_w, term_h) = crossterm::terminal::size().unwrap_or((80, 24));
         let cava_h = (term_h as u32 * cava_size / 100).max(4) as u16;
         let cava_w = term_w;
@@ -83,6 +90,7 @@ impl App {
             .stdin(std::process::Stdio::from(slave_stdin))
             .env("TERM", "xterm-256color");
 
+        crate::proc_util::set_die_with_parent(&mut cmd);
         match cmd.spawn() {
             Ok(child) => {
                 unsafe {

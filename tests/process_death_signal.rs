@@ -7,7 +7,7 @@ use std::os::unix::io::FromRawFd;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use ferrosonic::audio::mpv::set_die_with_parent;
+use ferrosonic::proc_util::set_die_with_parent;
 
 /// True once `pid` is gone or a zombie (killed but not yet reaped).
 fn dead_or_zombie(pid: i32) -> bool {

@@ -2,6 +2,34 @@
 
 use std::io;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
+
+/// Remove files in the system temp dir matching `<prefix>...<suffix>` older
+/// than `max_age`. Backstop for temp files leaked when the owning process was
+/// SIGKILLed before its Drop-based cleanup ran; the age gate avoids deleting a
+/// live instance's files.
+pub fn sweep_stale_tmp_files(prefix: &str, suffix: &str, max_age: Duration) {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with(prefix) || !name.ends_with(suffix) {
+            continue;
+        }
+        let path = entry.path();
+        let stale = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok())
+            .is_some_and(|age| age > max_age);
+        if stale {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
 
 /// Internal filesystem abstraction so tests can inject failures at each io step. Production code uses `RealFs`; tests use the inline `FailingFs` recorder.
 pub(crate) trait FileSystem {

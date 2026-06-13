@@ -9,6 +9,7 @@ pub mod error;
 pub mod ipc;
 pub mod io_util;
 pub mod mpris;
+pub mod proc_util;
 pub mod secret;
 pub mod subsonic;
 pub mod ui;
