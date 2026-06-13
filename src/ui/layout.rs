@@ -47,11 +47,17 @@ pub fn draw(
     };
 
     let band_pct = state.client.settings_state.cava_size as u16;
+    // Form pages draw at fixed rows; a larger floor makes the cava band
+    // yield space instead of starving them into a blank page.
+    let content_min = match state.client.page {
+        Page::Settings | Page::Server => 20,
+        _ => 8,
+    };
     let (header_area, cava_area, content_area, now_playing_area, footer_area) = if cava_active {
         let chunks = Layout::vertical([
             Constraint::Length(1),
             Constraint::Percentage(band_pct),
-            Constraint::Min(8),
+            Constraint::Min(content_min),
             Constraint::Length(now_playing_h),
             Constraint::Length(2),
         ])
@@ -60,7 +66,7 @@ pub fn draw(
     } else {
         let chunks = Layout::vertical([
             Constraint::Length(1),
-            Constraint::Min(8),
+            Constraint::Min(content_min),
             Constraint::Length(now_playing_h),
             Constraint::Length(2),
         ])

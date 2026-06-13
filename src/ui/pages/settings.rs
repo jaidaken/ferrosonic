@@ -12,6 +12,17 @@ use ratatui::{
 use crate::app::state::AppState;
 use crate::ui::theme::ThemeColors;
 
+/// One row of the settings list; `Gap` is a blank spacer line.
+enum Item {
+    Heading(&'static str),
+    Row {
+        label: &'static str,
+        value: String,
+        idx: usize,
+    },
+    Gap,
+}
+
 /// Render the Settings page.
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
@@ -24,7 +35,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if inner.height < 18 {
+    if inner.height == 0 {
         return;
     }
 
@@ -56,94 +67,47 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let auto_val = if s.auto_continue { "On" } else { "Off" }.to_string();
     let daemon_val = if s.daemon_enabled { "On" } else { "Off" }.to_string();
 
-    let mut y = inner.y;
     let x = inner.x;
     let w = inner.width;
 
-    let buf = frame.buffer_mut();
+    // Ordered rows; Gap is a blank spacer. Rendered top-down within the area,
+    // stopping before the help line, so a short area degrades, not blanks.
+    let items = [
+        Item::Heading("Display"),
+        Item::Row { label: "Theme", value: theme_val, idx: 0 },
+        Item::Gap,
+        Item::Heading("Now Playing"),
+        Item::Row { label: "Cava Visualizer", value: cava_val, idx: 1 },
+        Item::Row { label: "Cava Size", value: cava_size_val, idx: 2 },
+        Item::Row { label: "Cover Art", value: cover_val, idx: 3 },
+        Item::Row { label: "Cover Art Size", value: cover_size_val, idx: 4 },
+        Item::Gap,
+        Item::Heading("Playback"),
+        Item::Row { label: "Repeat", value: repeat_val, idx: 5 },
+        Item::Row { label: "Auto-continue", value: auto_val, idx: 6 },
+        Item::Gap,
+        Item::Heading("System"),
+        Item::Row { label: "Daemon", value: daemon_val, idx: 7 },
+    ];
 
-    section_heading(buf, Rect::new(x, y, w, 1), "Display", &colors);
-    y += 1;
-    setting_row(
-        buf,
-        Rect::new(x, y, w, 1),
-        "Theme",
-        &theme_val,
-        sel == 0,
-        &colors,
-    );
-    y += 2;
-
-    section_heading(buf, Rect::new(x, y, w, 1), "Now Playing", &colors);
-    y += 1;
-    setting_row(
-        buf,
-        Rect::new(x, y, w, 1),
-        "Cava Visualizer",
-        &cava_val,
-        sel == 1,
-        &colors,
-    );
-    y += 1;
-    setting_row(
-        buf,
-        Rect::new(x, y, w, 1),
-        "Cava Size",
-        &cava_size_val,
-        sel == 2,
-        &colors,
-    );
-    y += 1;
-    setting_row(
-        buf,
-        Rect::new(x, y, w, 1),
-        "Cover Art",
-        &cover_val,
-        sel == 3,
-        &colors,
-    );
-    y += 1;
-    setting_row(
-        buf,
-        Rect::new(x, y, w, 1),
-        "Cover Art Size",
-        &cover_size_val,
-        sel == 4,
-        &colors,
-    );
-    y += 2;
-
-    section_heading(buf, Rect::new(x, y, w, 1), "Playback", &colors);
-    y += 1;
-    setting_row(
-        buf,
-        Rect::new(x, y, w, 1),
-        "Repeat",
-        &repeat_val,
-        sel == 5,
-        &colors,
-    );
-    y += 1;
-    setting_row(
-        buf,
-        Rect::new(x, y, w, 1),
-        "Auto-continue",
-        &auto_val,
-        sel == 6,
-        &colors,
-    );
-    y += 2;
-
-    section_heading(buf, Rect::new(x, y, w, 1), "System", &colors);
-    y += 1;
-    setting_row(
-        buf,
-        Rect::new(x, y, w, 1),
-        "Daemon",
-        &daemon_val,
-        sel == 7,
-        &colors,
-    );
+    {
+        let row_limit = inner.y + inner.height.saturating_sub(1);
+        let buf = frame.buffer_mut();
+        let mut y = inner.y;
+        for item in &items {
+            if y >= row_limit {
+                break;
+            }
+            match item {
+                Item::Heading(h) => section_heading(buf, Rect::new(x, y, w, 1), h, &colors),
+                Item::Row { label, value, idx } => {
+                    setting_row(buf, Rect::new(x, y, w, 1), label, value, sel == *idx, &colors);
+                }
+                Item::Gap => {}
+            }
+            y += 1;
+        }
+    }
 
     let help_text = match sel {
         0 => "← → or Enter to change theme (auto-saves)",

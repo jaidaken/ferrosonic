@@ -4,25 +4,25 @@ expression: frame
 ---
  F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮   ▶   ⏸   ⏹   ⏭ 
 ┌ Settings ────────────────────────────────────────────────────────────────────┐
+│Display                                                                       │
+│▶ Theme             Default  ◀ ▶                                              │
+│                                                                              │
+│Now Playing                                                                   │
+│  Cava Visualizer   Off (cava not found)                                      │
+│  Cava Size         N/A                                                       │
+│  Cover Art         Off                                                       │
+│  Cover Art Size    16 rows                                                   │
+│                                                                              │
+│Playback                                                                      │
+│  Repeat            Off                                                       │
+│  Auto-continue     Off                                                       │
+│                                                                              │
+│System                                                                        │
+│  Daemon            On                                                        │
 │                                                                              │
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│← → or Enter to change theme (auto-saves)                                     │
 └──────────────────────────────────────────────────────────────────────────────┘
-┌ Now Playing ─────────────────────────────────────────────────────────────────┐
-│                               No track playing                               │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-q:Quit │ p/Space:Pause │ h:Prev │ l:Next                                        
-←/→/Enter:Change
+                                                                                
+                                                                                
+q:Quit │ p/Space:Pause │ h:Prev │ l:Next

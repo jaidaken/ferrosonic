@@ -22,7 +22,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if inner.height < 10 {
+    if inner.height == 0 {
         return;
     }
 
@@ -133,24 +133,28 @@ fn render_field(
         Style::default().fg(colors.border_unfocused)
     };
 
-    let label_text = Paragraph::new(label).style(label_style);
-    frame.render_widget(label_text, Rect::new(area.x, area.y, area.width, 1));
+    if area.height >= 1 {
+        let label_text = Paragraph::new(label).style(label_style);
+        frame.render_widget(label_text, Rect::new(area.x, area.y, area.width, 1));
+    }
 
-    let field_area = Rect::new(area.x, area.y + 1, area.width.min(60), 3);
+    // The 3-row box only fits when the chunk kept its full height; skip it on
+    // a clipped chunk so it cannot overflow into the widget below.
+    if area.height >= 4 {
+        let display_value = if editing {
+            format!("{value}▏")
+        } else {
+            value.to_string()
+        };
 
-    let display_value = if editing {
-        format!("{}▏", value)
-    } else {
-        value.to_string()
-    };
+        let field = Paragraph::new(display_value).style(value_style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        );
 
-    let field = Paragraph::new(display_value).style(value_style).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style),
-    );
-
-    frame.render_widget(field, field_area);
+        frame.render_widget(field, Rect::new(area.x, area.y + 1, area.width.min(60), 3));
+    }
 }
 
 fn render_button(frame: &mut Frame<'_>, area: Rect, label: &str, selected: bool, colors: &ThemeColors) {
