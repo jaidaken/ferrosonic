@@ -286,7 +286,7 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
         .iter()
         .enumerate()
         .map(|(i, song)| {
-            let is_selected = Some(i) == artists.selected_song;
+            let is_selected = focused && Some(i) == artists.selected_song;
             let is_playing = state
                 .current_song()
                 .map(|s| s.id == song.id)
