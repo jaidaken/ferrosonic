@@ -72,3 +72,14 @@ fn settings_clips_rows_that_do_not_fit_instead_of_overflowing() {
         "rows past the row limit must clip, not overflow:\n{frame}"
     );
 }
+
+#[test]
+fn settings_scrolls_to_keep_the_selected_row_visible() {
+    let (daemon, mut client) = state(Page::Settings);
+    client.settings_state.selected_field = 7; // Daemon, the last row
+    let frame = render(80, 14, &daemon, &mut client);
+    assert!(
+        frame.contains("Daemon"),
+        "the selected bottom row must scroll into view on a short panel:\n{frame}"
+    );
+}

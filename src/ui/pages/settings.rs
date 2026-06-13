@@ -92,9 +92,16 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
 
     {
         let row_limit = inner.y + inner.height.saturating_sub(1);
+        // Scroll so the selected row stays visible when the panel is too short.
+        let visible = (row_limit - inner.y) as usize;
+        let sel_idx = items
+            .iter()
+            .position(|it| matches!(it, Item::Row { idx, .. } if *idx == sel))
+            .unwrap_or(0);
+        let start = sel_idx.saturating_sub(visible.saturating_sub(1));
         let buf = frame.buffer_mut();
         let mut y = inner.y;
-        for item in &items {
+        for item in items.iter().skip(start) {
             if y >= row_limit {
                 break;
             }
