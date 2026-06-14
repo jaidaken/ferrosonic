@@ -127,6 +127,22 @@ impl StyledScreen {
         self.cells().filter(|c| c.modifier.contains(modifier)).count()
     }
 
+    /// True if any cell on row `y` has foreground `color`.
+    pub fn row_has_fg(&self, y: u16, color: Color) -> bool {
+        (0..self.buf.area.width).any(|x| self.buf[(x, y)].fg == color)
+    }
+
+    /// True if any cell on row `y` within columns `[x0, x1)` has fg `color`.
+    /// Use to avoid a side-by-side pane on the same row polluting the check.
+    pub fn row_has_fg_in(&self, y: u16, x0: u16, x1: u16, color: Color) -> bool {
+        (x0..x1.min(self.buf.area.width)).any(|x| self.buf[(x, y)].fg == color)
+    }
+
+    /// The first row whose text contains `needle`, or None.
+    pub fn row_of(&self, needle: &str) -> Option<u16> {
+        self.rows_with(needle).into_iter().next()
+    }
+
     /// Count foreground-coloured cells inside a region only.
     pub fn count_fg_in(&self, region: Rect, color: Color) -> usize {
         let mut n = 0;
