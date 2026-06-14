@@ -113,10 +113,10 @@ fn library_search_border_uses_accent_when_filter_active() {
     client.artists.filter = String::new();
     let accent = client.settings_state.theme_colors().accent;
     let s = render_styled(W, H, &daemon, &mut client);
-    // searching = filter_active || !filter.is_empty(); searching colours the
-    // tree border accent. `||`->`&&` would drop it to the focus colour.
+    // searching colours the tree's left border (col 0, content rows) accent;
+    // `||`->`&&` drops it. Rows 1..6 stay in the tree, clear of header/footer.
     assert!(
-        (0..H).any(|y| s.cell(0, y).fg == accent),
+        (1..6).any(|y| s.cell(0, y).fg == accent),
         "an active filter must colour the tree border with accent\n{}",
         s.text()
     );
