@@ -8,6 +8,12 @@ date: 2026-06-14
 
 scope: every `src/*.rs` file. goal = **92% mutation kill floor** (raised from M75 by user 2026-06-14) + A1 (1+ strong assert/test) THROUGHOUT, plus style-aware coverage for UI render. supersedes the missing `TESTING-PLAN.md` referenced by [mutation baseline](MUTATION-BASELINE.md).
 
+## MUTATION RUNNER GOTCHAS (learned 2026-06-14)
+
+- ALWAYS `rm -rf /dev/shm/cargo-mutants-*` after killing a run. `pkill -9` orphans 3.3G/worker scratch dirs; they accumulate, fill the RAM tmpfs, and every build thrashes (a 115-mutant job took 13h instead of ~20min). check `df -BG /dev/shm` before launching.
+- SCOPE THE TEST PHASE: `MUTANTS_EXCLUDE='binary(x) | binary(y) | ...'` (positive filter of the file's relevant test binaries) cuts the per-mutant test phase from ~20s to ~4s. the unmutated baseline must pass under that scope. build time (~30-70s/mutant) then dominates; ~115 mutants / 4 workers ~= 20min.
+- kill flaky baseline tests via the exclude (e.g. `test(mpris_handler_off_tokio_runtime_does_not_panic)`); a red baseline aborts the whole run.
+
 ## METHOD
 
 - ORACLE = `cargo mutants --file <f>` kill rate. **FLOOR = 92%** (every file at or above; provably-equivalent survivors documented + excluded, never silenced). coverage % = triage only (async per-monomorphization counting misleads; see testing rules).
@@ -153,9 +159,10 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 
 ### CURRENT (resume here)
 
-- RUNNING: small-daemon mutation `/tmp/daemon-small-mutants.log` (queue_ops, settings_ops, loaders, persistence, polling, run, library_ops; 115 mutants ~70min). triage survivors -> fix -> re-run to verify.
-- NEXT: overnight big-daemon run = core.rs, playback_ops.rs, playback_tick.rs (slow ~3-6h). core.rs partial survivors already in `/tmp/daemon-mutants.log` (killed batch) + 4 pre-killed above.
-- killed-batch core.rs survivor categories captured below.
+- daemon small-files TESTS WRITTEN (committed): daemon_star_sync (apply_star_to_cached/sync_starred_songs + song.id==id), daemon_queue_ops_more (move-position adjust, shuffle_library body+guard, shuffle_queue), daemon_core_effects (broadcast_now_playing, emit_config_changed, refresh playlists/starred/random/artists events). playback_resume +zero-offset boundary.
+- RUNNING scoped verification `/tmp/daemon-small3.log` (test phase scoped to daemon binaries, ~20min). expect most survivors killed; known-equivalent: persistence:24 + run:85 (NotFound guard = log-only, same return), queue move 69/71 + shuffle_queue 146 (boundary guards for states the queue-position invariant prevents).
+- DEFERRED: settings_ops:24 (password_file filter; update_server_config blocks ~10s on connection probe, fiddly).
+- NEXT: big-daemon run = core.rs (~30 survivors in `/tmp/daemon-mutants.log`, 4 pre-killed), playback_ops.rs, playback_tick.rs. USE scoped test phase + clean scratch.
 
 ### daemon T0 batch (RUNNING `/tmp/daemon-mutants.log`, 285 mutants ~3h)
 
