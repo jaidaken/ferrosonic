@@ -497,6 +497,57 @@ mod playback_tick_tests {
     }
 
     #[test]
+    fn advance_early_excludes_position_exactly_half() {
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 0.5,
+            time_remaining: 1.0,
+            playlist_count: Some(1),
+            queue_position: Some(0),
+            ..baseline()
+        };
+        assert_ne!(decide(&i), PlaybackTickAction::AdvanceEarly);
+    }
+
+    #[test]
+    fn advance_early_excludes_zero_time_remaining() {
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 1.0,
+            time_remaining: 0.0,
+            playlist_count: Some(1),
+            queue_position: Some(0),
+            ..baseline()
+        };
+        assert_ne!(decide(&i), PlaybackTickAction::AdvanceEarly);
+    }
+
+    #[test]
+    fn advance_early_excludes_time_remaining_exactly_two() {
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 1.0,
+            time_remaining: 2.0,
+            playlist_count: Some(1),
+            queue_position: Some(0),
+            ..baseline()
+        };
+        assert_ne!(decide(&i), PlaybackTickAction::AdvanceEarly);
+    }
+
+    #[test]
+    fn advance_early_excludes_playlist_count_exactly_two() {
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 1.0,
+            time_remaining: 1.0,
+            playlist_count: Some(2),
+            ..baseline()
+        };
+        assert_ne!(decide(&i), PlaybackTickAction::AdvanceEarly);
+    }
+
+    #[test]
     fn enum_must_use_attrs_present() {
         assert_eq!(TickContinuation::Stop, TickContinuation::Stop);
         assert_ne!(TickContinuation::Stop, TickContinuation::Continue);

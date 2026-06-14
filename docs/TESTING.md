@@ -153,6 +153,7 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 
 ### done
 
+- **playback_tick.rs: 16 survivors -> 11 killed + 1 equiv + 4 known-open** (55 mutants). killed: decide boundaries 140/141/142/145 (exact-value inline tests in `playback_tick_tests`), tr arithmetic 83 + has_next 86 (AdvanceEarly-vs-Preload queue_position discriminator) + tick_fetch 302 (`tests/daemon_playback_tick.rs`). equiv: 291 backfill-0.0 (exclusions doc). KNOWN-OPEN (seam-required, final depth pass): 111 just_loaded 1500ms boundary (std::time::Instant, tokio fake-time does not reach it; needs a clock-injection seam), 216/221 bump_preload_due debounce (5s suppression unobservable because the first preload changes playlist_count off the Preload path; needs a playlist-count-pinned harness).
 - **playback_ops.rs: 100% of killable** (44 mutants, was 9 missed; 5 killed + 4 equivalent). `c61884e` core.rs cheap kills, `4a4c3d5` playback_ops. kills: prev 3s boundary (155), resume offset commit (223 ==/<), seek (384), seek_relative (397). equiv: 223 >=, 260 log-only. `tests/daemon_seek_resume.rs`.
 - **core.rs cheap real kills: 378/391/235** (9/9 scoped verify). rest = seam-required known-open (see CURRENT). `tests/daemon_startup_sweep.rs` + `daemon_core_effects.rs`.
 - UI list render (library/playlists/songs/queue/styled_lines): **98.4%** (60/61, run #4 + 121 fix). 1 provably-equivalent mutant (queue `<`->`<=`).
