@@ -101,6 +101,34 @@ async fn star_appends_to_a_nonempty_starred_list_when_refresh_unavailable() {
 
 #[tokio::test]
 #[serial]
+async fn star_marks_an_existing_unmarked_starred_entry() {
+    // s1 in starred_songs but unmarked reads as unstarred, so starring takes the
+    // `already` update branch; `==`->`!=` there would mark a different entry.
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_star().await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("s1", "Target")];
+        s.library.starred_songs = vec![song("s1", "Target")]; // starred = None
+    }
+
+    td.core.toggle_star_song("s1").await.unwrap();
+
+    let s = td.state.read().await;
+    let entry = s
+        .library
+        .starred_songs
+        .iter()
+        .find(|x| x.id == "s1")
+        .expect("s1 entry");
+    assert!(
+        entry.starred.is_some(),
+        "the existing starred_songs entry for s1 is marked"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn unstar_clears_the_marker_across_cached_lists() {
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_unstar().await;
