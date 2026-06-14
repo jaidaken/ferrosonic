@@ -228,10 +228,16 @@ async fn process_command(
             if mode == "append" {
                 s.playlist.push(path);
             } else {
+                let start = cmd
+                    .get(4)
+                    .and_then(|v| v.as_str())
+                    .and_then(|opts| opts.split(',').find_map(|kv| kv.strip_prefix("start=")))
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(0.0);
                 s.loaded_file = Some(path.clone());
                 s.playlist.clear();
                 s.playlist.push(path);
-                s.position = 0.0;
+                s.position = start;
                 s.paused = false;
             }
             ("success".into(), None)

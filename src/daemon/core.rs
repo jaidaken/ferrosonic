@@ -418,7 +418,7 @@ impl DaemonCore {
             return Ok(false);
         };
         info!("Playing: {} (queue pos {}) mode=Buffered", song.title, idx);
-        self.dispatch_play(stream_url, idx, PlayMode::Buffered).await?;
+        self.dispatch_play(stream_url, idx, PlayMode::Buffered, 0.0).await?;
         self.emit_now_playing().await;
         self.emit_queue().await;
         self.spawn_fast_probe();
@@ -468,6 +468,7 @@ impl DaemonCore {
         stream_url: String,
         pos: usize,
         mode: PlayMode,
+        start_at: f64,
     ) -> Result<(), Error> {
         match mode {
             PlayMode::Direct => {
@@ -475,7 +476,12 @@ impl DaemonCore {
                 if mpv.is_paused().await.unwrap_or(false) {
                     let _ = mpv.resume().await;
                 }
-                if let Err(e) = mpv.loadfile(&stream_url).await {
+                let load = if start_at > 0.0 {
+                    mpv.loadfile_at(&stream_url, start_at).await
+                } else {
+                    mpv.loadfile(&stream_url).await
+                };
+                if let Err(e) = load {
                     error!("Failed to play: {}", e);
                     drop(mpv);
                     self.emit(DaemonEvent::Notification {

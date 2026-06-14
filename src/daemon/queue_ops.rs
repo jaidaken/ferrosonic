@@ -42,7 +42,7 @@ impl DaemonCore {
             song.title, idx, mode
         );
 
-        self.dispatch_play(stream_url, idx, mode).await?;
+        self.dispatch_play(stream_url, idx, mode, 0.0).await?;
         self.emit_now_playing().await;
         self.emit_queue().await;
         self.spawn_fast_probe();

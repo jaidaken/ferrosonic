@@ -68,10 +68,13 @@ impl DaemonCore {
         let Some(pos) = queue_pos else {
             return Ok(());
         };
-        self.play_queue_position(pos, PlayMode::Direct).await?;
-        if playback_state == PlaybackState::Paused && resume_at > 0.0 {
-            self.seek(resume_at).await?;
-        }
+        let start_at = if playback_state == PlaybackState::Paused {
+            resume_at
+        } else {
+            0.0
+        };
+        self.play_queue_position_at(pos, PlayMode::Direct, start_at)
+            .await?;
         Ok(())
     }
 
@@ -179,11 +182,25 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Load and play the queue entry at `pos`; drives the `PipeWire` rate switch.
+    /// Load and play the queue entry at `pos` from the start; drives the `PipeWire` rate switch.
     pub async fn play_queue_position(
         self: &Arc<Self>,
         pos: usize,
         mode: PlayMode,
+    ) -> Result<(), Error> {
+        self.play_queue_position_at(pos, mode, 0.0).await
+    }
+
+    /// Load and play the queue entry at `pos`, beginning at `start_at` seconds; commits `now_playing.position` to `start_at` so resume reflects the playhead before the first tick. mpv decodes from the offset (no post-load seek to race).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the play dispatch to mpv fails.
+    pub async fn play_queue_position_at(
+        self: &Arc<Self>,
+        pos: usize,
+        mode: PlayMode,
+        start_at: f64,
     ) -> Result<(), Error> {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Ok(());
@@ -198,11 +215,15 @@ impl DaemonCore {
         };
 
         info!(
-            "Playing: {} (queue pos {}) mode={:?}",
-            song.title, pos, mode
+            "Playing: {} (queue pos {}) mode={:?} start={}",
+            song.title, pos, mode, start_at
         );
 
-        self.dispatch_play(stream_url, pos, mode).await?;
+        self.dispatch_play(stream_url, pos, mode, start_at).await?;
+        if start_at > 0.0 {
+            let mut state = self.state.write().await;
+            state.now_playing.position = start_at;
+        }
         self.emit_now_playing().await;
         self.emit_queue().await;
         self.spawn_fast_probe();

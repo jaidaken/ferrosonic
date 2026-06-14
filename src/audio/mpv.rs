@@ -325,6 +325,30 @@ impl MpvController {
         Ok(())
     }
 
+    /// Replace the playlist with `path` and begin playback at `start_secs`.
+    /// mpv decodes from the offset directly, so there is no post-load seek to
+    /// race the async network load (mpv 0.38+ 5-arg loadfile).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the mpv IPC `loadfile` command fails.
+    pub async fn loadfile_at(&mut self, path: &str, start_secs: f64) -> Result<(), AudioError> {
+        info!(
+            "Loading at {}s: {}",
+            start_secs,
+            path.split('?').next().unwrap_or(path)
+        );
+        self.send_command(vec![
+            json!("loadfile"),
+            json!(path),
+            json!("replace"),
+            json!(-1),
+            json!(format!("start={}", start_secs)),
+        ])
+        .await?;
+        Ok(())
+    }
+
     /// Append `path` to the playlist without interrupting playback.
     pub async fn loadfile_append(&mut self, path: &str) -> Result<(), AudioError> {
         debug!(
