@@ -283,3 +283,67 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
     let _ = writer_task.await;
     Ok(())
 }
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::redact_secrets_in_body;
+    use serde_json::Value;
+
+    fn redacted(body: &str) -> Value {
+        serde_json::from_str(&redact_secrets_in_body(body)).expect("redacted output is valid json")
+    }
+
+    #[test]
+    fn password_field_is_masked_and_plaintext_never_survives() {
+        let out = redact_secrets_in_body(r#"{"password":"hunter2"}"#);
+        assert!(!out.contains("hunter2"), "plaintext password must not survive: {out}");
+        assert_eq!(redacted(&out)["password"], Value::String("***".into()));
+    }
+
+    #[test]
+    fn a_secret_named_field_is_masked() {
+        assert_eq!(
+            redacted(r#"{"api_secret":"xyz"}"#)["api_secret"],
+            Value::String("***".into())
+        );
+    }
+
+    #[test]
+    fn a_password_key_without_the_word_secret_is_still_masked() {
+        // The `contains("password") || contains("secret")` guard mutated to `&&`
+        // would require both words, leaking a plain `password` field.
+        assert_eq!(
+            redacted(r#"{"password":"hunter2"}"#)["password"],
+            Value::String("***".into())
+        );
+    }
+
+    #[test]
+    fn a_password_nested_in_an_object_is_masked() {
+        let out = redact_secrets_in_body(r#"{"config":{"password":"hunter2"}}"#);
+        assert!(!out.contains("hunter2"), "nested password must be redacted: {out}");
+        assert_eq!(redacted(&out)["config"]["password"], Value::String("***".into()));
+    }
+
+    #[test]
+    fn a_password_inside_an_array_is_masked() {
+        let out = redact_secrets_in_body(r#"{"items":[{"password":"hunter2"}]}"#);
+        assert!(!out.contains("hunter2"), "array-nested password must be redacted: {out}");
+        assert_eq!(redacted(&out)["items"][0]["password"], Value::String("***".into()));
+    }
+
+    #[test]
+    fn an_unparseable_body_is_fully_redacted() {
+        assert_eq!(
+            redact_secrets_in_body("not json {password: hunter2"),
+            "<unparseable; redacted>"
+        );
+    }
+
+    #[test]
+    fn non_secret_fields_are_preserved() {
+        let out = redacted(r#"{"username":"u","title":"song"}"#);
+        assert_eq!(out["username"], Value::String("u".into()));
+        assert_eq!(out["title"], Value::String("song".into()));
+    }
+}

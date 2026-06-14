@@ -6,7 +6,7 @@ date: 2026-06-14
 
 # TESTING AUDIT + PLAN
 
-scope: every `src/*.rs` file. goal = **92% mutation kill floor** (raised from M75 by user 2026-06-14) + A1 (1+ strong assert/test) THROUGHOUT, plus style-aware coverage for UI render. supersedes the missing `TESTING-PLAN.md` referenced by [mutation baseline](MUTATION-BASELINE.md).
+scope: every `src/*.rs` file. **NO percentage gate** (user 2026-06-14: "every percent is pointless, tests should be decided based on the actual contents"). goal = strong asserts (A1) on logic that can break in a way that MATTERS (state transitions, parsing, IO, arithmetic feeding a decision, protocol framing, security boundaries); trivial getters / pure render / log-only / provably-equivalent code get no new test. mutation = DISCOVERY tool to find code that runs unchecked, then judge each survivor; kill the real ones, document equivalents, leave unreachable-boundary + timing-only mutants. supersedes the missing `TESTING-PLAN.md` referenced by [mutation baseline](MUTATION-BASELINE.md).
 
 ## MUTATION RUNNER GOTCHAS (learned 2026-06-14)
 
@@ -17,7 +17,7 @@ scope: every `src/*.rs` file. goal = **92% mutation kill floor** (raised from M7
 
 ## METHOD
 
-- ORACLE = `cargo mutants --file <f>` kill rate. **FLOOR = 92%** (every file at or above; provably-equivalent survivors documented + excluded, never silenced). coverage % = triage only (async per-monomorphization counting misleads; see testing rules).
+- `cargo mutants --file <f>` = DISCOVERY, not a gate. read each survivor, judge whether a bug there would matter: real -> add a strong assert; equivalent -> document in `mutants_exclusions.md`; unreachable-boundary / timing-only / log-only -> leave it. NO kill-% target. coverage % = ignored (async per-monomorphization counting misleads anyway).
 - A1 = every test fn has 1+ strong assert (value/state/error-kind/snapshot), smoke exception only for `_renders_without_panic` w/ no observable effect.
 - UI render = STYLE-AWARE (cell fg/bg/modifier), not text-only. text-only harness hid the song-pane focus leak (fixed `2127efd`); style harness added `088f8a8` (`tests/common/render.rs` `StyledScreen`).
 - per-file mutation run: background via `scripts/mutants.sh --file <f>`; triage survivors -> add asserts -> re-run -> record %.
@@ -153,6 +153,7 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 
 ### done
 
+- **ipc batch (6 files, 97 mutants, 15 survivors): real ones tested, rest judged.** REAL+tested: server.rs redaction 53/62/63/66/73 (log-body secret scrubber, untested before; inline `redaction_tests` incl `||`->`&&` password-leak guard), client.rs request 278/279 (cover-art id path-traversal + length guard; `tests/ipc_cover_art_validation.rs` serves art for the rejected id as the discriminator). EQUIV: server.rs:126 `LOCK_EX|LOCK_NB`->`^` (disjoint bits, exclusions doc). JUDGED-SKIP (real but not worth a test): path.rs:69 backoff `*`->`/` (retry cadence, still connects), server.rs:29 try_send_resync true/false (channel-full reconnect edge).
 - **playback_tick.rs: 16 survivors -> 11 killed + 1 equiv + 4 known-open** (55 mutants). killed: decide boundaries 140/141/142/145 (exact-value inline tests in `playback_tick_tests`), tr arithmetic 83 + has_next 86 (AdvanceEarly-vs-Preload queue_position discriminator) + tick_fetch 302 (`tests/daemon_playback_tick.rs`). equiv: 291 backfill-0.0 (exclusions doc). KNOWN-OPEN (seam-required, final depth pass): 111 just_loaded 1500ms boundary (std::time::Instant, tokio fake-time does not reach it; needs a clock-injection seam), 216/221 bump_preload_due debounce (5s suppression unobservable because the first preload changes playlist_count off the Preload path; needs a playlist-count-pinned harness).
 - **playback_ops.rs: 100% of killable** (44 mutants, was 9 missed; 5 killed + 4 equivalent). `c61884e` core.rs cheap kills, `4a4c3d5` playback_ops. kills: prev 3s boundary (155), resume offset commit (223 ==/<), seek (384), seek_relative (397). equiv: 223 >=, 260 log-only. `tests/daemon_seek_resume.rs`.
 - **core.rs cheap real kills: 378/391/235** (9/9 scoped verify). rest = seam-required known-open (see CURRENT). `tests/daemon_startup_sweep.rs` + `daemon_core_effects.rs`.
