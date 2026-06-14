@@ -56,6 +56,45 @@ async fn refresh_artists_emits_library_version_changed() {
 
 #[tokio::test]
 #[serial]
+async fn refresh_playlists_emits_playlists_changed() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_playlists().await;
+    let mut rx = td.core.subscribe();
+    td.core.refresh_playlists().await;
+    assert!(
+        recv_matching(&mut rx, |e| matches!(e, DaemonEvent::PlaylistsChanged(_))).await,
+        "refresh_playlists must emit PlaylistsChanged"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn refresh_starred_emits_starred_changed() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_starred().await;
+    let mut rx = td.core.subscribe();
+    td.core.refresh_starred().await;
+    assert!(
+        recv_matching(&mut rx, |e| matches!(e, DaemonEvent::StarredChanged(_))).await,
+        "refresh_starred must emit StarredChanged"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn refresh_random_emits_random_changed() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_random_songs(&[]).await;
+    let mut rx = td.core.subscribe();
+    td.core.refresh_random().await;
+    assert!(
+        recv_matching(&mut rx, |e| matches!(e, DaemonEvent::RandomChanged(_))).await,
+        "refresh_random must emit RandomChanged"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn set_cava_enabled_emits_config_changed() {
     let td = TestDaemon::new().await;
     let mut rx = td.core.subscribe();
