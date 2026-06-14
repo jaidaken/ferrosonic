@@ -8,6 +8,7 @@ mod common;
 use std::time::Duration;
 
 use common::{song, TestDaemon};
+use ferrosonic::daemon::core::PlayMode;
 use ferrosonic::ipc::DaemonEvent;
 use serial_test::serial;
 use tokio::sync::broadcast::Receiver;
@@ -45,6 +46,30 @@ where
             _ => return true,
         }
     }
+}
+
+#[tokio::test]
+#[serial]
+async fn quit_mpv_sends_quit_command_to_mpv() {
+    let td = TestDaemon::new().await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("s1", "A")];
+        s.queue_position = Some(0);
+    }
+    // Play first so the mpv writer is connected; quit() is a no-op otherwise.
+    td.core
+        .play_queue_position(0, PlayMode::Direct)
+        .await
+        .unwrap();
+
+    td.core.quit_mpv().await;
+
+    let cmds = td.fake_mpv.commands().await;
+    assert!(
+        cmds.iter().any(|c| c.first().and_then(|v| v.as_str()) == Some("quit")),
+        "quit_mpv must send a quit command to mpv"
+    );
 }
 
 #[tokio::test]
