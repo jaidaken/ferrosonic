@@ -17,6 +17,8 @@ survivors are real gaps and get a test (see [TESTING](TESTING.md)).
 - `queue_ops.rs:146` (`cur < state.queue.len()` -> `<=`) in `shuffle_queue`. `queue_position` is always a valid index (`< len`) by the queue invariant; `cur == len` is unreachable, so `<` and `<=` agree on every reachable state.
 - `persistence.rs:24` (NotFound match guard -> true/false, `==` -> `!=`) in `QueueSnapshot::load`. both guard arms `return None`; the guard only selects whether a warning is logged. result is identical (`None`) for every error kind.
 - `run.rs:85` (`e.kind() != NotFound` -> `==`) in `shutdown`. socket removal: both branches leave the socket removed; the guard only selects whether a warning logs. no behavioural difference.
+- `playback_ops.rs:223` (`start_at > 0.0` -> `>= 0.0`) in `play_queue_position_at`. at `start_at == 0.0` the mutant writes `now_playing.position = 0.0`, which equals the `0.0` already set by `commit_play_state_in_lock` earlier in the same call; for `start_at > 0.0` both commit. same value for every input. (the `== 0.0` and `< 0.0` mutants at this site ARE killed: they skip the commit for `start_at > 0`, see `tests/daemon_seek_resume.rs`.)
+- `playback_ops.rs:260` (`count < 2` -> `==` / `>` / `<=`) in `preload_next_track`. the comparison only selects `warn!` vs `debug!` after the preload append; no state, queue, or mpv-command difference. log-only.
 
 ## ui
 
