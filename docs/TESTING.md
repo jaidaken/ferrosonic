@@ -13,6 +13,7 @@ scope: every `src/*.rs` file. goal = **92% mutation kill floor** (raised from M7
 - ALWAYS `rm -rf /dev/shm/cargo-mutants-*` after killing a run. `pkill -9` orphans 3.3G/worker scratch dirs; they accumulate, fill the RAM tmpfs, and every build thrashes (a 115-mutant job took 13h instead of ~20min). check `df -BG /dev/shm` before launching.
 - SCOPE THE TEST PHASE: `MUTANTS_EXCLUDE='binary(x) | binary(y) | ...'` (positive filter of the file's relevant test binaries) cuts the per-mutant test phase from ~20s to ~4s. the unmutated baseline must pass under that scope. build time (~30-70s/mutant) then dominates; ~115 mutants / 4 workers ~= 20min.
 - kill flaky baseline tests via the exclude (e.g. `test(mpris_handler_off_tokio_runtime_does_not_panic)`); a red baseline aborts the whole run.
+- SCOPE TOO NARROW = FALSE SURVIVORS: if a mutant's killing test is NOT in the scoped set, it reports MISSED spuriously (core.rs:818 release_pipewire_rate showed missed because `pipewire_pin_lifecycle` was excluded). central files (core.rs) are exercised by many subsystems' tests; run them with the DEFAULT exclude (full suite) for accuracy, accept the slower test phase. only scope narrow for leaf files with few exercising binaries.
 
 ## METHOD
 
@@ -157,7 +158,13 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 - daemon core.rs partial kills (PREPPED, verify in overnight core run): broadcast_now_playing, emit_config_changed, bump_library_version (`tests/daemon_core_effects.rs`), dispatch_play `>` boundary (`tests/playback_resume.rs`).
 - flaky `mpris_handler_off_tokio_runtime` excluded from mutation baseline (passes solo, fails under parallel load; CLAUDE.md known-flaky). FIX-LATER: real flakiness.
 
-### CURRENT (resume here)
+### CURRENT (resume here, updated)
+
+- daemon small files (queue_ops/settings_ops/loaders/persistence/polling/run/library_ops): **DONE**. every killable survivor closed (small4 90/103 then +6 fixes: 179, 79-boundary, 82, 298, settings-24, quit_mpv). new test files: daemon_core_effects, daemon_star_sync, daemon_queue_ops_more, daemon_preload_resync, daemon_settings_repeat, daemon_settings_config. equivalents in mutants_exclusions.md.
+- core.rs: ACCURATE re-run RUNNING `/tmp/core-mutants2.log` (full suite; scoped run gave false 818). survivor categories from scoped run: RAII guards 43/49/70/76/98/104 (prebuffer-flag cleanup, need prebuffer harness or equivalent), prebuffer streaming 606/619/680/693/705/707 (need >512KB FakeSubsonic stream harness), mpv lifecycle 235/252/528/539, event listener 278/291, logic 366/378/391/514/784, 818 (FALSE: killed by pipewire_pin_lifecycle). quit_mpv 304 already killed.
+- NEXT after core.rs: playback_ops.rs, playback_tick.rs (likely already strong), then ipc/subsonic/audio re-verify/app/ui-remaining.
+
+### OLD CURRENT
 
 - daemon small-files TESTS WRITTEN (committed): daemon_star_sync (apply_star_to_cached/sync_starred_songs + song.id==id), daemon_queue_ops_more (move-position adjust, shuffle_library body+guard, shuffle_queue), daemon_core_effects (broadcast_now_playing, emit_config_changed, refresh playlists/starred/random/artists events). playback_resume +zero-offset boundary.
 - RUNNING scoped verification `/tmp/daemon-small3.log` (test phase scoped to daemon binaries, ~20min). expect most survivors killed; known-equivalent: persistence:24 + run:85 (NotFound guard = log-only, same return), queue move 69/71 + shuffle_queue 146 (boundary guards for states the queue-position invariant prevents).
