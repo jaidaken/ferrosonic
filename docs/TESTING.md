@@ -144,9 +144,15 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 - UI targeted mutant kills (glyph/bold/accent/disc discriminators; theme colour collisions noted) `(committed)`.
 - P1 UI files (library/playlists/songs/queue/styled_lines): 61% -> 83.6% (run #3) -> ~96% expected (run #4 confirming). 2 provably-equivalent mutants remain (queue `<`->`<=` at the current index; library 193 `&&`->`||` unreachable filter state).
 
+### done
+
+- UI list render (library/playlists/songs/queue/styled_lines): **98.4%** (60/61, run #4 + 121 fix). 1 provably-equivalent mutant (queue `<`->`<=`).
+- playback state-machine property test.
+
 ### remaining (priority order)
 
-- P1: confirm UI 5 files >=92 (run #3); then re-measure io_util, frame, queue_ops, secret (stale baseline) + fill.
+- P2 daemon T0 batch RUNNING (`/tmp/daemon-mutants.log`): core, playback_ops, playback_tick, library_ops, settings_ops, loaders, persistence, polling, run, queue_ops.
+- P1: re-measure io_util, frame, secret (stale baseline) + fill.
 - P2: T0 unmeasured (daemon core/playback_ops/playback_tick/library_ops/settings_ops/loaders/persistence/polling/run; ipc server/client/socket_client/path; subsonic client/auth/models; config/paths; error; proc_util).
 - P3: T1 unmeasured (app input*/mouse*/event_pump/cava_pipe/mod/lifecycle/state/page_state/spawn_daemon; mpris/server).
 - P4: T2 UI unmeasured (server/settings pages; widget_now_playing/footer/header/layout/theme/cover_art/chafa/widget_cava/quit_prompt).
