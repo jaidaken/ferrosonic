@@ -163,6 +163,9 @@ impl App {
                         }
                         return Ok(());
                     }
+                    // Artist row: no album hovered, show the playing album.
+                    state.client.artists.songs = state.daemon.queue.clone();
+                    state.client.artists.selected_song = state.daemon.queue_position;
                 } else if let Some(sel) = state.client.artists.selected_song {
                     if sel > 0 {
                         state.client.artists.selected_song = Some(sel - 1);
@@ -208,6 +211,9 @@ impl App {
                         }
                         return Ok(());
                     }
+                    // Artist row: no album hovered, show the playing album.
+                    state.client.artists.songs = state.daemon.queue.clone();
+                    state.client.artists.selected_song = state.daemon.queue_position;
                 } else {
                     let max = state.client.artists.songs.len().saturating_sub(1);
                     if let Some(sel) = state.client.artists.selected_song {

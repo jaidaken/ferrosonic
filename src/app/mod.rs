@@ -356,15 +356,25 @@ impl App {
         };
 
         if let Some(snap) = snap {
-            let mut ds = self.daemon_state.write().await;
-            *ds = *snap;
-            info!(
-                "Snapshot: queue={} starred={} artists={} playlists={}",
-                ds.queue.len(),
-                ds.library.starred_songs.len(),
-                ds.library.artists.len(),
-                ds.library.playlists.len(),
-            );
+            let (queue, queue_position) = {
+                let mut ds = self.daemon_state.write().await;
+                *ds = *snap;
+                info!(
+                    "Snapshot: queue={} starred={} artists={} playlists={}",
+                    ds.queue.len(),
+                    ds.library.starred_songs.len(),
+                    ds.library.artists.len(),
+                    ds.library.playlists.len(),
+                );
+                (ds.queue.clone(), ds.queue_position)
+            };
+            // Reopening mid-playback: default the Library right pane to the
+            // playing album instead of leaving it blank until an album hover.
+            if queue_position.is_some() {
+                let mut cs = self.client_state.write().await;
+                cs.artists.songs = queue;
+                cs.artists.selected_song = queue_position;
+            }
         }
 
         let daemon_state = self.daemon_state.clone();
