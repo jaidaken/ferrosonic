@@ -15,5 +15,5 @@ pub use fake_subsonic::FakeSubsonic;
 pub use fixtures::{song, song_starred, songs};
 pub use pw_recorder::RecordingPwRunner;
 pub use recording_client::RecordingClient;
-pub use render::render;
+pub use render::{render, render_styled, StyledScreen};
 pub use test_daemon::TestDaemon;
