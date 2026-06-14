@@ -160,6 +160,9 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 
 ### CURRENT (resume here, updated)
 
+- **PENDING USER DECISION (unanswered):** core.rs at 55.9%. asked A vs B. A(rec)=kill ~5 clear logic survivors (378/391/235/252/366), document RAII (43-104) + prebuffer-timing (606-707) as equivalent/seam-required, MOVE to the ~55 unmeasured files (higher real-bug payoff). B=invasive prebuffer-lifecycle harness for core.rs 92% first. resume by getting the answer.
+
+
 - daemon small files (queue_ops/settings_ops/loaders/persistence/polling/run/library_ops): **DONE**. every killable survivor closed (small4 90/103 then +6 fixes: 179, 79-boundary, 82, 298, settings-24, quit_mpv). new test files: daemon_core_effects, daemon_star_sync, daemon_queue_ops_more, daemon_preload_resync, daemon_settings_repeat, daemon_settings_config. equivalents in mutants_exclusions.md.
 - core.rs: ACCURATE re-run RUNNING `/tmp/core-mutants2.log` (full suite; scoped run gave false 818). survivor categories from scoped run: RAII guards 43/49/70/76/98/104 (prebuffer-flag cleanup, need prebuffer harness or equivalent), prebuffer streaming 606/619/680/693/705/707 (need >512KB FakeSubsonic stream harness), mpv lifecycle 235/252/528/539, event listener 278/291, logic 366/378/391/514/784, 818 (FALSE: killed by pipewire_pin_lifecycle). quit_mpv 304 already killed.
 - NEXT after core.rs: playback_ops.rs, playback_tick.rs (likely already strong), then ipc/subsonic/audio re-verify/app/ui-remaining.
