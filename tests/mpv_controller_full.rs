@@ -227,6 +227,17 @@ async fn get_bit_depth_returns_option() {
 
 #[tokio::test]
 #[serial]
+async fn get_bit_depth_maps_float_format_to_32() {
+    // The `contains("32") || contains("float")` branch mutated to `&&` would not
+    // map a plain "float" (no "32") to 32-bit.
+    let (mut ctrl, fake) = ctrl_and_fake().await;
+    fake.set_property("audio-params/format", serde_json::json!("float"))
+        .await;
+    assert_eq!(ctrl.get_bit_depth().await.unwrap(), Some(32));
+}
+
+#[tokio::test]
+#[serial]
 async fn get_audio_format_returns_option() {
     let (mut ctrl, fake) = ctrl_and_fake().await;
     fake.set_property("audio-params/format", serde_json::json!("s16"))
