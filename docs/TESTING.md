@@ -148,6 +148,14 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 
 - UI list render (library/playlists/songs/queue/styled_lines): **98.4%** (60/61, run #4 + 121 fix). 1 provably-equivalent mutant (queue `<`->`<=`).
 - playback state-machine property test.
+- daemon core.rs partial kills (PREPPED, verify in overnight core run): broadcast_now_playing, emit_config_changed, bump_library_version (`tests/daemon_core_effects.rs`), dispatch_play `>` boundary (`tests/playback_resume.rs`).
+- flaky `mpris_handler_off_tokio_runtime` excluded from mutation baseline (passes solo, fails under parallel load; CLAUDE.md known-flaky). FIX-LATER: real flakiness.
+
+### CURRENT (resume here)
+
+- RUNNING: small-daemon mutation `/tmp/daemon-small-mutants.log` (queue_ops, settings_ops, loaders, persistence, polling, run, library_ops; 115 mutants ~70min). triage survivors -> fix -> re-run to verify.
+- NEXT: overnight big-daemon run = core.rs, playback_ops.rs, playback_tick.rs (slow ~3-6h). core.rs partial survivors already in `/tmp/daemon-mutants.log` (killed batch) + 4 pre-killed above.
+- killed-batch core.rs survivor categories captured below.
 
 ### daemon T0 batch (RUNNING `/tmp/daemon-mutants.log`, 285 mutants ~3h)
 
