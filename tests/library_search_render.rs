@@ -106,3 +106,51 @@ fn filter_scope_slash_count_shows_in_title() {
         frame
     );
 }
+
+#[test]
+fn search_album_result_shows_the_artist_name() {
+    // Album-search rows show "artist - album"; the tree fallback omits the
+    // artist, so the artist name appears only on the search path.
+    let (daemon, mut client) = build_state();
+    client.page = Page::Library;
+    client.artists.filter_active = true;
+    client.artists.filter = "blue".into();
+    client.artists.filter_scope = FilterScope::Albums;
+    client.artists.search_results = Some(SearchResult3 {
+        artist: vec![],
+        album: vec![Album {
+            id: "alb0".into(),
+            name: "Kind of Blue".into(),
+            artist: Some("Miles Davis".into()),
+            artist_id: Some("a0".into()),
+            cover_art: None,
+            song_count: Some(9),
+            duration: Some(2700),
+            year: Some(1959),
+            genre: None,
+        }],
+        song: vec![],
+    });
+    let frame = render(120, 30, &daemon, &mut client);
+    assert!(
+        frame.contains("Miles Davis"),
+        "album search result must show the artist prefix, not the plain tree row;\n{}",
+        frame
+    );
+}
+
+#[test]
+fn filter_active_with_empty_text_still_shows_the_search_title() {
+    // searching = filter_active || !filter.is_empty(); pressing `/` activates
+    // the filter before any text is typed, so the title must read Search.
+    let (daemon, mut client) = build_state();
+    client.page = Page::Library;
+    client.artists.filter_active = true;
+    client.artists.filter = String::new();
+    let frame = render(120, 30, &daemon, &mut client);
+    assert!(
+        frame.contains("Search"),
+        "an active-but-empty filter must show the Search title;\n{}",
+        frame
+    );
+}
