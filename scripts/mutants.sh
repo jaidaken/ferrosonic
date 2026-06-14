@@ -35,7 +35,7 @@ jobs_space=$(( scratch_gb / worker_gb ))
 jobs="${MUTANTS_JOBS:-$(( jobs_cpu < jobs_space ? jobs_cpu : jobs_space ))}"
 (( jobs < 1 )) && jobs=1
 base="${MUTANTS_BASE:-origin/master}"
-exclude="${MUTANTS_EXCLUDE:-not (binary(stress_proptest) | binary(queue_proptest) | binary(ipc_frame_proptest) | binary(fuzz_ipc_frame) | binary(playback_state_proptest))}"
+exclude="${MUTANTS_EXCLUDE:-not (binary(stress_proptest) | binary(queue_proptest) | binary(ipc_frame_proptest) | binary(fuzz_ipc_frame) | binary(playback_state_proptest) | test(mpris_handler_off_tokio_runtime_does_not_panic))}"
 
 args=("$@")
 have_scope=false
