@@ -29,6 +29,45 @@ where
     }
 }
 
+/// True if no event matching `pred` arrives within a short window.
+async fn no_event_matching<F>(rx: &mut Receiver<DaemonEvent>, pred: F) -> bool
+where
+    F: Fn(&DaemonEvent) -> bool,
+{
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(300);
+    loop {
+        match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Ok(ev)) => {
+                if pred(&ev) {
+                    return false;
+                }
+            }
+            _ => return true,
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn star_without_a_refresh_does_not_emit_starred_changed() {
+    // expect_star but no expect_starred: the post-toggle refresh fails, so the
+    // `refreshed.is_some() && !stale` guard is false. `&&`->`||` would emit anyway.
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_star().await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("s1", "A")];
+    }
+    let mut rx = td.core.subscribe();
+
+    td.core.toggle_star_song("s1").await.unwrap();
+
+    assert!(
+        no_event_matching(&mut rx, |e| matches!(e, DaemonEvent::StarredChanged(_))).await,
+        "without a successful refresh, StarredChanged must not be emitted"
+    );
+}
+
 #[tokio::test]
 #[serial]
 async fn broadcast_now_playing_emits_now_playing_changed() {

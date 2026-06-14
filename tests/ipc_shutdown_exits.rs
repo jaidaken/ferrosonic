@@ -68,4 +68,9 @@ async fn ipc_shutdown_request_terminates_the_daemon_process() {
         exited.unwrap().success(),
         "daemon should exit cleanly after IPC Shutdown"
     );
+    // The shutdown path removes the socket file; a removed body would leave it.
+    assert!(
+        !socket_path.exists(),
+        "clean shutdown must remove the socket file"
+    );
 }

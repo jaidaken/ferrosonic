@@ -43,6 +43,21 @@ async fn move_touching_the_current_slot_resyncs_the_preload() {
 
 #[tokio::test]
 #[serial]
+async fn move_landing_exactly_on_the_current_slot_resyncs() {
+    let td = playing_td(5, 2).await;
+    let before = td.fake_mpv.commands().await.len();
+    // from.max(to) == cur (move 0 -> 2, cur=2): the `< cur` boundary. `<`->`==`
+    // or `<=` would flip the resync decision here.
+    td.core.move_queue_item(0, 2).await;
+    let cmds = td.fake_mpv.commands().await;
+    assert!(
+        loadfiles_since(&cmds, before) > 0,
+        "a move landing on the current track resyncs the preload"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn move_far_after_the_current_slot_does_not_resync() {
     let td = playing_td(8, 2).await;
     let before = td.fake_mpv.commands().await.len();
