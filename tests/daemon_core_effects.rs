@@ -43,6 +43,19 @@ async fn broadcast_now_playing_emits_now_playing_changed() {
 
 #[tokio::test]
 #[serial]
+async fn refresh_artists_emits_library_version_changed() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_artists(&["The Cure"]).await;
+    let mut rx = td.core.subscribe();
+    td.core.refresh_artists().await;
+    assert!(
+        recv_matching(&mut rx, |e| matches!(e, DaemonEvent::LibraryVersionChanged(_))).await,
+        "refresh_artists must bump and emit LibraryVersionChanged"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn set_cava_enabled_emits_config_changed() {
     let td = TestDaemon::new().await;
     let mut rx = td.core.subscribe();
