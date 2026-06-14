@@ -138,6 +138,11 @@ impl StyledScreen {
         (x0..x1.min(self.buf.area.width)).any(|x| self.buf[(x, y)].fg == color)
     }
 
+    /// True if any cell on row `y` within columns `[x0, x1)` carries `modifier`.
+    pub fn row_has_modifier_in(&self, y: u16, x0: u16, x1: u16, modifier: Modifier) -> bool {
+        (x0..x1.min(self.buf.area.width)).any(|x| self.buf[(x, y)].modifier.contains(modifier))
+    }
+
     /// The first row whose text contains `needle`, or None.
     pub fn row_of(&self, needle: &str) -> Option<u16> {
         self.rows_with(needle).into_iter().next()
