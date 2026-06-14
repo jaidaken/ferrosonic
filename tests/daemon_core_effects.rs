@@ -30,6 +30,24 @@ where
     }
 }
 
+/// First non-None projection of an event within 2s, else None.
+async fn recv_value<T, F>(rx: &mut Receiver<DaemonEvent>, project: F) -> Option<T>
+where
+    F: Fn(&DaemonEvent) -> Option<T>,
+{
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Ok(ev)) => {
+                if let Some(v) = project(&ev) {
+                    return Some(v);
+                }
+            }
+            _ => return None,
+        }
+    }
+}
+
 /// True if no event matching `pred` arrives within a short window.
 async fn no_event_matching<F>(rx: &mut Receiver<DaemonEvent>, pred: F) -> bool
 where
@@ -107,14 +125,56 @@ async fn broadcast_now_playing_emits_now_playing_changed() {
 
 #[tokio::test]
 #[serial]
-async fn refresh_artists_emits_library_version_changed() {
+async fn refresh_artists_emits_library_version_changed_with_incremented_value() {
+    // First bump of a fresh daemon emits version 1 (fetch_add returns the prior
+    // 0, +1). The `+`->`*` mutant on bump_library_version would emit 0*1 = 0.
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_artists(&["The Cure"]).await;
     let mut rx = td.core.subscribe();
     td.core.refresh_artists().await;
+    let version = recv_value(&mut rx, |e| match e {
+        DaemonEvent::LibraryVersionChanged(v) => Some(*v),
+        _ => None,
+    })
+    .await;
+    assert_eq!(
+        version,
+        Some(1),
+        "refresh_artists must emit the post-increment version (1), not the prior 0"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn auto_continue_with_no_random_songs_emits_an_error_notification() {
+    // The `!s.is_empty()` guard mutated to `true` routes empty random songs
+    // through the play arm, committing nothing and emitting no notification.
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_random_songs(&[]).await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("s1", "A")];
+        s.queue_position = Some(0);
+        s.config.auto_continue = true;
+        s.config.repeat_mode = ferrosonic::config::RepeatMode::Off;
+    }
+    let mut rx = td.core.subscribe();
+
+    td.core.next_track().await.unwrap();
+
     assert!(
-        recv_matching(&mut rx, |e| matches!(e, DaemonEvent::LibraryVersionChanged(_))).await,
-        "refresh_artists must bump and emit LibraryVersionChanged"
+        recv_matching(&mut rx, |e| matches!(
+            e,
+            DaemonEvent::Notification { is_error: true, .. }
+        ))
+        .await,
+        "exhausting the queue with no random songs must emit an error notification"
+    );
+    let s = td.state.read().await;
+    assert_eq!(
+        s.queue.len(),
+        1,
+        "no songs were appended, so the queue is unchanged"
     );
 }
 

@@ -160,12 +160,17 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 
 ### CURRENT (resume here, updated)
 
-- **PENDING USER DECISION (unanswered):** core.rs at 55.9%. asked A vs B. A(rec)=kill ~5 clear logic survivors (378/391/235/252/366), document RAII (43-104) + prebuffer-timing (606-707) as equivalent/seam-required, MOVE to the ~55 unmeasured files (higher real-bug payoff). B=invasive prebuffer-lifecycle harness for core.rs 92% first. resume by getting the answer.
-
-
-- daemon small files (queue_ops/settings_ops/loaders/persistence/polling/run/library_ops): **DONE**. every killable survivor closed (small4 90/103 then +6 fixes: 179, 79-boundary, 82, 298, settings-24, quit_mpv). new test files: daemon_core_effects, daemon_star_sync, daemon_queue_ops_more, daemon_preload_resync, daemon_settings_repeat, daemon_settings_config. equivalents in mutants_exclusions.md.
-- core.rs: ACCURATE re-run RUNNING `/tmp/core-mutants2.log` (full suite; scoped run gave false 818). survivor categories from scoped run: RAII guards 43/49/70/76/98/104 (prebuffer-flag cleanup, need prebuffer harness or equivalent), prebuffer streaming 606/619/680/693/705/707 (need >512KB FakeSubsonic stream harness), mpv lifecycle 235/252/528/539, event listener 278/291, logic 366/378/391/514/784, 818 (FALSE: killed by pipewire_pin_lifecycle). quit_mpv 304 already killed.
-- NEXT after core.rs: playback_ops.rs, playback_tick.rs (likely already strong), then ipc/subsonic/audio re-verify/app/ui-remaining.
+- **DECISION RESOLVED (user: "whatever is the most professional, complete way forward"):** kill core.rs's cheap real survivors now, log the seam-required real gaps as known-open (NOT as equivalents, they change behaviour), then sweep the ~55 unmeasured files breadth-first, returning for the expensive core.rs seams as a final depth pass.
+- core.rs CHEAP REAL KILLS LANDED (scoped verify `/tmp/core-kill-verify.log`: 9/9 caught): 378 bump_library_version value (assert emitted == 1, `tests/daemon_core_effects.rs`), 391 extend_with_random_and_play empty-guard (auto-continue error notification, same file), 235 sweep_orphan_prebuffer_files (`tests/daemon_startup_sweep.rs` backdated orphan fixture).
+- core.rs KNOWN-OPEN (REAL gaps, seam-required, for final depth pass, do NOT exclude as equivalent):
+  - RAII guards 43/49/70/76/98/104 (LoadingFlagOwner/PrebufferGate/CancelSlotCleaner): protect a track-switch cancel race; outer owner.disarm prevents clobbering a newer task's loading flag. needs a concurrent rapid-switch cancel-race harness (loom or staged Buffered plays).
+  - event listener 278 (`reason != "eof"`) / 291 (`count >= 2`): mpv EOF to auto-advance gapless gating. needs FakeMpv unsolicited-event injection seam (push `{"event":"end-file","reason":...}` to the connected client; MpvController reader broadcasts it).
+  - prebuffer streaming 606/619/680/693/705/707: detached HTTP-streaming task; threshold/trigger mutants change buffering latency but load the same song. needs a >512KB FakeSubsonic byte-stream + chunk-timing control. low correctness value (perf-timing, not song selection).
+  - start_mpv 252 (`-> Ok(())`): spawns the real mpv process; test harness pre-connects via connect_to_existing. real-process e2e only (mpv binary present).
+  - config_gen_changed 366 (`-> false`): stale-refresh gate in library_ops; needs a config_gen-bump-mid-refresh race seam.
+  - dispatch_play 514 (`&&`->`||`): best-effort stop before reload; mutant sends an extra harmless stop when idle (same end state). killable by asserting the command stream; low value.
+  - config_gen_for_test 371: `#[doc(hidden)]` test-only accessor, no production caller, add `#[mutants::skip]` + exclusions entry.
+- NEXT: playback_ops.rs (heavily tested already, measure, expect strong), playback_tick.rs, then ipc/subsonic/audio re-verify/app/ui-remaining per priority list below.
 
 ### OLD CURRENT
 
