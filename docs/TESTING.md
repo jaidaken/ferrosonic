@@ -132,6 +132,21 @@ P5 LOCK-IN: update MUTATION-BASELINE.md w/ all files; add ui/ to nightly mutants
 
 ## LEDGER (per-file completion)
 
-append `file | date | before% -> after% | commit` as each file reaches M75.
+append `file | date | before% -> after% | commit` as each file reaches the floor.
 
-- (in progress)
+### work log (2026-06-14)
+
+- UI render foundation: style-aware harness + focus/indicator/border invariants `088f8a8`.
+- UI focus-gate tighten (mutation found differential too loose) `17c7172`.
+- UI selection-row + content/format coverage `aa678d5`.
+- UI library search-result format + search title `(committed)`.
+- playback state-machine property test (control-sequence invariants) `(committed)`.
+- P1 UI files (library/playlists/songs/queue/styled_lines): 61% -> final pending mutation run #3.
+
+### remaining (priority order)
+
+- P1: confirm UI 5 files >=92 (run #3); then re-measure io_util, frame, queue_ops, secret (stale baseline) + fill.
+- P2: T0 unmeasured (daemon core/playback_ops/playback_tick/library_ops/settings_ops/loaders/persistence/polling/run; ipc server/client/socket_client/path; subsonic client/auth/models; config/paths; error; proc_util).
+- P3: T1 unmeasured (app input*/mouse*/event_pump/cava_pipe/mod/lifecycle/state/page_state/spawn_daemon; mpris/server).
+- P4: T2 UI unmeasured (server/settings pages; widget_now_playing/footer/header/layout/theme/cover_art/chafa/widget_cava/quit_prompt).
+- P5: update MUTATION-BASELINE.md all files; ui/ in nightly mutants matrix.
