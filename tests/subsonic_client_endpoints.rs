@@ -3,6 +3,7 @@
 mod common;
 
 use common::FakeSubsonic;
+use ferrosonic::error::SubsonicError;
 use ferrosonic::subsonic::client::SubsonicClient;
 use serial_test::serial;
 
@@ -26,6 +27,44 @@ async fn ping_returns_error_on_failed_response() {
     fake.expect_error("ping", 40, "auth").await;
     let c = build_client(&fake).await;
     assert!(c.ping().await.is_err());
+}
+
+#[tokio::test]
+#[serial]
+async fn get_artist_returns_api_error_on_failed_response() {
+    // `status != "ok"` -> `==` skips the Api return and fails later as a Parse
+    // error, so only matching the Api kind + code distinguishes the two.
+    let fake = FakeSubsonic::start().await;
+    fake.expect_error("getArtist", 70, "not found").await;
+    let c = build_client(&fake).await;
+    match c.get_artist("a1").await {
+        Err(SubsonicError::Api { code, .. }) => assert_eq!(code, 70),
+        other => panic!("expected Api error 70, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn get_album_returns_api_error_on_failed_response() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_error("getAlbum", 70, "not found").await;
+    let c = build_client(&fake).await;
+    match c.get_album("al1").await {
+        Err(SubsonicError::Api { code, .. }) => assert_eq!(code, 70),
+        other => panic!("expected Api error 70, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn get_playlist_returns_api_error_on_failed_response() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_error("getPlaylist", 70, "not found").await;
+    let c = build_client(&fake).await;
+    match c.get_playlist("p1").await {
+        Err(SubsonicError::Api { code, .. }) => assert_eq!(code, 70),
+        other => panic!("expected Api error 70, got {other:?}"),
+    }
 }
 
 #[tokio::test]
