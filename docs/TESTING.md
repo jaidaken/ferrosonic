@@ -141,7 +141,8 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 - UI selection-row + content/format coverage `aa678d5`.
 - UI library search-result format + search title `(committed)`.
 - playback state-machine property test (control-sequence invariants) `(committed)`.
-- P1 UI files (library/playlists/songs/queue/styled_lines): 61% -> final pending mutation run #3.
+- UI targeted mutant kills (glyph/bold/accent/disc discriminators; theme colour collisions noted) `(committed)`.
+- P1 UI files (library/playlists/songs/queue/styled_lines): 61% -> 83.6% (run #3) -> ~96% expected (run #4 confirming). 2 provably-equivalent mutants remain (queue `<`->`<=` at the current index; library 193 `&&`->`||` unreachable filter state).
 
 ### remaining (priority order)
 
