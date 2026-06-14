@@ -149,10 +149,25 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 - UI list render (library/playlists/songs/queue/styled_lines): **98.4%** (60/61, run #4 + 121 fix). 1 provably-equivalent mutant (queue `<`->`<=`).
 - playback state-machine property test.
 
+### daemon T0 batch (RUNNING `/tmp/daemon-mutants.log`, 285 mutants ~3h)
+
+core.rs shows a high early miss rate: integration tests exercise it (coverage) but assert weakly. survivor categories + how to kill:
+
+- VOID-FN SIDE EFFECTS (`fn -> ()`): broadcast_now_playing[done], emit_config_changed[done via set_cava_enabled], bump_library_version (needs FakeSubsonic artists; extend refresh_flows), quit_mpv (assert FakeMpv got "quit"; needs mpv started), broadcast/emit/sweep. KILL = subscribe + assert the event/command. `tests/daemon_core_effects.rs` is the pattern.
+- RAII GUARDS (LoadingFlagOwner/PrebufferGate/CancelSlotCleaner disarm+drop, core.rs:43-104): cleanup w/ no observable user-space effect. likely PROVABLY-EQUIVALENT or need a concurrency/cancel test. investigate; exclude w/ doc if equivalent.
+- ARITH/CMP BOUNDARIES: dispatch_play 479 (`>`->`>=` start_at=0 boundary; KILL via play_queue_position_at(_,_,0.0) asserts plain loadfile no start=), 514 (&&->||), prebuffer 606/619 math, bump 378 (+->*). KILL = boundary-value tests.
+- MPV LIFECYCLE: start_mpv, spawn_mpv_event_listener 278/291 (needs started-mpv harness).
+
+approach: let batch finish -> full survivor list -> group by category -> write effect/boundary tests -> re-run daemon files to verify -> document equivalents. then P2 ipc/subsonic, P3 app, P4 ui-remaining.
+
 ### remaining (priority order)
 
-- P2 daemon T0 batch RUNNING (`/tmp/daemon-mutants.log`): core, playback_ops, playback_tick, library_ops, settings_ops, loaders, persistence, polling, run, queue_ops.
+- P2 daemon: triage full survivor set (above) to >=92.
+- P2 ipc/subsonic/misc batch: ipc server/client/socket_client/path/frame, subsonic client/auth/models, config/paths, secret, io_util, error, proc_util.
+- P3 T1 app: input*/mouse*/event_pump/cava_pipe/mod/lifecycle/state/page_state/spawn_daemon; mpris/server.
+- P4 T2 ui-remaining: server/settings pages, widget_now_playing/footer/header/layout/theme/cover_art/chafa/widget_cava/quit_prompt.
 - P1: re-measure io_util, frame, secret (stale baseline) + fill.
+- P5: update MUTATION-BASELINE.md; ui/ + daemon in nightly mutants matrix.
 - P2: T0 unmeasured (daemon core/playback_ops/playback_tick/library_ops/settings_ops/loaders/persistence/polling/run; ipc server/client/socket_client/path; subsonic client/auth/models; config/paths; error; proc_util).
 - P3: T1 unmeasured (app input*/mouse*/event_pump/cava_pipe/mod/lifecycle/state/page_state/spawn_daemon; mpris/server).
 - P4: T2 UI unmeasured (server/settings pages; widget_now_playing/footer/header/layout/theme/cover_art/chafa/widget_cava/quit_prompt).
