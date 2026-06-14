@@ -153,6 +153,8 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 
 ### done
 
+- **playback_ops.rs: 100% of killable** (44 mutants, was 9 missed; 5 killed + 4 equivalent). `c61884e` core.rs cheap kills, `4a4c3d5` playback_ops. kills: prev 3s boundary (155), resume offset commit (223 ==/<), seek (384), seek_relative (397). equiv: 223 >=, 260 log-only. `tests/daemon_seek_resume.rs`.
+- **core.rs cheap real kills: 378/391/235** (9/9 scoped verify). rest = seam-required known-open (see CURRENT). `tests/daemon_startup_sweep.rs` + `daemon_core_effects.rs`.
 - UI list render (library/playlists/songs/queue/styled_lines): **98.4%** (60/61, run #4 + 121 fix). 1 provably-equivalent mutant (queue `<`->`<=`).
 - playback state-machine property test.
 - daemon core.rs partial kills (PREPPED, verify in overnight core run): broadcast_now_playing, emit_config_changed, bump_library_version (`tests/daemon_core_effects.rs`), dispatch_play `>` boundary (`tests/playback_resume.rs`).
