@@ -7,7 +7,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::TestDaemon;
+use common::{song, TestDaemon};
 use ferrosonic::ipc::DaemonEvent;
 use serial_test::serial;
 use tokio::sync::broadcast::Receiver;
@@ -90,6 +90,33 @@ async fn refresh_random_emits_random_changed() {
     assert!(
         recv_matching(&mut rx, |e| matches!(e, DaemonEvent::RandomChanged(_))).await,
         "refresh_random must emit RandomChanged"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn star_toggle_emits_starred_changed_and_commits_server_list() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_star().await;
+    td.fake_subsonic.expect_starred().await; // fake returns an empty starred list
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("s1", "A")];
+    }
+    let mut rx = td.core.subscribe();
+
+    td.core.toggle_star_song("s1").await.unwrap();
+
+    assert!(
+        recv_matching(&mut rx, |e| matches!(e, DaemonEvent::StarredChanged(_))).await,
+        "a successful star with a refresh must emit StarredChanged"
+    );
+    // The server list (empty) must overwrite the optimistic [s1]; the `if !stale`
+    // commit mutant would leave the optimistic entry.
+    let s = td.state.read().await;
+    assert!(
+        s.library.starred_songs.is_empty(),
+        "the refreshed server starred list is committed over the optimistic update"
     );
 }
 

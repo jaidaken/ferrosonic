@@ -73,6 +73,34 @@ async fn star_updates_starred_index_when_refresh_unavailable() {
 
 #[tokio::test]
 #[serial]
+async fn star_appends_to_a_nonempty_starred_list_when_refresh_unavailable() {
+    // A pre-existing entry for a different song makes the `already` check
+    // meaningful: `==` -> `!=` would treat s1 as present and skip the append.
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_star().await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("s1", "Target")];
+        let mut other = song("s2", "Other");
+        other.starred = Some("x".into());
+        s.library.starred_songs = vec![other];
+    }
+
+    td.core.toggle_star_song("s1").await.unwrap();
+
+    let s = td.state.read().await;
+    assert!(
+        s.library.starred_songs.iter().any(|x| x.id == "s1"),
+        "s1 is appended to the existing starred list"
+    );
+    assert!(
+        s.library.starred_songs.iter().any(|x| x.id == "s2"),
+        "the existing starred entry is retained"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn unstar_clears_the_marker_across_cached_lists() {
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_unstar().await;
