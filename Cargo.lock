@@ -1017,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "ferrosonic"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
