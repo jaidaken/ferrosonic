@@ -436,6 +436,9 @@ impl App {
         B: ratatui::backend::Backend,
         E: event_source::EventSource,
     {
+        // Paint the alt screen to the default bg; cells ratatui never writes
+        // otherwise keep the terminal's blank screen, which renders black.
+        terminal.clear().map_err(UiError::Render)?;
         loop {
             let tick_rate = self.tick_rate();
             self.draw_once(terminal).await?;
@@ -443,7 +446,11 @@ impl App {
                 break;
             }
             if let Some(ev) = source.next(tick_rate).await {
+                let resized = matches!(ev, crossterm::event::Event::Resize(_, _));
                 self.handle_event(ev).await?;
+                if resized {
+                    terminal.clear().map_err(UiError::Render)?;
+                }
             }
             self.read_cava_output().await;
             self.tick_post().await;
