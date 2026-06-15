@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Album-list view on the Library page.** Press `v` to flip the left
+  pane between the artist tree (default) and a flat list of every album;
+  `s` cycles the sort between album name (A-Z) and original release date
+  (oldest first). Rows lead with the album name, then year and artist
+  (muted). The right pane follows the cursor, and the pane title shows an
+  `Artists -> Albums` toggle hint that recolours with the active mode.
+- **Albums in the artist tree** are now ordered by original release date.
+
+### Changed
+
+- **Toolbar Stop now clears the queue** (it was keeping it, like Pause).
+  MPRIS / media-key Stop still keeps the current track per spec.
+- **The queue is cleared when the daemon exits**, so a fresh start no
+  longer brings back the album you were last playing.
+- **The daemon exits on its own** once nothing is playing and no TUI is
+  connected, instead of lingering forever.
+
+### Fixed
+
+- **Quit no longer hangs.** The TUI now exits immediately on quit /
+  `super+q` / close instead of getting stuck with the runtime unable to
+  shut down.
+- **No more black background blocks.** Empty areas (after text, blank
+  list rows) now show the terminal background instead of black.
+- Name sort ignores leading punctuation, so `"Heroes"` sorts under H.
+- Transport buttons line up; the Play glyph matches the others.
+- Test runs no longer leak background daemons or their mpv children.
+
 ## [0.4.1] - 2026-05-11
 
 Two papercuts from 0.4.0 sanded down.
