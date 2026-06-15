@@ -43,10 +43,9 @@ async fn ipc_shutdown_request_terminates_the_daemon_process() {
     let client = SocketClient::connect(&socket_path)
         .await
         .expect("connect to daemon socket");
-    client
-        .request(DaemonRequest::Shutdown)
-        .await
-        .expect("Shutdown request");
+    // Fire-and-forget: the daemon may drop the socket before its reply flushes
+    // (Disconnected is fine). The contract is asserted below: process exits.
+    let _ = client.request(DaemonRequest::Shutdown).await;
 
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let mut exited = None;
