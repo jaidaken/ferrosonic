@@ -2,7 +2,7 @@
 source: tests/ui_smoke.rs
 expression: frame
 ---
- F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮   ⏵   ⏸   ⏹   ⏭ 
+ F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
 ┌ Queue (0) ───────────────────────────────────────────────────────────────────┐
 │Queue is empty. Add songs from Artists or Playlists.                          │
 │                                                                              │

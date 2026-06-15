@@ -75,16 +75,18 @@ impl Widget for Header {
             _ => Style::default().fg(self.colors.muted),
         };
 
+        // U+FE0E forces narrow text rendering; without it some terminals render
+        // these media symbols emoji-wide and the buttons misalign.
         let controls = Line::from(vec![
-            Span::styled(" ⏮ ", nav_style),
+            Span::styled(" \u{23EE}\u{FE0E} ", nav_style),
             Span::raw(" "),
-            Span::styled(" ⏵ ", play_style),
+            Span::styled(" \u{23F5}\u{FE0E} ", play_style),
             Span::raw(" "),
-            Span::styled(" ⏸ ", pause_style),
+            Span::styled(" \u{23F8}\u{FE0E} ", pause_style),
             Span::raw(" "),
-            Span::styled(" ⏹ ", stop_style),
+            Span::styled(" \u{23F9}\u{FE0E} ", stop_style),
             Span::raw(" "),
-            Span::styled(" ⏭ ", nav_style),
+            Span::styled(" \u{23ED}\u{FE0E} ", nav_style),
         ]);
 
         let controls_width = 19;

@@ -2,7 +2,7 @@
 source: tests/ui_smoke.rs
 expression: frame
 ---
- F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮   ⏵   ⏸   ⏹   ⏭ 
+ F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
 ┌ Playlists (0) ───────────────┐┌ Songs ───────────────────────────────────────┐
 │No playlists found            ││Select a playlist to view songs               │
 │                              ││                                              │
