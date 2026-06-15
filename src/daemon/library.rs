@@ -143,6 +143,9 @@ pub struct LibraryCache {
     pub random_songs: Vec<Child>,
     /// Full artist index.
     pub artists: Vec<Artist>,
+    /// Full album index for the flat album-list view; populated on demand.
+    #[serde(default)]
+    pub all_albums: Vec<Album>,
     /// Album lists keyed by artist ID.
     pub albums_cache: HashMap<String, Vec<Album>>,
     /// LRU order for `albums_cache`, least-recent first.

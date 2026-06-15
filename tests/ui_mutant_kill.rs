@@ -179,6 +179,7 @@ fn library_tree_album_omits_artist_prefix_with_stale_search_results() {
             artist_id: Some("a0".into()),
             cover_art: None,
             song_count: Some(1),
+            original_release_date: None,
             duration: Some(100),
             year: Some(2000),
             genre: None,

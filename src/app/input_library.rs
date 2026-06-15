@@ -2,6 +2,7 @@
 use crossterm::event::{self, KeyCode};
 use tracing::info;
 
+use crate::app::page_state::{AlbumSort, LibraryView};
 use crate::error::Error;
 
 use super::*;
@@ -102,6 +103,48 @@ impl App {
                 }
             });
             return Ok(());
+        }
+
+        // 'v' toggles the left pane between the artist tree and the flat album
+        // list; switching to the list loads it from the daemon on first use.
+        if let KeyCode::Char('v') = key.code {
+            let to_album = state.client.artists.view == LibraryView::ArtistTree;
+            state.client.artists.view = if to_album {
+                LibraryView::AlbumList
+            } else {
+                LibraryView::ArtistTree
+            };
+            let need_load = to_album && state.client.artists.albums.is_empty();
+            let sort = state.client.artists.album_sort;
+            drop(state);
+            drop(cs);
+            drop(ds);
+            if need_load {
+                // Fetch off the input path so a large library doesn't freeze the UI.
+                let client = self.client.clone();
+                let client_state = self.client_state.clone();
+                tokio::spawn(async move {
+                    let albums = match client.request(DaemonRequest::LoadAllAlbums).await {
+                        Ok(crate::ipc::DaemonResponse::AllAlbums(a)) => a,
+                        _ => Vec::new(),
+                    };
+                    let mut cs = client_state.write().await;
+                    cs.artists.albums = albums;
+                    sort_albums(&mut cs.artists.albums, sort);
+                    cs.artists.album_selected = (!cs.artists.albums.is_empty()).then_some(0);
+                    cs.artists.album_scroll_offset = 0;
+                });
+            }
+            return Ok(());
+        }
+
+        // Album-list view, left pane: dedicated album navigation. Right-pane
+        // (focus == 1) song keys fall through to the shared match below.
+        if state.client.artists.view == LibraryView::AlbumList && state.client.artists.focus == 0 {
+            drop(state);
+            drop(cs);
+            drop(ds);
+            return self.handle_album_list_key(key).await;
         }
 
         match key.code {
@@ -706,6 +749,75 @@ impl App {
         Ok(())
     }
 
+    /// Key handling for the flat album list (left pane, focus == 0).
+    async fn handle_album_list_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+        match key.code {
+            KeyCode::Char('s') => {
+                let mut cs = self.client_state.write().await;
+                let next = cs.artists.album_sort.next();
+                cs.artists.album_sort = next;
+                sort_albums(&mut cs.artists.albums, next);
+                cs.artists.album_selected = (!cs.artists.albums.is_empty()).then_some(0);
+                cs.artists.album_scroll_offset = 0;
+                let label = next.label();
+                cs.notify(format!("Sort: {label}"));
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let mut cs = self.client_state.write().await;
+                if let Some(sel) = cs.artists.album_selected {
+                    if sel > 0 {
+                        cs.artists.album_selected = Some(sel - 1);
+                    }
+                } else if !cs.artists.albums.is_empty() {
+                    cs.artists.album_selected = Some(0);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let mut cs = self.client_state.write().await;
+                let max = cs.artists.albums.len().saturating_sub(1);
+                if let Some(sel) = cs.artists.album_selected {
+                    if sel < max {
+                        cs.artists.album_selected = Some(sel + 1);
+                    }
+                } else if !cs.artists.albums.is_empty() {
+                    cs.artists.album_selected = Some(0);
+                }
+            }
+            KeyCode::Enter => {
+                let album_id = {
+                    let cs = self.client_state.read().await;
+                    cs.artists
+                        .album_selected
+                        .and_then(|i| cs.artists.albums.get(i))
+                        .map(|a| a.id.clone())
+                };
+                if let Some(id) = album_id {
+                    let songs = self.load_album(&id).await;
+                    if !songs.is_empty() {
+                        let mut cs = self.client_state.write().await;
+                        cs.artists.songs = songs;
+                        cs.artists.selected_song = Some(0);
+                        cs.artists.focus = 1;
+                    }
+                }
+            }
+            KeyCode::Tab | KeyCode::Right => {
+                let mut cs = self.client_state.write().await;
+                if !cs.artists.songs.is_empty() {
+                    cs.artists.focus = 1;
+                    if cs.artists.selected_song.is_none() {
+                        cs.artists.selected_song = Some(0);
+                    }
+                }
+            }
+            KeyCode::Char('/') => {
+                self.client_state.write().await.artists.filter_active = true;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     async fn collect_songs_for(
         &mut self,
         item: &crate::ui::pages::library::TreeItem,
@@ -730,5 +842,15 @@ impl App {
                 all
             }
         }
+    }
+}
+
+/// Sort the flat album list in place by the chosen order.
+fn sort_albums(albums: &mut [crate::subsonic::models::Album], sort: AlbumSort) {
+    match sort {
+        AlbumSort::Name => {
+            albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        }
+        AlbumSort::ReleaseDate => albums.sort_by_key(|a| a.sort_year().unwrap_or(i32::MAX)),
     }
 }

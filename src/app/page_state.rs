@@ -45,6 +45,56 @@ pub struct ArtistsState {
     pub tree_scroll_offset: usize,
     /// First visible row of the song pane.
     pub song_scroll_offset: usize,
+    /// Left-pane view: artist tree (default) or flat album list.
+    pub view: LibraryView,
+    /// Sort order for the flat album list.
+    pub album_sort: AlbumSort,
+    /// Flat album list, pulled from the daemon on first switch to album view.
+    pub albums: Vec<crate::subsonic::models::Album>,
+    /// Highlighted album in the album-list view.
+    pub album_selected: Option<usize>,
+    /// First visible row of the album list.
+    pub album_scroll_offset: usize,
+}
+
+/// Library left-pane view mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LibraryView {
+    /// Artists with expandable albums (default).
+    #[default]
+    ArtistTree,
+    /// Flat list of every album.
+    AlbumList,
+}
+
+/// Sort order for the flat album list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AlbumSort {
+    /// Alphabetical by album name.
+    #[default]
+    Name,
+    /// By original release year, oldest first.
+    ReleaseDate,
+}
+
+impl AlbumSort {
+    /// The next sort in the cycle.
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Name => Self::ReleaseDate,
+            Self::ReleaseDate => Self::Name,
+        }
+    }
+
+    /// Short label for the pane title.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Name => "Name",
+            Self::ReleaseDate => "Date",
+        }
+    }
 }
 
 /// Item kind the Library page filter matches against.

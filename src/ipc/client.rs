@@ -197,6 +197,10 @@ impl DaemonClient for InProcessClient {
                     .unwrap_or_default();
                 Ok(DaemonResponse::ArtistAlbums(albums))
             }
+            DaemonRequest::LoadAllAlbums => {
+                let albums = self.core.load_all_albums().await;
+                Ok(DaemonResponse::AllAlbums(albums))
+            }
             DaemonRequest::LoadAlbum(id) => {
                 let songs = self.core.load_album_songs(&id).await;
                 Ok(DaemonResponse::AlbumSongs(songs))

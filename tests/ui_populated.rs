@@ -35,6 +35,7 @@ fn album(id: &str, name: &str) -> Album {
         artist_id: Some("artist-0".into()),
         cover_art: None,
         song_count: Some(10),
+        original_release_date: None,
         duration: Some(2400),
         year: Some(2020),
         genre: None,

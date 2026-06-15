@@ -154,6 +154,7 @@ async fn i_in_search_mode_for_album_inserts_next() {
                 artist_id: Some("a0".into()),
                 cover_art: None,
                 song_count: Some(2),
+                original_release_date: None,
                 duration: Some(360),
                 year: Some(2024),
                 genre: None,

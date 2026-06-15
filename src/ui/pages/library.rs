@@ -141,7 +141,10 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
         FilterScope::Albums => "//",
         FilterScope::Songs => "///",
     };
-    let title = if searching {
+    let album_view = artists.view == crate::app::page_state::LibraryView::AlbumList;
+    let title = if album_view {
+        format!(" Albums · {} ", artists.album_sort.label())
+    } else if searching {
         format!(
             " Search {} ({}{}) ",
             scope_label, scope_slashes, artists.filter
@@ -155,9 +158,34 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
         .title(title)
         .border_style(border_style);
 
-    let tree_items = build_tree_items(state);
-
-    let items: Vec<ListItem<'_>> = tree_items
+    let items: Vec<ListItem<'_>> = if album_view {
+        artists
+            .albums
+            .iter()
+            .enumerate()
+            .map(|(i, album)| {
+                let style = if Some(i) == artists.album_selected {
+                    Style::default()
+                        .fg(colors.album)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(colors.album)
+                };
+                let year_str = album
+                    .sort_year()
+                    .map(|y| format!(" [{y}]"))
+                    .unwrap_or_default();
+                let artist = album.artist.as_deref().unwrap_or("");
+                let text = if artist.is_empty() {
+                    format!("{}{}", album.name, year_str)
+                } else {
+                    format!("{} \u{2014} {}{}", artist, album.name, year_str)
+                };
+                ListItem::new(text).style(style)
+            })
+            .collect()
+    } else {
+        build_tree_items(state)
         .iter()
         .enumerate()
         .map(|(i, item)| {
@@ -222,7 +250,8 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
                 }
             }
         })
-        .collect();
+        .collect()
+    };
 
     let mut list = List::new(items).block(block);
     if focused {
@@ -234,13 +263,25 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
     }
 
     let mut list_state = ListState::default();
-    *list_state.offset_mut() = state.client.artists.tree_scroll_offset;
+    *list_state.offset_mut() = if album_view {
+        state.client.artists.album_scroll_offset
+    } else {
+        state.client.artists.tree_scroll_offset
+    };
     if focused {
-        list_state.select(state.client.artists.selected_index);
+        list_state.select(if album_view {
+            state.client.artists.album_selected
+        } else {
+            state.client.artists.selected_index
+        });
     }
 
     frame.render_stateful_widget(list, area, &mut list_state);
-    state.client.artists.tree_scroll_offset = list_state.offset();
+    if album_view {
+        state.client.artists.album_scroll_offset = list_state.offset();
+    } else {
+        state.client.artists.tree_scroll_offset = list_state.offset();
+    }
 }
 
 fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
@@ -253,14 +294,17 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
         Style::default().fg(colors.border_unfocused)
     };
 
-    let title = if !artists.songs.is_empty() {
-        if let Some(album) = artists.songs.first().and_then(|s| s.album.as_ref()) {
-            format!(" {} ({}) ", album, artists.songs.len())
-        } else {
-            format!(" Songs ({}) ", artists.songs.len())
-        }
-    } else {
+    let title = if artists.songs.is_empty() {
         " Songs ".to_string()
+    } else {
+        let first = artists.songs.first();
+        let album = first.and_then(|s| s.album.as_deref());
+        let artist = first.and_then(|s| s.artist.as_deref()).filter(|a| !a.is_empty());
+        match (artist, album) {
+            (Some(ar), Some(al)) => format!(" {ar} \u{2014} {al} "),
+            (None, Some(al)) => format!(" {al} "),
+            _ => " Songs ".to_string(),
+        }
     };
 
     let block = Block::default()

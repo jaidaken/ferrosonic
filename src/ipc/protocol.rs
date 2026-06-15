@@ -69,6 +69,8 @@ pub enum DaemonRequest {
     ToggleStarSong(String),
     /// Fetch the albums of the artist with this ID.
     LoadArtist(String),
+    /// Fetch the entire album library for the flat album-list view.
+    LoadAllAlbums,
     /// Fetch the songs of the album with this ID.
     LoadAlbum(String),
     /// Fetch the songs of the playlist with this ID.
@@ -168,6 +170,8 @@ pub enum DaemonResponse {
     Err(String),
     /// Albums of a requested artist.
     ArtistAlbums(Vec<Album>),
+    /// The entire album library for the flat album-list view.
+    AllAlbums(Vec<Album>),
     /// Songs of a requested album.
     AlbumSongs(Vec<Child>),
     /// Songs of a requested playlist.

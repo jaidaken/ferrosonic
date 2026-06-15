@@ -191,6 +191,7 @@ async fn albums_changed_event_inserts_into_cache() {
         artist_id: Some("a0".into()),
         cover_art: None,
         song_count: Some(5),
+        original_release_date: None,
         duration: Some(900),
         year: None,
         genre: None,

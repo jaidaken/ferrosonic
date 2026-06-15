@@ -147,12 +147,68 @@ pub struct Album {
     /// Total album duration in seconds.
     #[serde(default)]
     pub duration: Option<i32>,
-    /// Release year.
+    /// Release year (tagged; may be a remaster year).
     #[serde(default)]
     pub year: Option<i32>,
+    /// OpenSubsonic original release date; preferred over `year` for sorting.
+    #[serde(default, rename = "originalReleaseDate")]
+    pub original_release_date: Option<ItemDate>,
     /// Genre label.
     #[serde(default)]
     pub genre: Option<String>,
+}
+
+/// OpenSubsonic partial date (any component may be absent).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ItemDate {
+    /// Year component.
+    #[serde(default)]
+    pub year: Option<i32>,
+    /// Month component, 1-12.
+    #[serde(default)]
+    pub month: Option<i32>,
+    /// Day component, 1-31.
+    #[serde(default)]
+    pub day: Option<i32>,
+}
+
+impl Album {
+    /// Year to sort by: the original release year when the server provides it,
+    /// else the tagged `year`. `None` sorts last.
+    ///
+    /// ```
+    /// use ferrosonic::subsonic::models::{Album, ItemDate};
+    /// let mut a = Album { id: "1".into(), name: "x".into(), artist: None,
+    ///     artist_id: None, cover_art: None, song_count: None, duration: None,
+    ///     year: Some(2015), original_release_date: Some(ItemDate {
+    ///         year: Some(1979), month: None, day: None }), genre: None };
+    /// assert_eq!(a.sort_year(), Some(1979));
+    /// a.original_release_date = None;
+    /// assert_eq!(a.sort_year(), Some(2015));
+    /// ```
+    #[must_use]
+    pub fn sort_year(&self) -> Option<i32> {
+        self.original_release_date
+            .as_ref()
+            .and_then(|d| d.year)
+            .or(self.year)
+    }
+}
+
+/// `getAlbumList2` response payload.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AlbumList2Data {
+    /// The album list under `albumList2`.
+    #[serde(rename = "albumList2", default)]
+    pub album_list2: AlbumList2,
+}
+
+/// The `albumList2` object holding the album array.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AlbumList2 {
+    /// Albums in the requested sort order and page.
+    #[serde(default)]
+    pub album: Vec<Album>,
 }
 
 /// Payload of `getAlbum`.

@@ -82,6 +82,8 @@ impl<'a> Footer<'a> {
                 s("m", "Star selected"),
                 s("/", "Search"),
                 s("←/→", "Focus"),
+                s("v", "Albums/Artists"),
+                s("s", "Sort"),
                 s("e", "Add"),
                 s("i", "Add next"),
                 s("t", "Shuffle"),

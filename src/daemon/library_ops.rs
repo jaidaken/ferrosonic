@@ -189,7 +189,9 @@ impl DaemonCore {
             return;
         };
         match client.get_artist(artist_id).await {
-            Ok((_artist, albums)) => {
+            Ok((_artist, mut albums)) => {
+                // Discography order: oldest original-release year first, undated last.
+                albums.sort_by_key(|a| a.sort_year().unwrap_or(i32::MAX));
                 let mut state = self.state.write().await;
                 let count = albums.len();
                 let lib = &mut state.library;
@@ -213,6 +215,31 @@ impl DaemonCore {
                     message: format!("Failed to load albums: {}", e),
                     is_error: true,
                 });
+            }
+        }
+    }
+
+    /// Fetch the full album library for the flat album-list view and cache it.
+    /// Returns the albums so the IPC caller can reply directly.
+    pub async fn load_all_albums(self: &Arc<Self>) -> Vec<crate::subsonic::models::Album> {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Vec::new();
+        };
+        match client.get_all_albums().await {
+            Ok(albums) => {
+                let mut state = self.state.write().await;
+                state.library.all_albums = albums.clone();
+                drop(state);
+                info!("Loaded {} albums (flat list)", albums.len());
+                albums
+            }
+            Err(e) => {
+                error!("Failed to load album list: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load albums: {}", e),
+                    is_error: true,
+                });
+                Vec::new()
             }
         }
     }

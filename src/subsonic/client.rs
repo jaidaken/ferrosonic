@@ -204,6 +204,49 @@ impl SubsonicClient {
         Ok(artists)
     }
 
+    /// Fetch one page of the album list with the given Subsonic `type` sort.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server reports an API error.
+    pub async fn get_album_list2(
+        &self,
+        sort_type: &str,
+        size: u32,
+        offset: u32,
+    ) -> Result<Vec<Album>, SubsonicError> {
+        let data: AlbumList2Data = self
+            .request(&format!(
+                "getAlbumList2?type={sort_type}&size={size}&offset={offset}"
+            ))
+            .await?;
+        Ok(data.album_list2.album)
+    }
+
+    /// Fetch the entire album library by paging `getAlbumList2` until a short page.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails.
+    pub async fn get_all_albums(&self) -> Result<Vec<Album>, SubsonicError> {
+        const PAGE: u32 = 500;
+        let mut all: Vec<Album> = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = self
+                .get_album_list2("alphabeticalByName", PAGE, offset)
+                .await?;
+            let got = page.len() as u32;
+            all.extend(page);
+            if got < PAGE {
+                break;
+            }
+            offset += PAGE;
+        }
+        debug!("Fetched {} albums", all.len());
+        Ok(all)
+    }
+
     /// Fetch one artist and their albums.
     pub async fn get_artist(&self, id: &str) -> Result<(Artist, Vec<Album>), SubsonicError> {
         let url = self.build_url(&format!("getArtist?id={}", id))?;
@@ -280,6 +323,7 @@ impl SubsonicClient {
             song_count: Some(detail.song.len() as i32),
             duration: None,
             year: detail.year,
+            original_release_date: None,
             genre: None,
         };
 
