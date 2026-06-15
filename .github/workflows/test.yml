@@ -1,8 +1,11 @@
 name: test
 
-# Manual trigger by default; nightly schedule runs the slow mutants job.
-# The release workflow still fires on tag push.
+# Gates run on every push to master and on PRs; nightly schedule adds the
+# slow mutants job. The release workflow still fires on tag push.
 on:
+  push:
+    branches: [master]
+  pull_request:
   workflow_dispatch:
   schedule:
     - cron: '17 3 * * *'
