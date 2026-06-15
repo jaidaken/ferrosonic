@@ -138,12 +138,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov
+          tool: cargo-llvm-cov,cargo-nextest
       - run: sudo apt-get update && sudo apt-get install -y mpv libdbus-1-dev pkg-config
-      - name: Generate coverage report
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      # nextest backend = process-per-test, matching the gating test job. The
+      # plain `cargo test` backend shares one process, so tests that set the
+      # process-global FERROSONIC_CONFIG_DIR env race and crash a spawned daemon.
+      - name: Collect coverage (nextest backend, coverage profile)
+        run: NEXTEST_PROFILE=coverage cargo llvm-cov nextest --all-features --workspace --no-report
+      - name: Generate lcov
+        run: cargo llvm-cov report --lcov --output-path lcov.info
       - name: Generate HTML report
-        run: cargo llvm-cov --all-features --workspace --html
+        run: cargo llvm-cov report --html
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
@@ -151,4 +156,4 @@ jobs:
           path: target/llvm-cov/html/
           retention-days: 30
       - name: Print coverage summary
-        run: cargo llvm-cov --all-features --workspace --summary-only
+        run: cargo llvm-cov report --summary-only

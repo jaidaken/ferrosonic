@@ -8,3 +8,13 @@ slow-timeout = { period = "60s", terminate-after = 3 }
 fail-fast = false
 retries = { backoff = "exponential", count = 2, delay = "1s", jitter = true }
 final-status-level = "skip"
+
+# The `coverage` profile drops real-binary e2e tests from the run. They spawn a
+# separate ferrosonic/ferrosonicd process, so they add no in-process coverage,
+# and under llvm-cov instrumentation the spawned child races its profile-write
+# against signal-exit and crashes. Used only by the report-only coverage job;
+# the gating `test` job uses the default profile and runs everything.
+[profile.coverage]
+slow-timeout = { period = "60s", terminate-after = 3 }
+fail-fast = false
+default-filter = 'not (binary(binary_cli_combos) | binary(binary_cli_flags) | binary(binary_flag_permutations) | binary(ferrosonicd_boot) | binary(ferrosonicd_more_paths) | binary(ferrosonic_tui_end_to_end) | binary(ipc_shutdown_exits) | binary(ipc_spawn_full) | binary(ipc_spawn_real_binary) | binary(missed_phase1) | binary(sigterm_graceful_exit))'
