@@ -3,6 +3,7 @@
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
@@ -142,21 +143,42 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
         FilterScope::Songs => "///",
     };
     let album_view = artists.view == crate::app::page_state::LibraryView::AlbumList;
-    let title = if album_view {
-        format!(" Albums · {} ", artists.album_sort.label())
-    } else if searching {
-        format!(
+
+    let base_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style);
+    let block = if searching {
+        base_block.title(format!(
             " Search {} ({}{}) ",
             scope_label, scope_slashes, artists.filter
-        )
+        ))
     } else {
-        " Artists ".to_string()
+        // Toggle hint: Artists <-> Albums. The active mode shows in its accent
+        // colour, the other label and the arrow are muted; they flip on 'v'.
+        let muted = Style::default().fg(colors.muted);
+        let artists_style = if album_view {
+            muted
+        } else {
+            Style::default().fg(colors.artist)
+        };
+        let albums_style = if album_view {
+            Style::default().fg(colors.album)
+        } else {
+            muted
+        };
+        let mut spans = vec![
+            Span::styled(" Artists ", artists_style),
+            Span::styled("\u{2192} ", muted),
+            Span::styled("Albums", albums_style),
+        ];
+        if album_view {
+            let label = artists.album_sort.label();
+            spans.push(Span::styled(format!(" \u{00b7} {label} "), muted));
+        } else {
+            spans.push(Span::raw(" "));
+        }
+        base_block.title(Line::from(spans))
     };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .border_style(border_style);
 
     let items: Vec<ListItem<'_>> = if album_view {
         artists
