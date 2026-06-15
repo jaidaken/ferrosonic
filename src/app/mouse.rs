@@ -73,9 +73,11 @@ impl App {
                             .map_err(Error::from);
                     }
                     HeaderRegion::StopButton => {
+                        // Toolbar Stop clears the queue and stops; MPRIS Stop
+                        // (DaemonRequest::Stop) keeps the track per spec.
                         return self
                             .client
-                            .request(DaemonRequest::Stop)
+                            .request(DaemonRequest::ClearQueue)
                             .await
                             .map(|_| ())
                             .map_err(Error::from);

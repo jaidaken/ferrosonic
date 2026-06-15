@@ -1,5 +1,7 @@
 //! Mouse clicks on header regions: tab switching and player buttons.
 
+mod common;
+
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
@@ -78,10 +80,22 @@ async fn click_on_play_button_dispatches_toggle() {
 
 #[tokio::test]
 #[serial]
-async fn click_on_stop_button_dispatches_daemon_stop() {
+async fn click_on_stop_button_clears_the_queue() {
+    // Toolbar Stop = ClearQueue (clear + stop), distinct from MPRIS Stop which
+    // keeps the track. A seeded queue must be empty after the click.
     let mut fx = build_app().await;
     seed_header(&fx.app).await;
+    {
+        let mut ds = fx.app.daemon_state.write().await;
+        ds.queue = common::songs("t", 3);
+        ds.queue_position = Some(1);
+    }
+
     fx.app.handle_mouse(click(74, 0)).await.unwrap();
+
+    let ds = fx.app.daemon_state.read().await;
+    assert!(ds.queue.is_empty(), "toolbar Stop must clear the queue");
+    assert_eq!(ds.queue_position, None, "toolbar Stop must drop the position");
 }
 
 #[tokio::test]

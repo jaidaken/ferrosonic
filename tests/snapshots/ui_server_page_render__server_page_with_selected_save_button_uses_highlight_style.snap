@@ -2,7 +2,7 @@
 source: tests/ui_server_page_render.rs
 expression: frame
 ---
- F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮   ▶   ⏸   ⏹   ⏭ 
+ F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮   ⏵   ⏸   ⏹   ⏭ 
 ┌ Server Connection ───────────────────────────────────────────────────────────┐
 │                                                                              │
 │Server URL                                                                    │

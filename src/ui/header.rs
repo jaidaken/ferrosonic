@@ -78,7 +78,7 @@ impl Widget for Header {
         let controls = Line::from(vec![
             Span::styled(" ⏮ ", nav_style),
             Span::raw(" "),
-            Span::styled(" ▶ ", play_style),
+            Span::styled(" ⏵ ", play_style),
             Span::raw(" "),
             Span::styled(" ⏸ ", pause_style),
             Span::raw(" "),
