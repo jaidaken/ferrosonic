@@ -186,24 +186,23 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
             .iter()
             .enumerate()
             .map(|(i, album)| {
-                let style = if Some(i) == artists.album_selected {
+                let album_style = if Some(i) == artists.album_selected {
                     Style::default()
                         .fg(colors.album)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(colors.album)
                 };
-                let year_str = album
-                    .sort_year()
-                    .map(|y| format!(" [{y}]"))
-                    .unwrap_or_default();
+                let muted = Style::default().fg(colors.muted);
+                let mut spans = vec![Span::styled(album.name.clone(), album_style)];
+                if let Some(y) = album.sort_year() {
+                    spans.push(Span::styled(format!(" [{y}]"), muted));
+                }
                 let artist = album.artist.as_deref().unwrap_or("");
-                let text = if artist.is_empty() {
-                    format!("{}{}", album.name, year_str)
-                } else {
-                    format!("{} \u{2014} {}{}", artist, album.name, year_str)
-                };
-                ListItem::new(text).style(style)
+                if !artist.is_empty() {
+                    spans.push(Span::styled(format!("  {artist}"), muted));
+                }
+                ListItem::new(Line::from(spans))
             })
             .collect()
     } else {

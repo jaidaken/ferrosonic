@@ -122,3 +122,32 @@ async fn album_list_down_and_up_move_the_selection() {
     app.handle_key(key(KeyCode::Up)).await.unwrap();
     assert_eq!(app.client_state.read().await.artists.album_selected, Some(1));
 }
+
+#[tokio::test]
+#[serial]
+async fn name_sort_ignores_leading_punctuation() {
+    let (mut app, _t) = build_app().await;
+    {
+        let mut cs = app.client_state.write().await;
+        cs.artists.view = LibraryView::AlbumList;
+        cs.artists.focus = 0;
+        cs.artists.albums = vec![
+            album("h", "\"Heroes\"", 1977),
+            album("c", "A Crow Looked At Me", 2017),
+        ];
+        // Start on ReleaseDate so one 's' press cycles to Name and re-sorts.
+        cs.artists.album_sort = AlbumSort::ReleaseDate;
+        cs.artists.album_selected = Some(0);
+    }
+
+    app.handle_key(key(KeyCode::Char('s'))).await.unwrap();
+
+    let cs = app.client_state.read().await;
+    assert_eq!(cs.artists.album_sort, AlbumSort::Name);
+    let names: Vec<&str> = cs.artists.albums.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["A Crow Looked At Me", "\"Heroes\""],
+        "the leading quote is ignored, so A sorts before H"
+    );
+}

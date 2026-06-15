@@ -128,11 +128,23 @@ impl App {
                         Ok(crate::ipc::DaemonResponse::AllAlbums(a)) => a,
                         _ => Vec::new(),
                     };
-                    let mut cs = client_state.write().await;
-                    cs.artists.albums = albums;
-                    sort_albums(&mut cs.artists.albums, sort);
-                    cs.artists.album_selected = (!cs.artists.albums.is_empty()).then_some(0);
-                    cs.artists.album_scroll_offset = 0;
+                    let first_id = {
+                        let mut cs = client_state.write().await;
+                        cs.artists.albums = albums;
+                        sort_albums(&mut cs.artists.albums, sort);
+                        cs.artists.album_selected = (!cs.artists.albums.is_empty()).then_some(0);
+                        cs.artists.album_scroll_offset = 0;
+                        cs.artists.albums.first().map(|a| a.id.clone())
+                    };
+                    if let Some(id) = first_id {
+                        if let Ok(crate::ipc::DaemonResponse::AlbumSongs(songs)) =
+                            client.request(DaemonRequest::LoadAlbum(id)).await
+                        {
+                            let mut cs = client_state.write().await;
+                            cs.artists.selected_song = (!songs.is_empty()).then_some(0);
+                            cs.artists.songs = songs;
+                        }
+                    }
                 });
             }
             return Ok(());
@@ -753,55 +765,46 @@ impl App {
     async fn handle_album_list_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         match key.code {
             KeyCode::Char('s') => {
-                let mut cs = self.client_state.write().await;
-                let next = cs.artists.album_sort.next();
-                cs.artists.album_sort = next;
-                sort_albums(&mut cs.artists.albums, next);
-                cs.artists.album_selected = (!cs.artists.albums.is_empty()).then_some(0);
-                cs.artists.album_scroll_offset = 0;
-                let label = next.label();
-                cs.notify(format!("Sort: {label}"));
+                {
+                    let mut cs = self.client_state.write().await;
+                    let next = cs.artists.album_sort.next();
+                    cs.artists.album_sort = next;
+                    sort_albums(&mut cs.artists.albums, next);
+                    cs.artists.album_selected = (!cs.artists.albums.is_empty()).then_some(0);
+                    cs.artists.album_scroll_offset = 0;
+                    let label = next.label();
+                    cs.notify(format!("Sort: {label}"));
+                }
+                self.load_selected_album_into_pane().await;
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                let mut cs = self.client_state.write().await;
-                if let Some(sel) = cs.artists.album_selected {
-                    if sel > 0 {
-                        cs.artists.album_selected = Some(sel - 1);
+                {
+                    let mut cs = self.client_state.write().await;
+                    if let Some(sel) = cs.artists.album_selected {
+                        if sel > 0 {
+                            cs.artists.album_selected = Some(sel - 1);
+                        }
+                    } else if !cs.artists.albums.is_empty() {
+                        cs.artists.album_selected = Some(0);
                     }
-                } else if !cs.artists.albums.is_empty() {
-                    cs.artists.album_selected = Some(0);
                 }
+                self.load_selected_album_into_pane().await;
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let mut cs = self.client_state.write().await;
-                let max = cs.artists.albums.len().saturating_sub(1);
-                if let Some(sel) = cs.artists.album_selected {
-                    if sel < max {
-                        cs.artists.album_selected = Some(sel + 1);
-                    }
-                } else if !cs.artists.albums.is_empty() {
-                    cs.artists.album_selected = Some(0);
-                }
-            }
-            KeyCode::Enter => {
-                let album_id = {
-                    let cs = self.client_state.read().await;
-                    cs.artists
-                        .album_selected
-                        .and_then(|i| cs.artists.albums.get(i))
-                        .map(|a| a.id.clone())
-                };
-                if let Some(id) = album_id {
-                    let songs = self.load_album(&id).await;
-                    if !songs.is_empty() {
-                        let mut cs = self.client_state.write().await;
-                        cs.artists.songs = songs;
-                        cs.artists.selected_song = Some(0);
-                        cs.artists.focus = 1;
+                {
+                    let mut cs = self.client_state.write().await;
+                    let max = cs.artists.albums.len().saturating_sub(1);
+                    if let Some(sel) = cs.artists.album_selected {
+                        if sel < max {
+                            cs.artists.album_selected = Some(sel + 1);
+                        }
+                    } else if !cs.artists.albums.is_empty() {
+                        cs.artists.album_selected = Some(0);
                     }
                 }
+                self.load_selected_album_into_pane().await;
             }
-            KeyCode::Tab | KeyCode::Right => {
+            KeyCode::Enter | KeyCode::Tab | KeyCode::Right => {
                 let mut cs = self.client_state.write().await;
                 if !cs.artists.songs.is_empty() {
                     cs.artists.focus = 1;
@@ -816,6 +819,24 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Load the currently-selected album's songs into the right pane so it
+    /// follows the album-list cursor (focus stays on the list).
+    pub(super) async fn load_selected_album_into_pane(&mut self) {
+        let id = {
+            let cs = self.client_state.read().await;
+            cs.artists
+                .album_selected
+                .and_then(|i| cs.artists.albums.get(i))
+                .map(|a| a.id.clone())
+        };
+        if let Some(id) = id {
+            let songs = self.load_album(&id).await;
+            let mut cs = self.client_state.write().await;
+            cs.artists.selected_song = (!songs.is_empty()).then_some(0);
+            cs.artists.songs = songs;
+        }
     }
 
     async fn collect_songs_for(
@@ -849,8 +870,16 @@ impl App {
 fn sort_albums(albums: &mut [crate::subsonic::models::Album], sort: AlbumSort) {
     match sort {
         AlbumSort::Name => {
-            albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            albums.sort_by(|a, b| album_sort_key(&a.name).cmp(&album_sort_key(&b.name)));
         }
         AlbumSort::ReleaseDate => albums.sort_by_key(|a| a.sort_year().unwrap_or(i32::MAX)),
     }
+}
+
+/// Sort key for album names: lowercased, with leading non-alphanumerics
+/// (quotes, brackets, parens) dropped so `"Heroes"` sorts under H, not first.
+fn album_sort_key(name: &str) -> String {
+    let trimmed = name.trim_start_matches(|c: char| !c.is_alphanumeric());
+    let base = if trimmed.is_empty() { name } else { trimmed };
+    base.to_lowercase()
 }
