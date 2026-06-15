@@ -1,5 +1,6 @@
 //! ipc/socket_client.rs: UnknownResponse / UnknownEvent / Request-from-daemon paths.
 
+mod common;
 use ferrosonic::ipc::client::DaemonClient;
 use ferrosonic::ipc::protocol::DaemonRequest;
 use ferrosonic::ipc::SocketClient;
@@ -12,7 +13,7 @@ async fn run_custom_server<F>(handler: F) -> std::path::PathBuf
 where
     F: FnOnce(tokio::net::UnixStream) -> tokio::task::JoinHandle<()> + Send + 'static,
 {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let socket = tmp.path().join("custom.sock");
     let socket_clone = socket.clone();
     std::mem::forget(tmp);

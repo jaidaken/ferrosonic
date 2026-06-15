@@ -13,7 +13,7 @@ use serial_test::serial;
 #[serial]
 async fn password_is_written_to_the_file_when_password_file_is_set() {
     let td = TestDaemon::new().await;
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let pf = tmp.path().join("pw");
     {
         let mut s = td.state.write().await;

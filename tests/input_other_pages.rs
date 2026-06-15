@@ -1,5 +1,6 @@
 //! Input handlers for Queue, Settings, Server, Playlists, QuickPlay pages.
 
+mod common;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
@@ -24,7 +25,7 @@ struct AppFixture {
 }
 
 async fn build_app() -> AppFixture {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;

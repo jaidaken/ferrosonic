@@ -3,6 +3,7 @@
 
 #![allow(clippy::zombie_processes)]
 
+mod common;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::process::CommandExt;
 use std::time::Duration;
@@ -34,8 +35,8 @@ fn open_pty() -> (std::fs::File, libc::c_int) {
 
 #[tokio::test]
 async fn ferrosonic_binary_event_loop_exits_on_sigterm_through_pty() {
-    let config_dir = tempfile::tempdir().unwrap();
-    let runtime_dir = tempfile::tempdir().unwrap();
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
 
     let (_master, slave) = open_pty();
 

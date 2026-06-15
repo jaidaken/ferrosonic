@@ -35,7 +35,7 @@ struct FakeMpvState {
 
 impl FakeMpv {
     pub async fn start() -> Self {
-        let tempdir = tempfile::tempdir().expect("create tempdir for fake mpv");
+        let tempdir = super::tempdir();
         let socket_path = tempdir.path().join("fake-mpv.sock");
         let listener = UnixListener::bind(&socket_path).expect("bind fake mpv socket");
         let state = Arc::new(Mutex::new(FakeMpvState {

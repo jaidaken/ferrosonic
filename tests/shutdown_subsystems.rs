@@ -1,5 +1,6 @@
 //! App::shutdown_subsystems: stop cava + quit mpv. Idempotent.
 
+mod common;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
 use serial_test::serial;
@@ -10,7 +11,7 @@ struct AppFixture {
 }
 
 async fn build_app(daemon_mode: bool) -> AppFixture {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = daemon_mode;
@@ -41,7 +42,7 @@ async fn shutdown_subsystems_is_idempotent() {
 #[serial]
 async fn shutdown_subsystems_works_in_remote_mode_without_core() {
     use std::sync::Arc;
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = true;

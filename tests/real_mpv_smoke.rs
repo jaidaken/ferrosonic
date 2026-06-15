@@ -1,5 +1,6 @@
 //! Real-mpv smoke test. Skipped when `mpv` is not on PATH.
 
+mod common;
 use ferrosonic::audio::mpv::MpvController;
 
 fn mpv_available() -> bool {
@@ -19,7 +20,7 @@ async fn real_mpv_starts_and_round_trips_basic_commands() {
         return;
     }
 
-    let tempdir = tempfile::tempdir().expect("tempdir for mpv socket");
+    let tempdir = common::tempdir();
     let socket = tempdir.path().join("real-mpv.sock");
     let mut mpv = MpvController::with_socket_path(socket);
     mpv.start().await.expect("start real mpv");

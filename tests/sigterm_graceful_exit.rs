@@ -2,12 +2,13 @@
 
 #![allow(clippy::zombie_processes)]
 
+mod common;
 use std::time::Duration;
 
 #[tokio::test]
 async fn ferrosonicd_exits_cleanly_on_sigterm() {
-    let config_dir = tempfile::tempdir().expect("config tempdir");
-    let runtime_dir = tempfile::tempdir().expect("runtime tempdir");
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
     let socket_dir = runtime_dir.path().join("ferrosonic");
     std::fs::create_dir_all(&socket_dir).unwrap();
     let socket_path = socket_dir.join("ferrosonicd.sock");
@@ -65,8 +66,8 @@ async fn ferrosonicd_exits_cleanly_on_sigterm() {
 
 #[tokio::test]
 async fn ferrosonicd_exits_cleanly_on_sigint() {
-    let config_dir = tempfile::tempdir().unwrap();
-    let runtime_dir = tempfile::tempdir().unwrap();
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
     let socket_dir = runtime_dir.path().join("ferrosonic");
     std::fs::create_dir_all(&socket_dir).unwrap();
     let socket_path = socket_dir.join("ferrosonicd.sock");

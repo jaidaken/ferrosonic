@@ -1,11 +1,12 @@
 //! mpv controller failure modes: connect to missing socket, dead pipe.
 
+mod common;
 use ferrosonic::audio::mpv::MpvController;
 use ferrosonic::error::AudioError;
 
 #[tokio::test]
 async fn connect_to_existing_returns_error_when_socket_missing() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     let path = tempdir.path().join("nonexistent.sock");
     let mut mpv = MpvController::with_socket_path(path);
     let r = mpv.connect_to_existing().await;
@@ -52,7 +53,7 @@ async fn stop_on_unconnected_returns_error() {
 
 #[tokio::test]
 async fn with_socket_path_preserves_provided_path() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     let path = tempdir.path().join("custom.sock");
     let mut mpv = MpvController::with_socket_path(path.clone());
     let err = mpv.connect_to_existing().await.unwrap_err();

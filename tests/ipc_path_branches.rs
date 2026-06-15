@@ -1,5 +1,6 @@
 //! ipc/path.rs: fallback path + no-parent ensure_parent_dir.
 
+mod common;
 use ferrosonic::ipc::path::{ensure_parent_dir, socket_path};
 use serial_test::serial;
 
@@ -62,7 +63,7 @@ fn ensure_parent_dir_with_path_having_no_parent_is_noop() {
 #[test]
 #[serial]
 fn ensure_parent_dir_with_existing_parent_returns_ok_without_create() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let p = tmp.path().join("inside-existing.sock");
     ensure_parent_dir(&p).unwrap();
     assert!(tmp.path().exists());

@@ -1,5 +1,6 @@
 //! app/input.rs: handle_event paths (Resize + Mouse + non-press keys).
 
+mod common;
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -8,7 +9,7 @@ use ferrosonic::config::Config;
 use serial_test::serial;
 
 async fn build_app() -> App {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     std::mem::forget(tempdir);
     let mut config = Config::new();

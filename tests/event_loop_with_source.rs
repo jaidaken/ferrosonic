@@ -1,5 +1,6 @@
 //! End-to-end event loop driven by ChannelEventSource + TestBackend.
 
+mod common;
 use std::time::Duration;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -23,7 +24,7 @@ struct AppFixture {
 }
 
 async fn build_app() -> AppFixture {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;

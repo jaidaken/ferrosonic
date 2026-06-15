@@ -1,5 +1,6 @@
 //! ferrosonicd subprocess tests for verbose + configured paths.
 
+mod common;
 use serial_test::serial;
 use std::process::Command;
 use std::time::Duration;
@@ -13,12 +14,12 @@ fn ferrosonicd() -> Command {
 #[test]
 #[serial]
 fn ferrosonicd_starts_with_verbose_and_writes_log() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let socket = tmp.path().join("d.sock");
     let mut child = ferrosonicd()
         .arg("-v")
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
-        .env("XDG_RUNTIME_DIR", tempfile::tempdir().unwrap().keep())
+        .env("XDG_RUNTIME_DIR", common::tempdir().keep())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -45,7 +46,7 @@ fn ferrosonicd_starts_with_verbose_and_writes_log() {
 #[test]
 #[serial]
 fn ferrosonicd_starts_with_configured_subsonic_section() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let cfg_path = tmp.path().join("config.toml");
     std::fs::write(
         &cfg_path,
@@ -59,7 +60,7 @@ Password = "p"
         .arg("-c")
         .arg(&cfg_path)
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
-        .env("XDG_RUNTIME_DIR", tempfile::tempdir().unwrap().keep())
+        .env("XDG_RUNTIME_DIR", common::tempdir().keep())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -90,10 +91,10 @@ fn ferrosonicd_with_invalid_config_path_returns_error() {
 #[test]
 #[serial]
 fn ferrosonicd_handles_sigint() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let mut child = ferrosonicd()
         .env("FERROSONIC_CONFIG_DIR", tmp.path())
-        .env("XDG_RUNTIME_DIR", tempfile::tempdir().unwrap().keep())
+        .env("XDG_RUNTIME_DIR", common::tempdir().keep())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

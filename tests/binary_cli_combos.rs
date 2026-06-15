@@ -2,6 +2,7 @@
 
 #![allow(clippy::zombie_processes)]
 
+mod common;
 use serial_test::serial;
 use std::process::Command;
 
@@ -36,9 +37,9 @@ fn ferrosonic_short_c_flag_is_config() {
 #[test]
 #[serial]
 fn ferrosonic_with_config_dir_missing_creates_or_handles_it() {
-    let config_dir = tempfile::tempdir().unwrap();
+    let config_dir = common::tempdir();
     std::fs::remove_dir(config_dir.path()).unwrap();
-    let runtime_dir = tempfile::tempdir().unwrap();
+    let runtime_dir = common::tempdir();
     let output = Command::new(ferrosonic())
         .env("FERROSONIC_CONFIG_DIR", config_dir.path())
         .env("XDG_RUNTIME_DIR", runtime_dir.path())

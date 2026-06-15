@@ -2,6 +2,7 @@
 //! when a separate password_file is configured, and the password file itself is
 //! written atomically at mode 0600.
 
+mod common;
 use ferrosonic::config::{write_password_file_atomic, Config};
 use ferrosonic::secret::Secret;
 
@@ -15,7 +16,7 @@ fn password_is_not_written_to_config_when_a_password_file_is_set() {
     c.password = Secret::from_string("hunter2".to_string());
     c.password_file = Some("/home/u/.config/ferrosonic/pw".into());
 
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = common::tempdir();
     let path = dir.path().join("config.toml");
     c.save_to_file(&path).expect("save");
 
@@ -32,7 +33,7 @@ fn password_file_is_written_with_the_secret_and_mode_0600() {
 
     // Parent dir is missing on purpose: the writer must create it, then write the
     // secret atomically at 0600.
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = common::tempdir();
     let path = dir.path().join("sub").join("pw");
     write_password_file_atomic(
         path.to_str().expect("utf8 path"),

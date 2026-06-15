@@ -1,5 +1,6 @@
 //! input_server.rs: Test Connection + Save with a DaemonClient that returns Err.
 
+mod common;
 use async_trait::async_trait;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ferrosonic::app::App;
@@ -39,7 +40,7 @@ fn key(code: KeyCode) -> KeyEvent {
 #[tokio::test]
 #[serial]
 async fn enter_on_test_connection_with_failing_client_sets_ipc_error_status() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let config = Config::new();
     let client: std::sync::Arc<dyn DaemonClient> = FailingClient::new();
@@ -65,7 +66,7 @@ async fn enter_on_test_connection_with_failing_client_sets_ipc_error_status() {
 #[tokio::test]
 #[serial]
 async fn enter_on_save_with_failing_client_sets_save_failed_status() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let config = Config::new();
     let client: std::sync::Arc<dyn DaemonClient> = FailingClient::new();
@@ -91,7 +92,7 @@ async fn enter_on_save_with_failing_client_sets_save_failed_status() {
 #[tokio::test]
 #[serial]
 async fn settings_save_failure_routes_through_notify_error() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let config = Config::new();
     let client: std::sync::Arc<dyn DaemonClient> = FailingClient::new();

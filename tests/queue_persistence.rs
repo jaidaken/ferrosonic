@@ -9,7 +9,7 @@ use serial_test::serial;
 #[tokio::test]
 #[serial]
 async fn save_then_load_restores_queue_and_position() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
 
     let snap = QueueSnapshot {
@@ -28,7 +28,7 @@ async fn save_then_load_restores_queue_and_position() {
 #[tokio::test]
 #[serial]
 async fn load_with_no_file_returns_none() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
 
     let r = QueueSnapshot::load();
@@ -38,7 +38,7 @@ async fn load_with_no_file_returns_none() {
 #[tokio::test]
 #[serial]
 async fn load_with_corrupt_json_returns_none() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
     std::fs::write(dir.path().join("queue.json"), b"{not valid json").unwrap();
 
@@ -49,7 +49,7 @@ async fn load_with_corrupt_json_returns_none() {
 #[tokio::test]
 #[serial]
 async fn save_is_atomic_via_temp_file_rename() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
 
     let snap = QueueSnapshot {
@@ -77,7 +77,7 @@ async fn save_is_atomic_via_temp_file_rename() {
 #[tokio::test]
 #[serial]
 async fn empty_queue_round_trips() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
 
     let snap = QueueSnapshot {

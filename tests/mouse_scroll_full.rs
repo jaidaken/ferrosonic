@@ -1,5 +1,6 @@
 //! Exhaustive mouse-scroll branches: every page, both directions, focus paths.
 
+mod common;
 use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
 use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
@@ -71,7 +72,7 @@ struct AppFixture {
 }
 
 async fn build_app() -> AppFixture {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;

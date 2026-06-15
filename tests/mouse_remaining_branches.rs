@@ -1,5 +1,6 @@
 //! mouse.rs remaining branches: PauseButton, scroll initializers, focus-1 paths.
 
+mod common;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
@@ -67,7 +68,7 @@ fn playlist(id: &str, name: &str) -> Playlist {
 }
 
 async fn build_app() -> App {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     std::mem::forget(tempdir);
     let mut config = Config::new();

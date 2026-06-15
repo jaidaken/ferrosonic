@@ -1,6 +1,7 @@
 //! Regression: a `DaemonRequest::Shutdown` over IPC must make the daemon
 //! process exit, not merely broadcast the event and keep listening.
 
+mod common;
 use std::time::Duration;
 
 use ferrosonic::ipc::client::DaemonClient;
@@ -9,8 +10,8 @@ use ferrosonic::ipc::SocketClient;
 
 #[tokio::test]
 async fn ipc_shutdown_request_terminates_the_daemon_process() {
-    let config_dir = tempfile::tempdir().expect("config tempdir");
-    let runtime_dir = tempfile::tempdir().expect("runtime tempdir");
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
     let socket_dir = runtime_dir.path().join("ferrosonic");
     std::fs::create_dir_all(&socket_dir).unwrap();
     let socket_path = socket_dir.join("ferrosonicd.sock");

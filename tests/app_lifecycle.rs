@@ -15,7 +15,7 @@ struct AppFixture {
 }
 
 async fn build_app_remote(client: Arc<dyn ferrosonic::ipc::client::DaemonClient>) -> AppFixture {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = true;

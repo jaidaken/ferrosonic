@@ -50,7 +50,7 @@ fn click(x: u16, y: u16) -> MouseEvent {
 }
 
 async fn build_queue_app() -> App {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     std::mem::forget(tempdir);
     let mut config = Config::new();
@@ -134,7 +134,7 @@ async fn queue_drag_in_content_does_not_crash() {
 #[tokio::test]
 #[serial]
 async fn mouse_on_library_with_no_panes_falls_through_safely() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;
@@ -246,8 +246,8 @@ fn ferrosonic_verbose_flag_is_accepted() {
 
 #[test]
 fn ferrosonic_config_with_missing_file_returns_error() {
-    let config_dir = tempfile::tempdir().unwrap();
-    let runtime_dir = tempfile::tempdir().unwrap();
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
     let bin = assert_cmd::cargo::cargo_bin("ferrosonic");
     let output = std::process::Command::new(&bin)
         .env("FERROSONIC_CONFIG_DIR", config_dir.path())
@@ -266,8 +266,8 @@ fn ferrosonic_config_with_missing_file_returns_error() {
 
 #[test]
 fn ferrosonic_config_with_invalid_toml_returns_error() {
-    let config_dir = tempfile::tempdir().unwrap();
-    let runtime_dir = tempfile::tempdir().unwrap();
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
     let bad = config_dir.path().join("bad.toml");
     std::fs::write(&bad, "[[ this is not valid toml = =").unwrap();
 
@@ -285,8 +285,8 @@ fn ferrosonic_config_with_invalid_toml_returns_error() {
 
 #[test]
 fn ferrosonic_standalone_flag_runs_without_daemon() {
-    let config_dir = tempfile::tempdir().unwrap();
-    let runtime_dir = tempfile::tempdir().unwrap();
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
     std::fs::write(
         config_dir.path().join("config.toml"),
         "BaseURL = \"\"\nUsername = \"x\"\nPassword = \"x\"\n",
@@ -294,7 +294,7 @@ fn ferrosonic_standalone_flag_runs_without_daemon() {
     .unwrap();
 
     let bin = assert_cmd::cargo::cargo_bin("ferrosonic");
-    let isolated = tempfile::tempdir().unwrap();
+    let isolated = common::tempdir();
     let target = isolated.path().join("ferrosonic");
     std::fs::copy(&bin, &target).unwrap();
 

@@ -1,5 +1,6 @@
 //! App::run setup-phase test seams.
 
+mod common;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
 use serial_test::serial;
@@ -10,7 +11,7 @@ struct AppFixture {
 }
 
 async fn build_app() -> AppFixture {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;
@@ -81,7 +82,7 @@ async fn probe_cava_unavailable_disables_cava_setting() {
         let mut cs = fx.app.client_state.write().await;
         cs.settings_state.cava_enabled = true;
     }
-    let no_path = tempfile::tempdir().unwrap();
+    let no_path = common::tempdir();
     let saved_path = std::env::var_os("PATH");
     std::env::set_var("PATH", no_path.path());
     fx.app.probe_cava_available().await;
@@ -109,7 +110,7 @@ async fn start_mpv_with_notification_runs_without_panic() {
 #[tokio::test]
 #[serial]
 async fn start_mpv_with_no_core_in_remote_mode_is_silent() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = true;

@@ -1,5 +1,6 @@
 //! config/mod.rs: validate method + save_default error paths.
 
+mod common;
 use ferrosonic::config::Config;
 use ferrosonic::error::ConfigError;
 use serial_test::serial;
@@ -53,7 +54,7 @@ fn validate_with_full_config_succeeds() {
 #[test]
 #[serial]
 fn save_to_file_with_existing_parent_dir_skips_create() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let p = tmp.path().join("config.toml");
     let c = Config::default();
     c.save_to_file(&p).unwrap();
@@ -69,7 +70,7 @@ fn save_to_file_with_existing_parent_dir_skips_create() {
 #[test]
 #[serial]
 fn save_default_writes_to_config_dir_override() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tmp.path());
     let c = Config {
         base_url: "https://saved".into(),
@@ -84,7 +85,7 @@ fn save_default_writes_to_config_dir_override() {
 #[test]
 #[serial]
 fn password_file_with_tilde_when_home_unset_keeps_literal_path() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let cfg_path = tmp.path().join("config.toml");
     std::fs::write(
         &cfg_path,

@@ -23,7 +23,7 @@ struct Harness {
 }
 
 fn build_harness() -> Harness {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let config = Config::new();
     let daemon = new_shared_daemon_state(config.clone());

@@ -29,7 +29,7 @@ pub struct TestDaemon {
 
 impl TestDaemon {
     pub async fn new() -> Self {
-        let config_dir = tempfile::tempdir().expect("create config tempdir");
+        let config_dir = super::tempdir();
         Self::build(config_dir, false, PipeWireController::new()).await
     }
 
@@ -43,7 +43,7 @@ impl TestDaemon {
     pub async fn new_with_pw_recorder() -> (Self, RecordingPwRunner) {
         let recorder = RecordingPwRunner::new();
         let pipewire = PipeWireController::with_runner(Arc::new(recorder.clone()));
-        let config_dir = tempfile::tempdir().expect("create config tempdir");
+        let config_dir = super::tempdir();
         let td = Self::build(config_dir, false, pipewire).await;
         (td, recorder)
     }

@@ -1,6 +1,7 @@
 //! Deep mouse handler paths: QuickPlay option clicks, queue row clicks,
 //! double-click expiry, content edge cases.
 
+mod common;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ferrosonic::app::models::SongOption;
 use ferrosonic::app::state::Page;
@@ -48,7 +49,7 @@ struct AppFixture {
 }
 
 async fn build_app(page: Page) -> AppFixture {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;
@@ -164,7 +165,7 @@ async fn double_click_on_same_song_within_500ms_plays_it() {
 #[tokio::test]
 #[serial]
 async fn quickplay_click_with_no_content_panes_is_safe() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;

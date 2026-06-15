@@ -1,6 +1,7 @@
 //! The queue snapshot belongs to a daemon session: QueueSnapshot::remove
 //! (called on daemon shutdown) deletes it so the next start is empty.
 
+mod common;
 use ferrosonic::daemon::persistence::QueueSnapshot;
 use ferrosonic::subsonic::models::Child;
 use serial_test::serial;
@@ -34,7 +35,7 @@ fn snapshot() -> QueueSnapshot {
 #[test]
 #[serial]
 fn remove_deletes_the_snapshot_so_the_next_start_is_empty() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
 
     snapshot().save().expect("save snapshot");

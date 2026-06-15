@@ -1,5 +1,6 @@
 //! app/spawn_daemon.rs: the re-exec spawn brings up a real daemon that serves.
 
+mod common;
 use std::time::Duration;
 
 use ferrosonic::ipc::path::{socket_path, wait_for_socket};
@@ -13,8 +14,8 @@ async fn spawn_daemon_exe_starts_a_real_daemon_that_serves() {
     assert!(exe.is_file(), "ferrosonic binary must exist");
 
     // Isolate the daemon's socket, config, and logs.
-    let rt = tempfile::tempdir().unwrap();
-    let cfg = tempfile::tempdir().unwrap();
+    let rt = common::tempdir();
+    let cfg = common::tempdir();
     let prev_rt = std::env::var_os("XDG_RUNTIME_DIR");
     let prev_cfg = std::env::var_os("FERROSONIC_CONFIG_DIR");
     std::env::set_var("XDG_RUNTIME_DIR", rt.path());

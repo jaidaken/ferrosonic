@@ -1,5 +1,6 @@
 //! ferrosonicd binary smoke test: starts, binds socket, accepts Ping, exits cleanly.
 
+mod common;
 use std::time::Duration;
 
 use ferrosonic::ipc::client::DaemonClient;
@@ -9,8 +10,8 @@ use tokio::time::sleep;
 
 #[tokio::test]
 async fn ferrosonicd_binary_boots_serves_socket_and_responds_to_ping() {
-    let config_dir = tempfile::tempdir().expect("config tempdir");
-    let runtime_dir = tempfile::tempdir().expect("runtime tempdir");
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
     let socket_dir = runtime_dir.path().join("ferrosonic");
     std::fs::create_dir_all(&socket_dir).unwrap();
     let socket_path = socket_dir.join("ferrosonicd.sock");

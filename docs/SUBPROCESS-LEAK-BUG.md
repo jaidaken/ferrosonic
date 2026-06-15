@@ -34,10 +34,14 @@ The mpv/cava child-reaping half is now fixed too, verified against HEAD `3896a62
 Measured 2026-06-15: 0 orphaned cava, 0 orphaned daemons, mpv count matches running
 sessions.
 
-STILL OPEN: only the **test-fixture `/tmp` leak** below (section "Test fixture leak").
-Tests create `tempfile::tempdir()` dirs (135 call sites) that survive SIGKILL from the
-nextest/cargo-mutants timeout group-kill. 9,594 present on 2026-06-15. This is a
-test-harness concern, not a production subprocess leak.
+The **test-fixture `/tmp` leak** below (section "Test fixture leak") is now FIXED too.
+Tests no longer call `tempfile::tempdir()` directly (135 sites migrated); they use
+`common::tempdir()` (`tests/common/mod.rs`), which creates under a fixed root
+`$TMPDIR/ferrosonic-test/` and sweeps leaks older than an hour on first use per process.
+A SIGKILLed test still leaks its dir, but contained under that one root and reclaimed on
+the next run, instead of scattering 9,594 `/tmp/.tmpXXXX` dirs as on 2026-06-15. Manual
+reclaim if ever needed: `rm -rf "${TMPDIR:-/tmp}/ferrosonic-test"`. NOTHING in this
+document remains open.
 
 ## ORIGINAL (now historical): mpv/cava child reaping
 

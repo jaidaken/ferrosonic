@@ -23,7 +23,7 @@ fn key(code: KeyCode) -> KeyEvent {
 async fn build_app() -> App {
     let mut config = Config::new();
     config.daemon = false;
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     std::mem::forget(tempdir);
     App::new(config)

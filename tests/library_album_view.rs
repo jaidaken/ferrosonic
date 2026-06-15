@@ -1,6 +1,7 @@
 //! Library album-list view: the `v` toggle, `s` sort cycle, and album-list
 //! cursor navigation.
 
+mod common;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ferrosonic::app::page_state::{AlbumSort, LibraryView};
 use ferrosonic::app::App;
@@ -34,7 +35,7 @@ fn album(id: &str, name: &str, year: i32) -> Album {
 }
 
 async fn build_app() -> (App, tempfile::TempDir) {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;

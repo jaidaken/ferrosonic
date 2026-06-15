@@ -14,7 +14,7 @@ use serial_test::serial;
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[serial]
 async fn r1_restore_queue_blocking_does_not_silently_skip() {
-    let config_dir = tempfile::tempdir().expect("create config tempdir");
+    let config_dir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", config_dir.path());
 
     let snap = ferrosonic::daemon::persistence::QueueSnapshot {

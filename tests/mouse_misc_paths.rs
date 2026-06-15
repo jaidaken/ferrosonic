@@ -1,5 +1,6 @@
 //! Mouse paths in app/mouse.rs: progress-bar seek, quick-play clicks, queue clicks.
 
+mod common;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ferrosonic::app::models::SongOption;
 use ferrosonic::app::state::Page;
@@ -42,7 +43,7 @@ fn song(id: &str) -> Child {
 }
 
 async fn build_app() -> App {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     std::mem::forget(tempdir);
     let mut config = Config::new();

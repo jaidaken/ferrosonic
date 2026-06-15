@@ -1,5 +1,6 @@
 //! Final mouse.rs branches: seek bounds + QuickPlay starred click + scroll initializers.
 
+mod common;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ferrosonic::app::models::SongOption;
 use ferrosonic::app::state::Page;
@@ -68,7 +69,7 @@ fn playlist(id: &str, name: &str) -> Playlist {
 }
 
 async fn build_app() -> App {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     std::mem::forget(tempdir);
     let mut config = Config::new();

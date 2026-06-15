@@ -1,5 +1,6 @@
 //! mouse_library.rs: double-click on artist with FailingClient hits Failed-to-load.
 
+mod common;
 use async_trait::async_trait;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ferrosonic::app::state::Page;
@@ -54,7 +55,7 @@ fn artist(id: &str, name: &str) -> Artist {
 #[tokio::test]
 #[serial]
 async fn double_click_on_artist_with_failing_client_notifies_failed_to_load() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let config = Config::new();
     let client: std::sync::Arc<dyn DaemonClient> = FailingClient::new();

@@ -1,6 +1,7 @@
 //! mpv controller fed scripted bad responses through a hand-rolled
 //! Unix socket server: malformed JSON, request-id mismatch, sudden close.
 
+mod common;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -18,7 +19,7 @@ enum Behavior {
 }
 
 async fn spawn_misbehaving_mpv(behavior: Behavior) -> (TempDir, PathBuf, oneshot::Sender<()>) {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     let socket = tempdir.path().join("bad-mpv.sock");
     let listener = UnixListener::bind(&socket).expect("bind");
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel();

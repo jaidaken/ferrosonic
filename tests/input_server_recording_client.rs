@@ -18,7 +18,7 @@ fn key(code: KeyCode) -> KeyEvent {
 #[tokio::test]
 #[serial]
 async fn enter_on_test_connection_with_recording_client_sets_unexpected_status() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let config = Config::new();
     let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> = RecordingClient::new();
@@ -44,7 +44,7 @@ async fn enter_on_test_connection_with_recording_client_sets_unexpected_status()
 #[tokio::test]
 #[serial]
 async fn enter_on_save_with_recording_client_sets_connected_status() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let config = Config::new();
     let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> = RecordingClient::new();
@@ -70,7 +70,7 @@ async fn enter_on_save_with_recording_client_sets_connected_status() {
 #[tokio::test]
 #[serial]
 async fn server_field_text_char_branch_default_arm_unreachable_but_documented() {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;

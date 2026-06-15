@@ -1,5 +1,6 @@
 //! Queue page input: nav, remove (d), move (J/K), play (Enter), shuffle (t), clear (c).
 
+mod common;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
@@ -47,7 +48,7 @@ struct AppFixture {
 }
 
 async fn build_app_with_queue(n: usize) -> AppFixture {
-    let tempdir = tempfile::tempdir().unwrap();
+    let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
     let mut config = Config::new();
     config.daemon = false;

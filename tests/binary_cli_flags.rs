@@ -2,6 +2,7 @@
 
 #![allow(clippy::zombie_processes)]
 
+mod common;
 use assert_cmd::Command;
 use predicates::{str::contains, Predicate};
 use serial_test::serial;
@@ -51,8 +52,8 @@ fn ferrosonic_unknown_flag_returns_nonzero_with_error_message() {
 #[test]
 #[serial]
 fn ferrosonic_explicit_config_flag_is_accepted() {
-    let config_dir = tempfile::tempdir().unwrap();
-    let runtime_dir = tempfile::tempdir().unwrap();
+    let config_dir = common::tempdir();
+    let runtime_dir = common::tempdir();
     let cfg = config_dir.path().join("custom.toml");
     std::fs::write(
         &cfg,
@@ -61,7 +62,7 @@ fn ferrosonic_explicit_config_flag_is_accepted() {
     .unwrap();
 
     let bin = assert_cmd::cargo::cargo_bin("ferrosonic");
-    let isolated = tempfile::tempdir().unwrap();
+    let isolated = common::tempdir();
     let target = isolated.path().join("ferrosonic");
     std::fs::copy(&bin, &target).unwrap();
 
