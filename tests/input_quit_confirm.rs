@@ -34,7 +34,10 @@ async fn q_when_daemon_backed_opens_prompt_without_quitting() {
     app.handle_key(key(KeyCode::Char('q'))).await.unwrap();
 
     let cs = app.client_state.read().await;
-    assert!(cs.quit_prompt, "daemon-backed q must raise the confirm prompt");
+    assert!(
+        cs.quit_prompt,
+        "daemon-backed q must raise the confirm prompt"
+    );
     assert!(
         !cs.should_quit,
         "daemon-backed q must not quit before the user confirms"
@@ -123,10 +126,13 @@ async fn y_at_prompt_quits_and_clears_prompt() {
         cs.quit_prompt = true;
     }
 
-    tokio::time::timeout(Duration::from_secs(10), app.handle_key(key(KeyCode::Char('y'))))
-        .await
-        .expect("y handler must not hang on the shutdown request")
-        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        app.handle_key(key(KeyCode::Char('y'))),
+    )
+    .await
+    .expect("y handler must not hang on the shutdown request")
+    .unwrap();
 
     let cs = app.client_state.read().await;
     assert!(cs.should_quit, "y quits the TUI");

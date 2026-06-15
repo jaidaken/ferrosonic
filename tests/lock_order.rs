@@ -46,7 +46,12 @@ async fn concurrent_ipc_commands_do_not_deadlock() {
     handles.push(tokio::spawn(async move {
         for i in 0..ITERATIONS_PER_TASK {
             let payload: Vec<_> = (0..4)
-                .map(|j| song(&format!("t-{}", (i + j) % 16), &format!("Replace {} {}", i, j)))
+                .map(|j| {
+                    song(
+                        &format!("t-{}", (i + j) % 16),
+                        &format!("Replace {} {}", i, j),
+                    )
+                })
                 .collect();
             let _ = c
                 .request(DaemonRequest::EnqueueSongs {

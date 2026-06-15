@@ -12,7 +12,10 @@ use serial_test::serial;
 
 async fn fetch(client: &InProcessClient, id: &str) -> Vec<u8> {
     match client
-        .request(DaemonRequest::FetchCoverArt { id: id.to_string(), size: 100 })
+        .request(DaemonRequest::FetchCoverArt {
+            id: id.to_string(),
+            size: 100,
+        })
         .await
         .expect("request must not error")
     {
@@ -25,7 +28,9 @@ async fn fetch(client: &InProcessClient, id: &str) -> Vec<u8> {
 #[serial]
 async fn a_valid_id_returns_the_fetched_cover_art_bytes() {
     let td = TestDaemon::new().await;
-    td.fake_subsonic.expect_get_cover_art("art1", vec![1, 2, 3, 4]).await;
+    td.fake_subsonic
+        .expect_get_cover_art("art1", vec![1, 2, 3, 4])
+        .await;
     let client = InProcessClient::new(td.core.clone());
 
     assert_eq!(fetch(&client, "art1").await, vec![1, 2, 3, 4]);
@@ -37,7 +42,9 @@ async fn an_id_containing_a_slash_is_rejected_before_fetch() {
     // Art is served for "a/b": if the char guard's `||`->`&&` mutation let it
     // through, the fetch would return these bytes. A working guard returns empty.
     let td = TestDaemon::new().await;
-    td.fake_subsonic.expect_get_cover_art("a/b", vec![9, 9, 9]).await;
+    td.fake_subsonic
+        .expect_get_cover_art("a/b", vec![9, 9, 9])
+        .await;
     let client = InProcessClient::new(td.core.clone());
 
     assert!(

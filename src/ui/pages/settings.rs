@@ -74,20 +74,52 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     // stopping before the help line, so a short area degrades, not blanks.
     let items = [
         Item::Heading("Display"),
-        Item::Row { label: "Theme", value: theme_val, idx: 0 },
+        Item::Row {
+            label: "Theme",
+            value: theme_val,
+            idx: 0,
+        },
         Item::Gap,
         Item::Heading("Now Playing"),
-        Item::Row { label: "Cava Visualizer", value: cava_val, idx: 1 },
-        Item::Row { label: "Cava Size", value: cava_size_val, idx: 2 },
-        Item::Row { label: "Cover Art", value: cover_val, idx: 3 },
-        Item::Row { label: "Cover Art Size", value: cover_size_val, idx: 4 },
+        Item::Row {
+            label: "Cava Visualizer",
+            value: cava_val,
+            idx: 1,
+        },
+        Item::Row {
+            label: "Cava Size",
+            value: cava_size_val,
+            idx: 2,
+        },
+        Item::Row {
+            label: "Cover Art",
+            value: cover_val,
+            idx: 3,
+        },
+        Item::Row {
+            label: "Cover Art Size",
+            value: cover_size_val,
+            idx: 4,
+        },
         Item::Gap,
         Item::Heading("Playback"),
-        Item::Row { label: "Repeat", value: repeat_val, idx: 5 },
-        Item::Row { label: "Auto-continue", value: auto_val, idx: 6 },
+        Item::Row {
+            label: "Repeat",
+            value: repeat_val,
+            idx: 5,
+        },
+        Item::Row {
+            label: "Auto-continue",
+            value: auto_val,
+            idx: 6,
+        },
         Item::Gap,
         Item::Heading("System"),
-        Item::Row { label: "Daemon", value: daemon_val, idx: 7 },
+        Item::Row {
+            label: "Daemon",
+            value: daemon_val,
+            idx: 7,
+        },
     ];
 
     {
@@ -108,7 +140,14 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
             match item {
                 Item::Heading(h) => section_heading(buf, Rect::new(x, y, w, 1), h, &colors),
                 Item::Row { label, value, idx } => {
-                    setting_row(buf, Rect::new(x, y, w, 1), label, value, sel == *idx, &colors);
+                    setting_row(
+                        buf,
+                        Rect::new(x, y, w, 1),
+                        label,
+                        value,
+                        sel == *idx,
+                        &colors,
+                    );
                 }
                 Item::Gap => {}
             }

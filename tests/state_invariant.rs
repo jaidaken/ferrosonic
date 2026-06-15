@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use common::{song, songs, TestDaemon};
-use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::daemon::core::PlayMode;
+use ferrosonic::daemon::state::PlaybackState;
 use serial_test::serial;
 
 /// R1 core.rs:261. restore_queue_blocking used try_write and warned on contention; fix lifts the snapshot load into new_shared_daemon_state so it happens before the Arc<RwLock> is shared. Test asserts restoration actually lands; pre-fix this passes because construction is uncontended in tests but the silent-skip path remained reachable.
@@ -118,11 +118,7 @@ async fn r2_apply_star_and_refresh_under_one_lock() {
         while !stop_clone.load(Ordering::Acquire) {
             let s = state_handle.read().await;
             let in_ids = s.library.starred_ids.contains("starred-0");
-            let in_vec = s
-                .library
-                .starred_songs
-                .iter()
-                .any(|c| c.id == "starred-0");
+            let in_vec = s.library.starred_songs.iter().any(|c| c.id == "starred-0");
             if in_ids != in_vec {
                 v.fetch_add(1, Ordering::Relaxed);
             }
@@ -356,19 +352,22 @@ async fn r1_extend_with_random_and_play_atomic_queue_extend() {
         initial_len,
         s.queue.len()
     );
-    let pos = s.queue_position.expect("queue_position must be set after auto-continue");
+    let pos = s
+        .queue_position
+        .expect("queue_position must be set after auto-continue");
     assert_eq!(
         pos, initial_len,
         "queue_position must point at the first appended song"
     );
     let played_song = s.now_playing.song.as_ref().expect("now_playing.song set");
     assert_eq!(
-        played_song.id,
-        s.queue[pos].id,
+        played_song.id, s.queue[pos].id,
         "now_playing.song must equal queue[queue_position] at commit time"
     );
-    let random_ids: std::collections::HashSet<&str> =
-        ["song-0", "song-1", "song-2", "song-3"].iter().copied().collect();
+    let random_ids: std::collections::HashSet<&str> = ["song-0", "song-1", "song-2", "song-3"]
+        .iter()
+        .copied()
+        .collect();
     assert!(
         random_ids.contains(played_song.id.as_str()),
         "played song {} must come from the random batch",

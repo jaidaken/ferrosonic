@@ -11,8 +11,8 @@ use tracing::info;
 use url::Url;
 
 use crate::app::state::{SharedClientState, SharedDaemonState};
-use crate::daemon::state::{NowPlaying, PlaybackState};
 use crate::config::Config;
+use crate::daemon::state::{NowPlaying, PlaybackState};
 use crate::ipc::{DaemonClient, DaemonRequest};
 use crate::subsonic::auth::generate_auth_params;
 use crate::subsonic::models::Child;

@@ -1,6 +1,5 @@
 //! `DaemonClient` trait + `InProcessClient` dispatch.
 
-
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -112,8 +111,7 @@ impl DaemonClient for InProcessClient {
                     }
                     must_stop = was_playing && pos >= new_len;
                     if must_stop {
-                        state.now_playing.state =
-                            crate::daemon::state::PlaybackState::Stopped;
+                        state.now_playing.state = crate::daemon::state::PlaybackState::Stopped;
                         state.now_playing.song = None;
                         state.now_playing.position = 0.0;
                         state.now_playing.duration = 0.0;
@@ -280,7 +278,9 @@ impl DaemonClient for InProcessClient {
                 const MAX_SIZE: u32 = 2048;
                 const MAX_ID_LEN: usize = 256;
                 if id.len() > MAX_ID_LEN
-                    || id.chars().any(|c| matches!(c, '/' | '?' | '#' | '\\') || c.is_control())
+                    || id
+                        .chars()
+                        .any(|c| matches!(c, '/' | '?' | '#' | '\\') || c.is_control())
                 {
                     return Ok(DaemonResponse::CoverArt(Vec::new()));
                 }
@@ -298,15 +298,10 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Snapshot(Box::new(snap)))
             }
             DaemonRequest::Shutdown => {
-                let _ = self
-                    .core
-                    .event_tx
-                    .send(crate::ipc::DaemonEvent::Shutdown);
-                let _ = tokio::time::timeout(
-                    std::time::Duration::from_secs(3),
-                    self.core.quit_mpv(),
-                )
-                .await;
+                let _ = self.core.event_tx.send(crate::ipc::DaemonEvent::Shutdown);
+                let _ =
+                    tokio::time::timeout(std::time::Duration::from_secs(3), self.core.quit_mpv())
+                        .await;
                 // Stop the IPC accept loop so the daemon process actually exits;
                 // without this it broadcasts Shutdown but keeps listening.
                 self.core.request_shutdown();

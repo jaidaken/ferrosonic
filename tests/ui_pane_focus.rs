@@ -52,8 +52,14 @@ fn library_song_pane_highlights_selection_only_when_focused() {
     client.artists.focus = 1;
     let focused = render_styled(W, H, &daemon, &mut client).count_fg_in(region, hl);
 
-    assert_eq!(unfocused, 0, "library song pane must show no highlight when the tree is focused");
-    assert!(focused > 0, "library song pane must highlight the selection when focused");
+    assert_eq!(
+        unfocused, 0,
+        "library song pane must show no highlight when the tree is focused"
+    );
+    assert!(
+        focused > 0,
+        "library song pane must highlight the selection when focused"
+    );
 }
 
 #[test]
@@ -70,8 +76,14 @@ fn playlists_song_pane_highlights_selection_only_when_focused() {
     client.playlists.focus = 1;
     let focused = render_styled(W, H, &daemon, &mut client).count_fg_in(region, hl);
 
-    assert_eq!(unfocused, 0, "playlists song pane must show no highlight when the list is focused");
-    assert!(focused > 0, "playlists song pane must highlight the selection when focused");
+    assert_eq!(
+        unfocused, 0,
+        "playlists song pane must show no highlight when the list is focused"
+    );
+    assert!(
+        focused > 0,
+        "playlists song pane must highlight the selection when focused"
+    );
 }
 
 #[test]
@@ -90,6 +102,12 @@ fn quickplay_song_pane_highlights_selection_only_when_focused() {
     client.songs.focus = 1;
     let focused = render_styled(W, H, &daemon, &mut client).count_fg_in(region, hl);
 
-    assert_eq!(unfocused, 0, "quickplay song pane must show no highlight when the selector is focused");
-    assert!(focused > 0, "quickplay song pane must highlight the selection when focused");
+    assert_eq!(
+        unfocused, 0,
+        "quickplay song pane must show no highlight when the selector is focused"
+    );
+    assert!(
+        focused > 0,
+        "quickplay song pane must highlight the selection when focused"
+    );
 }

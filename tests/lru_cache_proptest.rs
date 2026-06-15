@@ -69,7 +69,9 @@ fn insert_then_get_returns_inserted_value() {
 fn cap_two_first_inserted_evicted_when_third_arrives() {
     let mut runner = proptest::test_runner::TestRunner::default();
     let three_distinct = (0u8..8u8, 0u8..8u8, 0u8..8u8)
-        .prop_filter("three distinct keys", |(a, b, c)| a != b && b != c && a != c);
+        .prop_filter("three distinct keys", |(a, b, c)| {
+            a != b && b != c && a != c
+        });
     runner
         .run(&three_distinct, |(a, b, c)| {
             let ka = format!("k{}", a);
@@ -79,7 +81,11 @@ fn cap_two_first_inserted_evicted_when_third_arrives() {
             cache.insert(ka.clone(), 1, 2);
             cache.insert(kb.clone(), 2, 2);
             cache.insert(kc.clone(), 3, 2);
-            prop_assert!(cache.get(&ka).is_none(), "oldest key {} should be evicted", ka);
+            prop_assert!(
+                cache.get(&ka).is_none(),
+                "oldest key {} should be evicted",
+                ka
+            );
             prop_assert_eq!(cache.get(&kb).copied(), Some(2));
             prop_assert_eq!(cache.get(&kc).copied(), Some(3));
             prop_assert_eq!(cache.len(), 2);
@@ -92,7 +98,9 @@ fn cap_two_first_inserted_evicted_when_third_arrives() {
 fn touched_key_survives_eviction_pressure() {
     let mut runner = proptest::test_runner::TestRunner::default();
     let three_distinct = (0u8..8u8, 0u8..8u8, 0u8..8u8)
-        .prop_filter("three distinct keys", |(a, b, c)| a != b && b != c && a != c);
+        .prop_filter("three distinct keys", |(a, b, c)| {
+            a != b && b != c && a != c
+        });
     runner
         .run(&three_distinct, |(a, b, c)| {
             let ka = format!("k{}", a);
@@ -109,7 +117,11 @@ fn touched_key_survives_eviction_pressure() {
                 "touched key {} should survive eviction",
                 ka
             );
-            prop_assert!(cache.get(&kb).is_none(), "untouched older key {} should be evicted", kb);
+            prop_assert!(
+                cache.get(&kb).is_none(),
+                "untouched older key {} should be evicted",
+                kb
+            );
             prop_assert_eq!(cache.get(&kc).copied(), Some(3));
             Ok(())
         })

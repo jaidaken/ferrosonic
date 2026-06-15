@@ -496,4 +496,3 @@ impl App {
         cs.check_notification_timeout();
     }
 }
-

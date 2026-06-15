@@ -22,7 +22,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
-fn render_playlists(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
+fn render_playlists(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &mut AppState<'_>,
+    colors: &ThemeColors,
+) {
     // `playlists` is the per-page UI state (selection, focus, scroll).
     // `library_playlists` is the actual list, owned by the daemon.
     let playlists = &state.client.playlists;

@@ -3,8 +3,8 @@
 mod common;
 
 use common::{song, TestDaemon};
-use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::config::RepeatMode;
+use ferrosonic::daemon::state::PlaybackState;
 use serial_test::serial;
 
 #[tokio::test]

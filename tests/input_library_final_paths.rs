@@ -90,7 +90,14 @@ async fn typing_into_filter_triggers_search_task_and_commits_result() {
     app.handle_key(key(KeyCode::Char('u'))).await.unwrap();
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
-            if app.client_state.read().await.artists.search_results.is_some() {
+            if app
+                .client_state
+                .read()
+                .await
+                .artists
+                .search_results
+                .is_some()
+            {
                 break;
             }
             tokio::task::yield_now().await;

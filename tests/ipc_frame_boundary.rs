@@ -112,7 +112,11 @@ async fn write_frame_rejects_body_one_over_max_frame_bytes() {
     let r = write_frame(&mut buf, &frame_over).await;
     match r {
         Err(FrameError::TooLarge(n)) => assert_eq!(n, MAX_FRAME_BYTES + 1),
-        other => panic!("expected TooLarge({}), got {:?}", MAX_FRAME_BYTES + 1, other),
+        other => panic!(
+            "expected TooLarge({}), got {:?}",
+            MAX_FRAME_BYTES + 1,
+            other
+        ),
     }
 }
 

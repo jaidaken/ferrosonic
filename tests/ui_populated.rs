@@ -5,8 +5,8 @@ mod common;
 use common::{render, song};
 use ferrosonic::app::client_state::ClientState;
 use ferrosonic::app::state::{CavaColor, CavaRow, CavaSpan, Page};
-use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::config::Config;
+use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::daemon::DaemonState;
 use ferrosonic::subsonic::models::{Album, Artist};
 

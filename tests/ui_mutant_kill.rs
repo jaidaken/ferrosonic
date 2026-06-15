@@ -43,8 +43,16 @@ fn playlists_play_glyph_marks_only_the_playing_song() {
     let marked = s.rows_with("▶");
     let playing = s.row_of("PlayingSong").unwrap();
     let first = s.row_of("FirstSong").unwrap();
-    assert!(marked.contains(&playing), "the playing song shows the glyph\n{}", s.text());
-    assert!(!marked.contains(&first), "a non-playing song does not\n{}", s.text());
+    assert!(
+        marked.contains(&playing),
+        "the playing song shows the glyph\n{}",
+        s.text()
+    );
+    assert!(
+        !marked.contains(&first),
+        "a non-playing song does not\n{}",
+        s.text()
+    );
 }
 
 #[test]
@@ -61,15 +69,25 @@ fn quickplay_play_glyph_marks_only_the_playing_song() {
     let marked = s.rows_with("▶");
     let playing = s.row_of("PlayingSong").unwrap();
     let first = s.row_of("FirstSong").unwrap();
-    assert!(marked.contains(&playing), "the playing song shows the glyph\n{}", s.text());
-    assert!(!marked.contains(&first), "a non-playing song does not\n{}", s.text());
+    assert!(
+        marked.contains(&playing),
+        "the playing song shows the glyph\n{}",
+        s.text()
+    );
+    assert!(
+        !marked.contains(&first),
+        "a non-playing song does not\n{}",
+        s.text()
+    );
 }
 
 #[test]
 fn queue_bolds_only_the_selected_upcoming_row() {
     let (mut daemon, mut client) = base();
     client.page = Page::Queue;
-    daemon.queue = (0..5).map(|i| song(&format!("q{i}"), &format!("Track{i}"))).collect();
+    daemon.queue = (0..5)
+        .map(|i| song(&format!("q{i}"), &format!("Track{i}")))
+        .collect();
     daemon.queue_position = Some(0); // Track0 current; Track1..4 upcoming
     client.queue_state.selected = Some(2);
     let s = render_styled(W, H, &daemon, &mut client);
@@ -93,15 +111,33 @@ fn library_tree_bolds_only_the_selected_row() {
     client.page = Page::Library;
     client.artists.focus = 0;
     daemon.library.artists = vec![
-        Artist { id: "a0".into(), name: "AlphaArtist".into(), album_count: Some(1), cover_art: None },
-        Artist { id: "a1".into(), name: "BetaArtist".into(), album_count: Some(1), cover_art: None },
+        Artist {
+            id: "a0".into(),
+            name: "AlphaArtist".into(),
+            album_count: Some(1),
+            cover_art: None,
+        },
+        Artist {
+            id: "a1".into(),
+            name: "BetaArtist".into(),
+            album_count: Some(1),
+            cover_art: None,
+        },
     ];
     client.artists.selected_index = Some(0);
     let s = render_styled(W, H, &daemon, &mut client);
     let sel = s.row_of("AlphaArtist").unwrap();
     let other = s.row_of("BetaArtist").unwrap();
-    assert!(s.row_has_modifier_in(sel, 1, 40, Modifier::BOLD), "selected tree row is bold\n{}", s.text());
-    assert!(!s.row_has_modifier_in(other, 1, 40, Modifier::BOLD), "non-selected tree row is not bold\n{}", s.text());
+    assert!(
+        s.row_has_modifier_in(sel, 1, 40, Modifier::BOLD),
+        "selected tree row is bold\n{}",
+        s.text()
+    );
+    assert!(
+        !s.row_has_modifier_in(other, 1, 40, Modifier::BOLD),
+        "non-selected tree row is not bold\n{}",
+        s.text()
+    );
 }
 
 #[test]
@@ -135,8 +171,16 @@ fn library_single_disc_album_omits_the_disc_prefix() {
     let row = s.row_of("SongOne").unwrap();
     // has_multiple_discs = any d > 1; all disc 1 -> false -> "01. " not "1.01.".
     // `>`->`>=` would make every disc-1 album look multi-disc.
-    assert!(s.row_text(row).contains("01"), "single-disc track shows plain number\n{}", s.text());
-    assert!(!s.row_text(row).contains("1.01"), "single-disc track has no disc prefix\n{}", s.text());
+    assert!(
+        s.row_text(row).contains("01"),
+        "single-disc track shows plain number\n{}",
+        s.text()
+    );
+    assert!(
+        !s.row_text(row).contains("1.01"),
+        "single-disc track has no disc prefix\n{}",
+        s.text()
+    );
 }
 
 #[test]
@@ -150,7 +194,11 @@ fn quickplay_selected_option_uses_highlight_colour() {
     let s = render_styled(W, H, &daemon, &mut client);
     let selected = s.row_of("Random").unwrap();
     let other = s.row_of("Starred").unwrap();
-    assert!(s.row_has_fg_in(selected, 1, 22, hl), "selected option uses highlight_fg\n{}", s.text());
+    assert!(
+        s.row_has_fg_in(selected, 1, 22, hl),
+        "selected option uses highlight_fg\n{}",
+        s.text()
+    );
     assert!(
         !s.row_has_fg_in(other, 1, 22, hl),
         "a non-selected option does not use highlight_fg\n{}",
@@ -188,7 +236,11 @@ fn library_tree_album_omits_artist_prefix_with_stale_search_results() {
     client.artists.expanded.insert("a0".into());
     client.artists.filter = String::new();
     client.artists.filter_scope = FilterScope::Albums;
-    client.artists.search_results = Some(SearchResult3 { artist: vec![], album: vec![], song: vec![] });
+    client.artists.search_results = Some(SearchResult3 {
+        artist: vec![],
+        album: vec![],
+        song: vec![],
+    });
     let s = render_styled(W, H, &daemon, &mut client);
     assert!(
         s.text().contains("TheAlbum"),

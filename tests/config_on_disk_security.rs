@@ -45,5 +45,9 @@ fn password_file_is_written_with_the_secret_and_mode_0600() {
     assert_eq!(contents, "hunter2\n", "password file holds the secret");
 
     let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
-    assert_eq!(mode & 0o777, 0o600, "password file must be owner-only (0600)");
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "password file must be owner-only (0600)"
+    );
 }

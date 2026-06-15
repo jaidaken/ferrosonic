@@ -40,8 +40,7 @@ fn generate_salt() -> String {
 }
 
 fn generate_token(password: &Secret, salt: &str) -> String {
-    let mut buf: Vec<u8> =
-        Vec::with_capacity(password.reveal_bytes().len() + salt.len());
+    let mut buf: Vec<u8> = Vec::with_capacity(password.reveal_bytes().len() + salt.len());
     buf.extend_from_slice(password.reveal_bytes());
     buf.extend_from_slice(salt.as_bytes());
     let digest = md5::compute(&buf);

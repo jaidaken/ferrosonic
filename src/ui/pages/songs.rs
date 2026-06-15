@@ -24,7 +24,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
-fn render_options(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
+fn render_options(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &mut AppState<'_>,
+    colors: &ThemeColors,
+) {
     let focus = state.client.songs.focus;
     let selected_option = state
         .client

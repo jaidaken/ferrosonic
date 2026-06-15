@@ -259,13 +259,7 @@ async fn d_with_no_selection_is_noop() {
     let ds = fx.app.daemon_state.read().await;
     assert_eq!(ds.queue.len(), 1);
     assert_eq!(ds.queue[0].id, "a");
-    assert!(fx
-        .app
-        .client_state
-        .read()
-        .await
-        .notification
-        .is_none());
+    assert!(fx.app.client_state.read().await.notification.is_none());
 }
 
 #[tokio::test]
@@ -387,7 +381,9 @@ async fn c_with_no_history_notifies_no_history_to_clear() {
     }
     fx.app.handle_key(key(KeyCode::Char('c'))).await.unwrap();
     let notif = fx.app.client_state.read().await.notification.clone();
-    let msg = notif.expect("c with no history sets a notification").message;
+    let msg = notif
+        .expect("c with no history sets a notification")
+        .message;
     assert_eq!(msg, "No history to clear");
 }
 

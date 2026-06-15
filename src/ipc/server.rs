@@ -1,6 +1,5 @@
 //! Daemon-side IPC server: one task per connected client. L60_FILE exempt (temp): prompt 4 IPC hardening sprint will rewrite + add coverage.
 
-
 use std::path::Path;
 use std::sync::Arc;
 
@@ -12,8 +11,7 @@ use tracing::{debug, error, info, warn};
 use crate::daemon::DaemonCore;
 use crate::ipc::client::InProcessClient;
 use crate::ipc::frame::{
-    read_frame_lenient_with_cap, write_frame, Frame, FrameError, FrameRead,
-    MAX_REQUEST_FRAME_BYTES,
+    read_frame_lenient_with_cap, write_frame, Frame, FrameError, FrameRead, MAX_REQUEST_FRAME_BYTES,
 };
 use crate::ipc::path::ensure_parent_dir;
 use crate::ipc::protocol::DaemonEvent;
@@ -26,10 +24,7 @@ const EVENT_FORWARD_CAPACITY: usize = 256;
 const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 
 /// Reserve two slots so the snapshot pair is sent atomically or not at all; partial sends would leave the client desynced.
-async fn try_send_resync(
-    tx: &tokio::sync::mpsc::Sender<Frame>,
-    core: &Arc<DaemonCore>,
-) -> bool {
+async fn try_send_resync(tx: &tokio::sync::mpsc::Sender<Frame>, core: &Arc<DaemonCore>) -> bool {
     let p1 = match tx.try_reserve() {
         Ok(p) => p,
         Err(_) => return false,
@@ -315,7 +310,10 @@ mod redaction_tests {
     #[test]
     fn password_field_is_masked_and_plaintext_never_survives() {
         let out = redact_secrets_in_body(r#"{"password":"hunter2"}"#);
-        assert!(!out.contains("hunter2"), "plaintext password must not survive: {out}");
+        assert!(
+            !out.contains("hunter2"),
+            "plaintext password must not survive: {out}"
+        );
         assert_eq!(redacted(&out)["password"], Value::String("***".into()));
     }
 
@@ -340,15 +338,27 @@ mod redaction_tests {
     #[test]
     fn a_password_nested_in_an_object_is_masked() {
         let out = redact_secrets_in_body(r#"{"config":{"password":"hunter2"}}"#);
-        assert!(!out.contains("hunter2"), "nested password must be redacted: {out}");
-        assert_eq!(redacted(&out)["config"]["password"], Value::String("***".into()));
+        assert!(
+            !out.contains("hunter2"),
+            "nested password must be redacted: {out}"
+        );
+        assert_eq!(
+            redacted(&out)["config"]["password"],
+            Value::String("***".into())
+        );
     }
 
     #[test]
     fn a_password_inside_an_array_is_masked() {
         let out = redact_secrets_in_body(r#"{"items":[{"password":"hunter2"}]}"#);
-        assert!(!out.contains("hunter2"), "array-nested password must be redacted: {out}");
-        assert_eq!(redacted(&out)["items"][0]["password"], Value::String("***".into()));
+        assert!(
+            !out.contains("hunter2"),
+            "array-nested password must be redacted: {out}"
+        );
+        assert_eq!(
+            redacted(&out)["items"][0]["password"],
+            Value::String("***".into())
+        );
     }
 
     #[test]

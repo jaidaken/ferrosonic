@@ -33,8 +33,14 @@ async fn star_marks_the_target_song_across_all_cached_lists() {
 
     let s = td.state.read().await;
     assert!(s.queue[0].starred.is_some(), "target marked in queue");
-    assert!(s.queue[1].starred.is_none(), "a different queued song is not marked");
-    assert!(s.library.random_songs[0].starred.is_some(), "target marked in random");
+    assert!(
+        s.queue[1].starred.is_none(),
+        "a different queued song is not marked"
+    );
+    assert!(
+        s.library.random_songs[0].starred.is_some(),
+        "target marked in random"
+    );
     assert!(
         s.library.album_songs_cache["alb"][0].starred.is_some(),
         "target marked in the album cache"
@@ -64,7 +70,10 @@ async fn star_updates_starred_index_when_refresh_unavailable() {
     td.core.toggle_star_song("s1").await.unwrap();
 
     let s = td.state.read().await;
-    assert!(s.library.starred_ids.contains("s1"), "starred_ids gains the song");
+    assert!(
+        s.library.starred_ids.contains("s1"),
+        "starred_ids gains the song"
+    );
     assert!(
         s.library.starred_songs.iter().any(|x| x.id == "s1"),
         "starred_songs gains the song from a cached source"
@@ -143,7 +152,10 @@ async fn unstar_clears_the_marker_across_cached_lists() {
     }
 
     let now_starred = td.core.toggle_star_song("s1").await.unwrap();
-    assert!(!now_starred, "toggling a starred song reports starred=false");
+    assert!(
+        !now_starred,
+        "toggling a starred song reports starred=false"
+    );
 
     let s = td.state.read().await;
     assert!(s.queue[0].starred.is_none(), "marker cleared in queue");
@@ -151,5 +163,8 @@ async fn unstar_clears_the_marker_across_cached_lists() {
         s.now_playing.song.as_ref().unwrap().starred.is_none(),
         "marker cleared in now-playing"
     );
-    assert!(!s.library.starred_ids.contains("s1"), "starred_ids loses the song");
+    assert!(
+        !s.library.starred_ids.contains("s1"),
+        "starred_ids loses the song"
+    );
 }

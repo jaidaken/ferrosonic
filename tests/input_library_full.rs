@@ -92,7 +92,15 @@ async fn filter_backspace_to_empty_clears_search_results() {
     fx.app.handle_key(key(KeyCode::Backspace)).await.unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(1), async {
         loop {
-            if fx.app.client_state.read().await.artists.search_results.is_none() {
+            if fx
+                .app
+                .client_state
+                .read()
+                .await
+                .artists
+                .search_results
+                .is_none()
+            {
                 break;
             }
             tokio::task::yield_now().await;

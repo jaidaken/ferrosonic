@@ -16,7 +16,11 @@ fn backdate(path: &Path, secs_ago: u64) {
     };
     let times = [tv, tv];
     let c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
-    assert_eq!(unsafe { libc::utimes(c.as_ptr(), times.as_ptr()) }, 0, "utimes");
+    assert_eq!(
+        unsafe { libc::utimes(c.as_ptr(), times.as_ptr()) },
+        0,
+        "utimes"
+    );
 }
 
 #[test]

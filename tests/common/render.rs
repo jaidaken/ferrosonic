@@ -124,7 +124,9 @@ impl StyledScreen {
 
     /// Count cells carrying `modifier` (e.g. BOLD).
     pub fn count_modifier(&self, modifier: Modifier) -> usize {
-        self.cells().filter(|c| c.modifier.contains(modifier)).count()
+        self.cells()
+            .filter(|c| c.modifier.contains(modifier))
+            .count()
     }
 
     /// True if any cell on row `y` has foreground `color`.

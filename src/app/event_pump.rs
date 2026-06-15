@@ -83,7 +83,8 @@ pub async fn apply_event(
                             Ok(DaemonResponse::CoverArt(bytes)) => {
                                 info!("Cover art bytes received: {} bytes", bytes.len());
                                 if !bytes.is_empty() {
-                                    let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
+                                    let mut guard =
+                                        cover_art.lock().unwrap_or_else(|p| p.into_inner());
                                     guard.load(id, &bytes);
                                 }
                             }

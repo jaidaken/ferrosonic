@@ -124,9 +124,7 @@ pub struct ClientGuard {
 
 impl Drop for ClientGuard {
     fn drop(&mut self) {
-        self.core
-            .active_clients
-            .fetch_sub(1, Ordering::Release);
+        self.core.active_clients.fetch_sub(1, Ordering::Release);
     }
 }
 
@@ -435,7 +433,8 @@ impl DaemonCore {
             return Ok(false);
         };
         info!("Playing: {} (queue pos {}) mode=Buffered", song.title, idx);
-        self.dispatch_play(stream_url, idx, PlayMode::Buffered, 0.0).await?;
+        self.dispatch_play(stream_url, idx, PlayMode::Buffered, 0.0)
+            .await?;
         self.emit_now_playing().await;
         self.emit_queue().await;
         self.spawn_fast_probe();
@@ -532,7 +531,8 @@ impl DaemonCore {
                         let _ = mpv.stop().await;
                     }
                 }
-                self.prebuffer_and_load(stream_url, pos, loading, cancel).await;
+                self.prebuffer_and_load(stream_url, pos, loading, cancel)
+                    .await;
                 owner.disarm();
             }
         }
@@ -735,11 +735,8 @@ impl DaemonCore {
                     debug!("Pre-buffer exiting on shutdown");
                     return;
                 }
-                let next = tokio::time::timeout(
-                    std::time::Duration::from_secs(15),
-                    stream.next(),
-                )
-                .await;
+                let next =
+                    tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await;
                 let chunk_opt = match next {
                     Ok(c) => c,
                     Err(_) => {
@@ -887,6 +884,4 @@ impl DaemonCore {
             warn!("Failed to clear PipeWire forced rate: {}", e);
         }
     }
-
 }
-

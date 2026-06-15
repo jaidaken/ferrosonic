@@ -85,7 +85,8 @@ async fn quit_mpv_sends_quit_command_to_mpv() {
 
     let cmds = td.fake_mpv.commands().await;
     assert!(
-        cmds.iter().any(|c| c.first().and_then(|v| v.as_str()) == Some("quit")),
+        cmds.iter()
+            .any(|c| c.first().and_then(|v| v.as_str()) == Some("quit")),
         "quit_mpv must send a quit command to mpv"
     );
 }
@@ -255,4 +256,3 @@ async fn set_cava_enabled_emits_config_changed() {
         "set_cava_enabled must emit ConfigChanged"
     );
 }
-

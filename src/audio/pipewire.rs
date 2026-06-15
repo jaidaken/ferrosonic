@@ -131,7 +131,6 @@ impl PipeWireController {
         Ok(())
     }
 
-
     /// Release the rate pin so the graph follows streams again.
     pub async fn clear_forced_rate(&mut self) -> Result<(), AudioError> {
         info!("Clearing PipeWire forced sample rate");
@@ -197,13 +196,8 @@ impl Drop for PipeWireController {
                 } else {
                     "0".to_string()
                 };
-                let _ = runner.run_blocking(&[
-                    "-n",
-                    "settings",
-                    "0",
-                    "clock.force-rate",
-                    &rate_str,
-                ]);
+                let _ =
+                    runner.run_blocking(&["-n", "settings", "0", "clock.force-rate", &rate_str]);
             }
         });
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);

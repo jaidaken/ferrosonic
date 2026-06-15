@@ -82,7 +82,10 @@ async fn play_at_zero_offset_uses_plain_loadfile_without_start() {
                 && c.get(2).and_then(|v| v.as_str()) == Some("replace")
         })
         .expect("a replace loadfile");
-    let opts = replace_loadfile.get(4).and_then(|v| v.as_str()).unwrap_or_default();
+    let opts = replace_loadfile
+        .get(4)
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     assert!(
         !opts.contains("start="),
         "a zero-offset play must use a plain loadfile, not start=0; options were {opts:?}"

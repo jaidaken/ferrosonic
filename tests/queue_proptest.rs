@@ -104,12 +104,7 @@ async fn move_queue_item_preserves_current_song_identity() {
     let mut runner = proptest::test_runner::TestRunner::default();
     runner
         .run(
-            &(
-                1usize..8,
-                0usize..8,
-                0usize..8,
-                0usize..8,
-            ),
+            &(1usize..8, 0usize..8, 0usize..8, 0usize..8),
             |(len, pos, from, to)| {
                 let len = len.max(1);
                 let pos = pos % len;
@@ -120,7 +115,9 @@ async fn move_queue_item_preserves_current_song_identity() {
                         let td = TestDaemon::new().await;
                         {
                             let mut s = td.state.write().await;
-                            s.queue = (0..len).map(|i| song(&format!("id-{}", i), &format!("t-{}", i))).collect();
+                            s.queue = (0..len)
+                                .map(|i| song(&format!("id-{}", i), &format!("t-{}", i)))
+                                .collect();
                             s.queue_position = Some(pos);
                         }
                         let before_id = {
@@ -133,7 +130,8 @@ async fn move_queue_item_preserves_current_song_identity() {
                             (s.queue_position, s.queue.clone())
                         };
                         let (new_pos_opt, new_queue) = after;
-                        let new_pos = new_pos_opt.expect("queue_position must remain Some after move");
+                        let new_pos =
+                            new_pos_opt.expect("queue_position must remain Some after move");
                         assert!(
                             new_pos < new_queue.len(),
                             "queue_position {} out of bounds (len {}) after move {}->{}",

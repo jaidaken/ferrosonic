@@ -302,11 +302,7 @@ fn sync_starred_songs(
 ) {
     if starred {
         daemon.library.starred_ids.insert(song_id.to_string());
-        let already = daemon
-            .library
-            .starred_songs
-            .iter()
-            .any(|s| s.id == song_id);
+        let already = daemon.library.starred_songs.iter().any(|s| s.id == song_id);
         if !already {
             let source = daemon
                 .queue

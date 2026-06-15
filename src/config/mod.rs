@@ -131,10 +131,7 @@ fn serialize_revealed_opt<S: serde::Serializer>(
 
 impl Config {
     fn as_on_disk(&self) -> ConfigOnDisk<'_> {
-        let pw_file_set = self
-            .password_file
-            .as_ref()
-            .is_some_and(|s| !s.is_empty());
+        let pw_file_set = self.password_file.as_ref().is_some_and(|s| !s.is_empty());
         ConfigOnDisk {
             base_url: &self.base_url,
             username: &self.username,
@@ -480,10 +477,7 @@ impl Config {
 }
 
 /// Atomic password-file writer: temp + rename + 0600 + parent dir fsync.
-pub fn write_password_file_atomic(
-    path: &str,
-    password: &Secret,
-) -> std::io::Result<()> {
+pub fn write_password_file_atomic(path: &str, password: &Secret) -> std::io::Result<()> {
     use std::io::Write;
     let expanded = Config::expand_tilde(path);
     let p = Path::new(&expanded);

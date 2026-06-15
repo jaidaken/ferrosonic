@@ -87,21 +87,18 @@ impl FakeMpv {
     where
         F: Fn(&[Vec<Value>]) -> bool,
     {
-        tokio::time::timeout(
-            std::time::Duration::from_millis(timeout_ms),
-            async {
-                loop {
-                    let waiter = self.changed.notified();
-                    {
-                        let s = self.state.lock().await;
-                        if predicate(&s.commands) {
-                            return true;
-                        }
+        tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
+            loop {
+                let waiter = self.changed.notified();
+                {
+                    let s = self.state.lock().await;
+                    if predicate(&s.commands) {
+                        return true;
                     }
-                    waiter.await;
                 }
-            },
-        )
+                waiter.await;
+            }
+        })
         .await
         .unwrap_or(false)
     }

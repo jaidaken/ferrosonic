@@ -129,10 +129,9 @@ fn enqueue_mode_round_trips_through_serde() {
             let bytes = serde_json::to_vec(&mode).unwrap();
             let back: EnqueueMode = serde_json::from_slice(&bytes).unwrap();
             match (&mode, &back) {
-                (
-                    EnqueueMode::Replace { play_from: a },
-                    EnqueueMode::Replace { play_from: b },
-                ) => prop_assert_eq!(a, b),
+                (EnqueueMode::Replace { play_from: a }, EnqueueMode::Replace { play_from: b }) => {
+                    prop_assert_eq!(a, b)
+                }
                 (EnqueueMode::Append, EnqueueMode::Append) => {}
                 (EnqueueMode::InsertAfter(a), EnqueueMode::InsertAfter(b)) => {
                     prop_assert_eq!(a, b)

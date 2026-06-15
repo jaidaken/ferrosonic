@@ -75,4 +75,3 @@ fn ferrosonic_multiple_unknown_flags_all_fail() {
         .unwrap();
     assert!(!output.status.success());
 }
-

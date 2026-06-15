@@ -26,7 +26,9 @@ async fn preloaded(td: &TestDaemon, id: &str) -> bool {
             cmds.iter().any(|c| {
                 c.first().and_then(Value::as_str) == Some("loadfile")
                     && c.get(2).and_then(Value::as_str) == Some("append")
-                    && c.get(1).and_then(Value::as_str).is_some_and(|u| u.contains(id))
+                    && c.get(1)
+                        .and_then(Value::as_str)
+                        .is_some_and(|u| u.contains(id))
             })
         })
         .await

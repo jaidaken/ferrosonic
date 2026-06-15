@@ -32,17 +32,23 @@ fn queue_marks_the_playing_track_and_only_that_track() {
     let marked = screen.rows_with("▶");
 
     assert!(
-        marked.iter().any(|&y| screen.row_text(y).contains("Track One")),
+        marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Track One")),
         "the playing track must show the ▶ marker;\n{}",
         screen.text()
     );
     assert!(
-        !marked.iter().any(|&y| screen.row_text(y).contains("Track Zero")),
+        !marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Track Zero")),
         "a queued, non-playing track must not show ▶;\n{}",
         screen.text()
     );
     assert!(
-        !marked.iter().any(|&y| screen.row_text(y).contains("Track Two")),
+        !marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Track Two")),
         "a queued, non-playing track must not show ▶;\n{}",
         screen.text()
     );
@@ -59,12 +65,16 @@ fn library_song_pane_stars_the_starred_song_only() {
     let starred = screen.rows_with("★");
 
     assert!(
-        starred.iter().any(|&y| screen.row_text(y).contains("Starred Song")),
+        starred
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Starred Song")),
         "the starred song must show ★;\n{}",
         screen.text()
     );
     assert!(
-        !starred.iter().any(|&y| screen.row_text(y).contains("Plain Song")),
+        !starred
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Plain Song")),
         "an unstarred song must not show ★;\n{}",
         screen.text()
     );
@@ -84,12 +94,16 @@ fn library_song_pane_marks_the_playing_song_only() {
     let marked = screen.rows_with("▶");
 
     assert!(
-        marked.iter().any(|&y| screen.row_text(y).contains("Now Playing")),
+        marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Now Playing")),
         "the playing song must show ▶ in the list;\n{}",
         screen.text()
     );
     assert!(
-        !marked.iter().any(|&y| screen.row_text(y).contains("Other Song")),
+        !marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Other Song")),
         "a non-playing song must not show ▶;\n{}",
         screen.text()
     );

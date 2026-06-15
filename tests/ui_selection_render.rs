@@ -39,9 +39,12 @@ fn assert_selected_row(
     other_title: &str,
 ) {
     let (x0, x1) = cols;
-    let sel = screen
-        .row_of(selected_title)
-        .unwrap_or_else(|| panic!("selected title {selected_title} not rendered\n{}", screen.text()));
+    let sel = screen.row_of(selected_title).unwrap_or_else(|| {
+        panic!(
+            "selected title {selected_title} not rendered\n{}",
+            screen.text()
+        )
+    });
     let other = screen
         .row_of(other_title)
         .unwrap_or_else(|| panic!("other title {other_title} not rendered\n{}", screen.text()));

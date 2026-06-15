@@ -70,8 +70,9 @@ impl App {
                         let username = state.client.server_state.username.clone();
                         let password = state.client.server_state.password.clone();
                         if url::Url::parse(&base_url).is_err() {
-                            state.client.server_state.status =
-                                Some("Invalid URL (must start with http:// or https://)".to_string());
+                            state.client.server_state.status = Some(
+                                "Invalid URL (must start with http:// or https://)".to_string(),
+                            );
                             return Ok(());
                         }
                         state.client.server_state.status =
@@ -137,8 +138,9 @@ impl App {
                         let username = state.client.server_state.username.clone();
                         let password = state.client.server_state.password.clone();
                         if url::Url::parse(&base_url).is_err() {
-                            state.client.server_state.status =
-                                Some("Invalid URL (must start with http:// or https://)".to_string());
+                            state.client.server_state.status = Some(
+                                "Invalid URL (must start with http:// or https://)".to_string(),
+                            );
                             return Ok(());
                         }
                         state.client.server_state.status = Some("Saving...".to_string());

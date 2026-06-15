@@ -76,7 +76,11 @@ async fn s_cycles_sort_and_reorders_the_album_list() {
         cs.artists.view = LibraryView::AlbumList;
         cs.artists.focus = 0;
         // Name order C, A, B; release years 1990, 2010, 1980.
-        cs.artists.albums = vec![album("c", "C", 1990), album("a", "A", 2010), album("b", "B", 1980)];
+        cs.artists.albums = vec![
+            album("c", "C", 1990),
+            album("a", "A", 2010),
+            album("b", "B", 1980),
+        ];
         cs.artists.album_selected = Some(0);
     }
 
@@ -85,7 +89,11 @@ async fn s_cycles_sort_and_reorders_the_album_list() {
         let cs = app.client_state.read().await;
         assert_eq!(cs.artists.album_sort, AlbumSort::ReleaseDate);
         let names: Vec<&str> = cs.artists.albums.iter().map(|a| a.name.as_str()).collect();
-        assert_eq!(names, vec!["B", "C", "A"], "sorted by original release year, oldest first");
+        assert_eq!(
+            names,
+            vec!["B", "C", "A"],
+            "sorted by original release year, oldest first"
+        );
     }
 
     app.handle_key(key(KeyCode::Char('s'))).await.unwrap();
@@ -105,12 +113,19 @@ async fn album_list_down_and_up_move_the_selection() {
         let mut cs = app.client_state.write().await;
         cs.artists.view = LibraryView::AlbumList;
         cs.artists.focus = 0;
-        cs.artists.albums = vec![album("a", "A", 2000), album("b", "B", 2001), album("c", "C", 2002)];
+        cs.artists.albums = vec![
+            album("a", "A", 2000),
+            album("b", "B", 2001),
+            album("c", "C", 2002),
+        ];
         cs.artists.album_selected = Some(0);
     }
 
     app.handle_key(key(KeyCode::Down)).await.unwrap();
-    assert_eq!(app.client_state.read().await.artists.album_selected, Some(1));
+    assert_eq!(
+        app.client_state.read().await.artists.album_selected,
+        Some(1)
+    );
 
     app.handle_key(key(KeyCode::Down)).await.unwrap();
     app.handle_key(key(KeyCode::Down)).await.unwrap();
@@ -121,7 +136,10 @@ async fn album_list_down_and_up_move_the_selection() {
     );
 
     app.handle_key(key(KeyCode::Up)).await.unwrap();
-    assert_eq!(app.client_state.read().await.artists.album_selected, Some(1));
+    assert_eq!(
+        app.client_state.read().await.artists.album_selected,
+        Some(1)
+    );
 }
 
 #[tokio::test]

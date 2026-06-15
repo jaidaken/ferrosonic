@@ -193,7 +193,10 @@ mod fault_injection_tests {
 
     impl FileSystem for FailingFs {
         fn create_dir_all(&self, path: &Path) -> io::Result<()> {
-            self.calls.borrow_mut().create_dir_all.push(path.to_path_buf());
+            self.calls
+                .borrow_mut()
+                .create_dir_all
+                .push(path.to_path_buf());
             if self.fail_create_dir_all {
                 Err(io::Error::new(ErrorKind::Other, "synthetic create_dir_all"))
             } else {
@@ -210,7 +213,10 @@ mod fault_injection_tests {
                 .write_then_sync
                 .push((path.to_path_buf(), body.to_vec()));
             if self.fail_write_then_sync {
-                Err(io::Error::new(ErrorKind::Other, "synthetic write_then_sync"))
+                Err(io::Error::new(
+                    ErrorKind::Other,
+                    "synthetic write_then_sync",
+                ))
             } else {
                 Ok(())
             }
@@ -347,9 +353,15 @@ mod fault_injection_tests {
         assert_eq!(err.kind(), ErrorKind::Other);
         let calls = fs.calls.borrow();
         assert_eq!(calls.write_then_sync.len(), 1);
-        assert!(calls.rename.is_empty(), "rename must not be attempted after write failure");
+        assert!(
+            calls.rename.is_empty(),
+            "rename must not be attempted after write failure"
+        );
         assert_eq!(calls.remove_file_if_exists.len(), 1);
-        assert_eq!(calls.remove_file_if_exists[0], PathBuf::from("/etc/a.toml.tmp"));
+        assert_eq!(
+            calls.remove_file_if_exists[0],
+            PathBuf::from("/etc/a.toml.tmp")
+        );
     }
 
     #[test]
@@ -364,7 +376,10 @@ mod fault_injection_tests {
         let calls = fs.calls.borrow();
         assert_eq!(calls.rename.len(), 1);
         assert_eq!(calls.remove_file_if_exists.len(), 1);
-        assert_eq!(calls.remove_file_if_exists[0], PathBuf::from("/etc/a.toml.tmp"));
+        assert_eq!(
+            calls.remove_file_if_exists[0],
+            PathBuf::from("/etc/a.toml.tmp")
+        );
         assert!(
             calls.open_and_sync_dir.is_empty(),
             "fsync parent must not run after rename failure"
@@ -397,7 +412,10 @@ mod fault_injection_tests {
         };
         atomic_write_bytes_with_fs(&fs, Path::new("/etc/noext"), b"x").unwrap();
         let calls = fs.calls.borrow();
-        assert_eq!(calls.write_then_sync[0].0, PathBuf::from("/etc/noext.dat.tmp"));
+        assert_eq!(
+            calls.write_then_sync[0].0,
+            PathBuf::from("/etc/noext.dat.tmp")
+        );
         assert_eq!(calls.rename[0].0, PathBuf::from("/etc/noext.dat.tmp"));
         assert_eq!(calls.rename[0].1, PathBuf::from("/etc/noext"));
     }

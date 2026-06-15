@@ -44,14 +44,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, colors: &ThemeColors) {
         ]),
     ];
 
-    let para = Paragraph::new(lines)
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors.accent))
-                .title(" Quit Ferrosonic "),
-        );
+    let para = Paragraph::new(lines).alignment(Alignment::Center).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors.accent))
+            .title(" Quit Ferrosonic "),
+    );
 
     frame.render_widget(Clear, rect);
     frame.render_widget(para, rect);

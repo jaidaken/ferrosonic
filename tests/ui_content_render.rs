@@ -33,7 +33,9 @@ fn track_song(id: &str, title: &str, disc: Option<i32>, track: Option<i32>) -> C
 fn queue_colours_current_played_and_selected_rows_distinctly() {
     let (mut daemon, mut client) = base();
     client.page = Page::Queue;
-    daemon.queue = (0..5).map(|i| song(&format!("q{i}"), &format!("Track{i}"))).collect();
+    daemon.queue = (0..5)
+        .map(|i| song(&format!("q{i}"), &format!("Track{i}")))
+        .collect();
     daemon.queue_position = Some(2);
     client.queue_state.selected = Some(4);
     let c = *client.settings_state.theme_colors();
@@ -44,11 +46,26 @@ fn queue_colours_current_played_and_selected_rows_distinctly() {
     let upcoming = s.row_of("Track3").unwrap();
     let selected = s.row_of("Track4").unwrap();
 
-    assert!(s.row_has_fg(current, c.playing), "current track uses the playing colour");
-    assert!(s.rows_with("▶").contains(&current), "current track shows the play marker");
-    assert!(s.row_has_fg(played, c.played), "a track before the playhead is the played colour");
-    assert!(!s.row_has_fg(upcoming, c.played), "an upcoming track is not the played colour");
-    assert!(s.row_has_fg(selected, c.primary), "the selected upcoming track uses the primary colour");
+    assert!(
+        s.row_has_fg(current, c.playing),
+        "current track uses the playing colour"
+    );
+    assert!(
+        s.rows_with("▶").contains(&current),
+        "current track shows the play marker"
+    );
+    assert!(
+        s.row_has_fg(played, c.played),
+        "a track before the playhead is the played colour"
+    );
+    assert!(
+        !s.row_has_fg(upcoming, c.played),
+        "an upcoming track is not the played colour"
+    );
+    assert!(
+        s.row_has_fg(selected, c.primary),
+        "the selected upcoming track uses the primary colour"
+    );
 }
 
 #[test]

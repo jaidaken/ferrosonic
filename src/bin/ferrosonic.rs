@@ -37,7 +37,10 @@ struct Args {
 
 /// Returned guard must outlive the program; dropping it ends the
 /// non-blocking writer task. The daemon mode logs to a separate file.
-fn init_logging(verbose: bool, daemon: bool) -> Option<tracing_appender::non_blocking::WorkerGuard> {
+fn init_logging(
+    verbose: bool,
+    daemon: bool,
+) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let log_dir = config_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
     if let Err(e) = fs::create_dir_all(&log_dir) {
         eprintln!("Warning: Could not create log directory: {}", e);

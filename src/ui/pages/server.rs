@@ -157,7 +157,13 @@ fn render_field(
     }
 }
 
-fn render_button(frame: &mut Frame<'_>, area: Rect, label: &str, selected: bool, colors: &ThemeColors) {
+fn render_button(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    label: &str,
+    selected: bool,
+    colors: &ThemeColors,
+) {
     let style = if selected {
         Style::default()
             .fg(colors.highlight_fg)

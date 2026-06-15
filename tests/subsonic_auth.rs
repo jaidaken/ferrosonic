@@ -39,7 +39,9 @@ fn token_is_a_32_char_lowercase_hex_digest() {
     let (_salt, token) = generate_auth_params(&pw);
     assert_eq!(token.len(), 32, "md5 hex digest is 32 chars");
     assert!(
-        token.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        token
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "token must be lowercase hex: {token}"
     );
 }

@@ -1,7 +1,7 @@
 //! Playback tick state machine + dispatch.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use tracing::{debug, info, warn};
 
@@ -40,12 +40,18 @@ enum PlaybackTickAction {
 /// Whether the orchestrator should fall through to the tail tick updates after the main action.
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TickContinuation { Stop, Continue }
+enum TickContinuation {
+    Stop,
+    Continue,
+}
 
 /// Result of try_gapless_advance under the write critical section.
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GaplessOutcome { Advanced, QueueRanOut }
+enum GaplessOutcome {
+    Advanced,
+    QueueRanOut,
+}
 
 impl DaemonCore {
     /// Collect every read the playback tick state machine needs. Read-only by design.
@@ -59,7 +65,10 @@ impl DaemonCore {
             (pl, active)
         };
 
-        let mpv_running = { let mut mpv = self.mpv.lock().await; mpv.is_running() };
+        let mpv_running = {
+            let mut mpv = self.mpv.lock().await;
+            mpv.is_running()
+        };
 
         if !is_active || !mpv_running {
             return PlaybackTickInputs {
@@ -158,9 +167,7 @@ impl DaemonCore {
             return PlaybackTickAction::GaplessAdvance;
         }
 
-        if matches!(inputs.mpv_idle, Some(true))
-            && !inputs.prebuffer_loading
-            && !inputs.just_loaded
+        if matches!(inputs.mpv_idle, Some(true)) && !inputs.prebuffer_loading && !inputs.just_loaded
         {
             return PlaybackTickAction::AdvanceOnIdle;
         }
@@ -349,19 +356,28 @@ mod playback_tick_tests {
 
     #[test]
     fn skip_when_inactive() {
-        let i = PlaybackTickInputs { is_active: false, ..baseline() };
+        let i = PlaybackTickInputs {
+            is_active: false,
+            ..baseline()
+        };
         assert_eq!(decide(&i), PlaybackTickAction::Skip);
     }
 
     #[test]
     fn skip_when_mpv_not_running() {
-        let i = PlaybackTickInputs { mpv_running: false, ..baseline() };
+        let i = PlaybackTickInputs {
+            mpv_running: false,
+            ..baseline()
+        };
         assert_eq!(decide(&i), PlaybackTickAction::Skip);
     }
 
     #[test]
     fn continue_when_paused() {
-        let i = PlaybackTickInputs { is_playing: false, ..baseline() };
+        let i = PlaybackTickInputs {
+            is_playing: false,
+            ..baseline()
+        };
         assert_eq!(decide(&i), PlaybackTickAction::Continue);
     }
 

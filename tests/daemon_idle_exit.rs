@@ -53,7 +53,10 @@ async fn idle_monitor_requests_shutdown_after_the_grace_period() {
     }
 
     let joined = tokio::time::timeout(Duration::from_secs(1), handle).await;
-    assert!(joined.is_ok(), "the monitor task must finish after requesting shutdown");
+    assert!(
+        joined.is_ok(),
+        "the monitor task must finish after requesting shutdown"
+    );
     assert!(
         tokio::time::timeout(Duration::from_secs(1), td.core.shutdown_signal())
             .await

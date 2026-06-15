@@ -1,6 +1,5 @@
 //! IPC protocol: length-prefixed JSON over a Unix socket.
 
-
 use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, RepeatMode};

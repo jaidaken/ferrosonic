@@ -286,7 +286,10 @@ async fn quit_with_no_writer_returns_ok() {
     let mut ctrl = MpvController::new();
     let result = ctrl.quit().await;
     assert!(result.is_ok(), "quit with no writer must return Ok");
-    assert!(!ctrl.is_running(), "controller must be shut down after quit");
+    assert!(
+        !ctrl.is_running(),
+        "controller must be shut down after quit"
+    );
 }
 
 #[tokio::test]

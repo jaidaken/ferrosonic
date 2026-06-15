@@ -207,71 +207,71 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
             .collect()
     } else {
         build_tree_items(state)
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let is_selected = Some(i) == artists.selected_index;
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let is_selected = Some(i) == artists.selected_index;
 
-            match item {
-                TreeItem::Artist {
-                    artist,
-                    expanded: _,
-                } => {
-                    let style = if is_selected {
-                        Style::default()
-                            .fg(colors.artist)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(colors.artist)
-                    };
-
-                    ListItem::new(artist.name.clone()).style(style)
-                }
-                TreeItem::Album { album } => {
-                    let style = if is_selected {
-                        Style::default()
-                            .fg(colors.album)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(colors.album)
-                    };
-
-                    let year_str = album.year.map(|y| format!(" [{}]", y)).unwrap_or_default();
-                    let text = if !artists.filter.is_empty()
-                        && artists.search_results.is_some()
-                        && artists.filter_scope == FilterScope::Albums
-                    {
-                        let artist = album.artist.as_deref().unwrap_or("");
-                        if artist.is_empty() {
-                            format!("{}{}", album.name, year_str)
+                match item {
+                    TreeItem::Artist {
+                        artist,
+                        expanded: _,
+                    } => {
+                        let style = if is_selected {
+                            Style::default()
+                                .fg(colors.artist)
+                                .add_modifier(Modifier::BOLD)
                         } else {
-                            format!("{} — {}{}", artist, album.name, year_str)
-                        }
-                    } else {
-                        format!("  └─ {}{}", album.name, year_str)
-                    };
+                            Style::default().fg(colors.artist)
+                        };
 
-                    ListItem::new(text).style(style)
+                        ListItem::new(artist.name.clone()).style(style)
+                    }
+                    TreeItem::Album { album } => {
+                        let style = if is_selected {
+                            Style::default()
+                                .fg(colors.album)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(colors.album)
+                        };
+
+                        let year_str = album.year.map(|y| format!(" [{}]", y)).unwrap_or_default();
+                        let text = if !artists.filter.is_empty()
+                            && artists.search_results.is_some()
+                            && artists.filter_scope == FilterScope::Albums
+                        {
+                            let artist = album.artist.as_deref().unwrap_or("");
+                            if artist.is_empty() {
+                                format!("{}{}", album.name, year_str)
+                            } else {
+                                format!("{} — {}{}", artist, album.name, year_str)
+                            }
+                        } else {
+                            format!("  └─ {}{}", album.name, year_str)
+                        };
+
+                        ListItem::new(text).style(style)
+                    }
+                    TreeItem::Song { song } => {
+                        let style = if is_selected {
+                            Style::default()
+                                .fg(colors.song)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(colors.song)
+                        };
+                        let artist = song.artist.as_deref().unwrap_or("");
+                        let text = if artist.is_empty() {
+                            song.title.clone()
+                        } else {
+                            format!("{} — {}", artist, song.title)
+                        };
+                        ListItem::new(text).style(style)
+                    }
                 }
-                TreeItem::Song { song } => {
-                    let style = if is_selected {
-                        Style::default()
-                            .fg(colors.song)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(colors.song)
-                    };
-                    let artist = song.artist.as_deref().unwrap_or("");
-                    let text = if artist.is_empty() {
-                        song.title.clone()
-                    } else {
-                        format!("{} — {}", artist, song.title)
-                    };
-                    ListItem::new(text).style(style)
-                }
-            }
-        })
-        .collect()
+            })
+            .collect()
     };
 
     let mut list = List::new(items).block(block);
@@ -320,7 +320,9 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
     } else {
         let first = artists.songs.first();
         let album = first.and_then(|s| s.album.as_deref());
-        let artist = first.and_then(|s| s.artist.as_deref()).filter(|a| !a.is_empty());
+        let artist = first
+            .and_then(|s| s.artist.as_deref())
+            .filter(|a| !a.is_empty());
         match (artist, album) {
             (Some(ar), Some(al)) => format!(" {ar} \u{2014} {al} "),
             (None, Some(al)) => format!(" {al} "),

@@ -41,7 +41,10 @@ async fn set_volume_persists_via_mpv() {
             })
         })
         .await;
-    assert!(saw_set_volume, "set_volume(60) must dispatch volume=60 to mpv");
+    assert!(
+        saw_set_volume,
+        "set_volume(60) must dispatch volume=60 to mpv"
+    );
 }
 
 #[tokio::test]

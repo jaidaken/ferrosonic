@@ -48,11 +48,7 @@ impl TestDaemon {
         (td, recorder)
     }
 
-    async fn build(
-        config_dir: TempDir,
-        restore_queue: bool,
-        pipewire: PipeWireController,
-    ) -> Self {
+    async fn build(config_dir: TempDir, restore_queue: bool, pipewire: PipeWireController) -> Self {
         std::env::set_var("FERROSONIC_CONFIG_DIR", config_dir.path());
 
         let fake_mpv = FakeMpv::start().await;

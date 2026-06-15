@@ -40,7 +40,10 @@ async fn prev_at_exactly_three_seconds_restarts_current_track() {
         c.first().and_then(Value::as_str) == Some("seek")
             && c.get(1).and_then(Value::as_f64) == Some(0.0)
     });
-    assert!(saw_seek_zero, "prev at exactly 3.0s must seek to 0 (restart)");
+    assert!(
+        saw_seek_zero,
+        "prev at exactly 3.0s must seek to 0 (restart)"
+    );
     assert!(
         !loadfile_paths(&cmds).iter().any(|p| p.contains("id=t-1")),
         "prev at exactly 3.0s must not step back to the previous track"

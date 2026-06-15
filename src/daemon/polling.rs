@@ -44,8 +44,7 @@ impl DaemonCore {
         let core = self.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
-            let mut watchdog =
-                tokio::time::interval(std::time::Duration::from_secs(2));
+            let mut watchdog = tokio::time::interval(std::time::Duration::from_secs(2));
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {

@@ -88,7 +88,9 @@ async fn duration_backfill_does_not_overwrite_existing() {
 async fn near_end_with_empty_playlist_does_not_panic() {
     let td = TestDaemon::new().await;
     td.fake_mpv.set_loaded_file("/fake/song-a.flac").await;
-    td.fake_mpv.set_playlist(vec!["/fake/song-a.flac".into()]).await;
+    td.fake_mpv
+        .set_playlist(vec!["/fake/song-a.flac".into()])
+        .await;
     {
         let mut s = td.state.write().await;
         s.now_playing.state = PlaybackState::Playing;

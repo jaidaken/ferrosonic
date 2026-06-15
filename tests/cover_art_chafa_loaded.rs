@@ -163,7 +163,10 @@ fn render_with_changing_dimensions_re_encodes() {
         .unwrap();
     {
         let g = mutex.lock().unwrap();
-        let cache = g.chafa_cache.as_ref().expect("first render populates cache");
+        let cache = g
+            .chafa_cache
+            .as_ref()
+            .expect("first render populates cache");
         assert_eq!(cache.width, 8);
         assert_eq!(cache.height, 4);
         assert_eq!(cache.cells.len(), 32);

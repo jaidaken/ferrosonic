@@ -95,7 +95,10 @@ async fn click_on_stop_button_clears_the_queue() {
 
     let ds = fx.app.daemon_state.read().await;
     assert!(ds.queue.is_empty(), "toolbar Stop must clear the queue");
-    assert_eq!(ds.queue_position, None, "toolbar Stop must drop the position");
+    assert_eq!(
+        ds.queue_position, None,
+        "toolbar Stop must drop the position"
+    );
 }
 
 #[tokio::test]

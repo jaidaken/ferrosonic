@@ -20,7 +20,10 @@ async fn constructing_a_daemon_sweeps_a_stale_prebuffer_temp_file() {
     std::fs::File::open(&path)
         .and_then(|f| f.set_modified(stale))
         .expect("backdate orphan mtime");
-    assert!(path.exists(), "precondition: the orphan file exists before construction");
+    assert!(
+        path.exists(),
+        "precondition: the orphan file exists before construction"
+    );
 
     let _td = TestDaemon::new().await;
 
