@@ -157,6 +157,9 @@ async fn handle_stale_socket(path: &Path) -> std::io::Result<()> {
 }
 
 async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<(), FrameError> {
+    // Counts toward active_clients for the connection's lifetime; the idle-exit
+    // monitor only shuts down when this reaches 0.
+    let _client = core.client_guard();
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = read_half;
 

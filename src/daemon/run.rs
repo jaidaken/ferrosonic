@@ -41,6 +41,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let _poll = core.spawn_polling_task();
     let _mpv_events = core.spawn_mpv_event_listener().await;
+    let _idle_exit = core.spawn_idle_exit_monitor();
 
     if config.is_configured() {
         let bg = Arc::clone(&core);
@@ -79,8 +80,20 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 }
 
 async fn shutdown(core: &Arc<DaemonCore>, socket: &std::path::Path) {
+    // Hard backstop: if cleanup wedges (e.g. a stuck mpv lock), force-exit so
+    // the daemon can never hang past SIGTERM and linger as an orphan.
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        error!("shutdown exceeded 5s; forcing process exit");
+        std::process::exit(0);
+    });
     let _ = core.event_tx.send(DaemonEvent::Shutdown);
-    core.quit_mpv().await;
+    if tokio::time::timeout(std::time::Duration::from_secs(3), core.quit_mpv())
+        .await
+        .is_err()
+    {
+        warn!("mpv teardown timed out; exiting anyway");
+    }
     if let Err(e) = std::fs::remove_file(socket) {
         if e.kind() != std::io::ErrorKind::NotFound {
             warn!("Failed to remove socket {}: {}", socket.display(), e);

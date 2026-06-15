@@ -117,6 +117,19 @@ impl Drop for CancelSlotCleaner {
     }
 }
 
+/// RAII counter for a connected IPC client; decrements `active_clients` on drop.
+pub struct ClientGuard {
+    core: Arc<DaemonCore>,
+}
+
+impl Drop for ClientGuard {
+    fn drop(&mut self) {
+        self.core
+            .active_clients
+            .fetch_sub(1, Ordering::Release);
+    }
+}
+
 /// Heart of the daemon: owns mpv, `PipeWire`, the Subsonic client, and state.
 pub struct DaemonCore {
     /// Shared daemon state mirror.
@@ -164,6 +177,9 @@ pub struct DaemonCore {
     library_version: std::sync::atomic::AtomicU64,
     /// Throttles repeat preload attempts when network keeps failing; 5s backoff.
     pub(super) last_preload_attempt: std::sync::Mutex<Option<std::time::Instant>>,
+    /// Count of connected IPC clients; the idle-exit monitor shuts the daemon
+    /// down once this is 0 and playback is Stopped, so a daemon never orphans.
+    pub(super) active_clients: std::sync::atomic::AtomicUsize,
 }
 
 impl DaemonCore {
@@ -220,6 +236,7 @@ impl DaemonCore {
             shutdown_notify: tokio::sync::Notify::new(),
             library_version: std::sync::atomic::AtomicU64::new(0),
             last_preload_attempt: std::sync::Mutex::new(None),
+            active_clients: std::sync::atomic::AtomicUsize::new(0),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
@@ -561,6 +578,56 @@ impl DaemonCore {
             return;
         }
         fut.await;
+    }
+
+    /// Register a connected IPC client; the returned guard decrements the count on drop.
+    pub fn client_guard(self: &Arc<Self>) -> ClientGuard {
+        self.active_clients.fetch_add(1, Ordering::Release);
+        ClientGuard { core: self.clone() }
+    }
+
+    /// Shut the daemon down once it has been idle (no clients connected and
+    /// playback Stopped) for the grace period, so a daemon spawned for a TUI
+    /// that has gone away never stays orphaned. Playing or Paused keeps it
+    /// alive so audio continues after the TUI closes.
+    pub fn spawn_idle_exit_monitor(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        const CHECK: std::time::Duration = std::time::Duration::from_secs(15);
+        // Counted in CHECK ticks (not wall-clock) so the loop is driveable under
+        // tokio's paused-time tests; 2 * 15s = 30s of continuous idle.
+        const IDLE_TICKS_TO_EXIT: u32 = 2;
+        let core = self.clone();
+        tokio::spawn(async move {
+            let mut idle_ticks: u32 = 0;
+            loop {
+                tokio::select! {
+                    () = core.shutdown_signal() => return,
+                    () = tokio::time::sleep(CHECK) => {}
+                }
+                if core.shutdown.load(Ordering::Acquire) {
+                    return;
+                }
+                if core.is_idle_for_exit().await {
+                    idle_ticks += 1;
+                    if idle_ticks >= IDLE_TICKS_TO_EXIT {
+                        info!("Daemon idle (no clients, stopped) past grace; exiting");
+                        core.request_shutdown();
+                        return;
+                    }
+                } else {
+                    idle_ticks = 0;
+                }
+            }
+        })
+    }
+
+    /// True when no IPC client is connected and playback is Stopped: the daemon
+    /// has no reason to stay running. Playing/Paused or any client keeps it up.
+    pub async fn is_idle_for_exit(&self) -> bool {
+        use crate::daemon::state::PlaybackState;
+        if self.active_clients.load(Ordering::Acquire) != 0 {
+            return false;
+        }
+        self.state.read().await.now_playing.state == PlaybackState::Stopped
     }
 
     /// Smooth track swap: stream the new URL to a local temp file

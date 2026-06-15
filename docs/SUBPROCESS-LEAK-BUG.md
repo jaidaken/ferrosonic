@@ -1,5 +1,23 @@
 # Subprocess Leak Bug (found 2026-05-15)
 
+## UPDATE 2026-06-15: daemon-orphan path fixed
+
+The **daemon-never-dies** half is fixed:
+
+- **Idle self-exit** (`DaemonCore::spawn_idle_exit_monitor`, wired in `run.rs`): the
+  daemon shuts down after ~30s with no connected IPC clients and playback Stopped.
+  `active_clients` is counted via `ClientGuard` in `handle_connection`. Playing/Paused
+  keeps it alive so audio continues after the TUI closes.
+- **Bounded shutdown** (`run.rs::shutdown`): `quit_mpv` is wrapped in a 3s timeout and a
+  5s hard `process::exit` backstop, so a wedged mpv lock can't make the daemon ignore
+  SIGTERM (the cause of orphans that needed SIGKILL).
+- **Test reaping** (`spawn_daemon_exe`): under a test runner (`NEXTEST` /
+  `FERROSONIC_TEST_REAP_DAEMON`) the daemon skips `setsid` (stays in the test's process
+  group for a timeout group-kill) and arms `PR_SET_PDEATHSIG(SIGKILL)`.
+
+STILL OPEN: the **mpv/cava child reaping** below (a dying daemon still orphans its mpv
+child; the TUI still orphans cava). Those `Child` handles need Drop-based kill + IPC quit.
+
 ## Summary
 
 Both `ferrosonicd` and the `ferrosonic` TUI leak child processes. After ~3 days of normal use plus 22 debug daemons left running, the system accumulated:
