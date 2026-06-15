@@ -143,7 +143,12 @@ jobs:
       # nextest backend = process-per-test, matching the gating test job. The
       # plain `cargo test` backend shares one process, so tests that set the
       # process-global FERROSONIC_CONFIG_DIR env race and crash a spawned daemon.
+      # The coverage profile also drops real-binary e2e tests (no in-process
+      # coverage). best-effort: a test that flakes only under llvm-cov
+      # instrumentation must not block the report, which the gating test job
+      # already covers; profraw from every test that ran is still written.
       - name: Collect coverage (nextest backend, coverage profile)
+        continue-on-error: true
         run: NEXTEST_PROFILE=coverage cargo llvm-cov nextest --all-features --workspace --no-report
       - name: Generate lcov
         run: cargo llvm-cov report --lcov --output-path lcov.info
