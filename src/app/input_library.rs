@@ -804,7 +804,33 @@ impl App {
                 }
                 self.load_selected_album_into_pane().await;
             }
-            KeyCode::Enter | KeyCode::Tab | KeyCode::Right => {
+            KeyCode::Enter => {
+                let songs = {
+                    let mut cs = self.client_state.write().await;
+                    let songs = cs.artists.songs.clone();
+                    if songs.is_empty() {
+                        return Ok(());
+                    }
+                    cs.artists.focus = 1;
+                    cs.artists.selected_song = Some(0);
+                    let name = cs
+                        .artists
+                        .album_selected
+                        .and_then(|i| cs.artists.albums.get(i))
+                        .map(|a| a.name.clone())
+                        .unwrap_or_default();
+                    cs.notify(format!("Playing album: {} ({} songs)", name, songs.len()));
+                    songs
+                };
+                let _ = self
+                    .client
+                    .request(DaemonRequest::EnqueueSongs {
+                        songs,
+                        mode: EnqueueMode::Replace { play_from: Some(0) },
+                    })
+                    .await;
+            }
+            KeyCode::Tab | KeyCode::Right => {
                 let mut cs = self.client_state.write().await;
                 if !cs.artists.songs.is_empty() {
                     cs.artists.focus = 1;
