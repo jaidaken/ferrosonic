@@ -21,7 +21,6 @@ tokio = { version = "1", features = ["full", "sync", "process", "signal"] }
 # Terminal UI
 ratatui = "0.29"
 crossterm = "0.28"
-tui-tree-widget = "0.22"
 
 # HTTP client for Subsonic API. rustls (not openssl) so the release
 # binary can be statically linked against musl and run on any distro.
@@ -51,7 +50,6 @@ md5 = "0.7"
 rand = "0.8"
 # Secret newtype: explicit drop-zeroize on the boxed password bytes.
 zeroize = { version = "1.8", features = ["derive"] }
-unicode-width = "0.2"
 strum = "0.26"
 strum_macros = "0.26"
 
