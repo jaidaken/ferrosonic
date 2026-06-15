@@ -60,4 +60,15 @@ impl QueueSnapshot {
         crate::io_util::atomic_write_bytes(&path, &body)?;
         Ok(path)
     }
+
+    /// Delete the persisted queue so the next daemon starts with an empty queue.
+    pub fn remove() {
+        if let Some(path) = crate::config::paths::queue_file() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!("could not remove queue snapshot {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
 }

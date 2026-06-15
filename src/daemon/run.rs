@@ -99,4 +99,6 @@ async fn shutdown(core: &Arc<DaemonCore>, socket: &std::path::Path) {
             warn!("Failed to remove socket {}: {}", socket.display(), e);
         }
     }
+    // The queue belongs to this daemon session; drop it so the next start is empty.
+    crate::daemon::persistence::QueueSnapshot::remove();
 }
