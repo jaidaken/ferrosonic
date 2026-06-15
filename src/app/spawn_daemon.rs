@@ -20,16 +20,40 @@ pub fn spawn_daemon() -> std::io::Result<u32> {
 pub fn spawn_daemon_exe(exe: &Path) -> std::io::Result<u32> {
     info!("Auto-spawning daemon: {} --daemon", exe.display());
 
+    // Under a test runner: no setsid (stay in the test's group for a timeout
+    // group-kill) + PR_SET_PDEATHSIG (die on parent exit, even via SIGKILL).
+    let reap_with_parent = std::env::var_os("FERROSONIC_TEST_REAP_DAEMON").is_some()
+        || std::env::var_os("NEXTEST").is_some();
+
     let mut cmd = Command::new(exe);
     cmd.arg("--daemon")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
-    // SAFETY: setsid is async-signal-safe.
+    // SAFETY: only async-signal-safe calls (setsid/prctl/getppid/raise) run here.
     unsafe {
-        cmd.pre_exec(|| {
-            if libc::setsid() == -1 {
+        cmd.pre_exec(move || {
+            if reap_with_parent {
+                #[cfg(target_os = "linux")]
+                {
+                    if libc::prctl(
+                        libc::PR_SET_PDEATHSIG,
+                        libc::SIGKILL as libc::c_ulong,
+                        0,
+                        0,
+                        0,
+                    ) == -1
+                    {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    // Parent may have exited between fork and prctl; PDEATHSIG
+                    // never fires then, so self-terminate if already reparented.
+                    if libc::getppid() == 1 {
+                        libc::raise(libc::SIGKILL);
+                    }
+                }
+            } else if libc::setsid() == -1 {
                 return Err(std::io::Error::last_os_error());
             }
             Ok(())
@@ -38,7 +62,8 @@ pub fn spawn_daemon_exe(exe: &Path) -> std::io::Result<u32> {
 
     let child = cmd.spawn()?;
     let pid = child.id();
-    // Forget: don't reap, the daemon outlives us.
+    // Forget: don't reap. In production the daemon outlives us; under a test
+    // runner PDEATHSIG / the group-kill reaps it when the test process exits.
     std::mem::forget(child);
     Ok(pid)
 }
