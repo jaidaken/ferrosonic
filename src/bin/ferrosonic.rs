@@ -175,13 +175,16 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    if let Err(e) = app.run().await {
+    let run_result = app.run().await;
+    if let Err(e) = &run_result {
         tracing::error!("Application error: {}", e);
-        return Err(e.into());
     }
-
     info!("Ferrosonic exiting...");
-    Ok(())
+
+    // Force-exit: a stuck blocking task in the dropping runtime can otherwise
+    // hang the process after quit (terminal already restored by run()).
+    drop(_log_guard);
+    std::process::exit(i32::from(run_result.is_err()));
 }
 
 async fn connect_or_spawn(path: &std::path::Path) -> Option<std::sync::Arc<SocketClient>> {
