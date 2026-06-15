@@ -20,6 +20,10 @@ use crate::ipc::protocol::DaemonEvent;
 use crate::ipc::DaemonClient;
 
 const EVENT_FORWARD_CAPACITY: usize = 256;
+/// Close a connection that sends no frame for this long. Clients send a
+/// `Ping` every `PING_INTERVAL` (`socket_client.rs`, 15s), so this is 3
+/// missed keepalives; only a dead or wedged client trips it.
+const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 
 /// Reserve two slots so the snapshot pair is sent atomically or not at all; partial sends would leave the client desynced.
 async fn try_send_resync(
@@ -228,13 +232,25 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
     });
 
     loop {
-        let read = match read_frame_lenient_with_cap(&mut reader, MAX_REQUEST_FRAME_BYTES).await {
-            Ok(r) => r,
-            Err(FrameError::Closed) => {
+        let read = match tokio::time::timeout(
+            IDLE_TIMEOUT,
+            read_frame_lenient_with_cap(&mut reader, MAX_REQUEST_FRAME_BYTES),
+        )
+        .await
+        {
+            Err(_elapsed) => {
+                warn!(
+                    "Client idle for {:?} with no frame (missed keepalives); closing",
+                    IDLE_TIMEOUT
+                );
+                break;
+            }
+            Ok(Ok(r)) => r,
+            Ok(Err(FrameError::Closed)) => {
                 debug!("Client closed connection");
                 break;
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 warn!("Frame read error from client: {}", e);
                 break;
             }

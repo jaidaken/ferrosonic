@@ -19,6 +19,10 @@ use crate::ipc::DaemonClient;
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 const WRITER_QUEUE_DEPTH: usize = 256;
+/// Keepalive cadence. The daemon closes a connection idle for
+/// `IDLE_TIMEOUT` (`server.rs`); this stays well under a third of it so a
+/// live-but-quiet TUI never trips that timeout.
+const PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
 
 type PendingMap = Mutex<HashMap<u64, oneshot::Sender<Result<DaemonResponse, IpcError>>>>;
 
@@ -107,6 +111,24 @@ impl SocketClient {
             let mut map = reader_pending.lock().await;
             for (_, tx) in map.drain() {
                 let _ = tx.send(Err(IpcError::Disconnected));
+            }
+        });
+
+        // Keepalive: a Weak handle so this task never keeps the client alive.
+        // Exits when the client is dropped or a ping fails (daemon gone).
+        let ping_client = Arc::downgrade(&client);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(PING_INTERVAL);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                let Some(client) = ping_client.upgrade() else {
+                    break;
+                };
+                if client.request(DaemonRequest::Ping).await.is_err() {
+                    break;
+                }
             }
         });
 
