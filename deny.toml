@@ -3,7 +3,15 @@ all-features = true
 
 [advisories]
 yanked = "warn"
-ignore = []
+ignore = [
+    # paste: unmaintained, not vulnerable. Pulled transitively by ratatui
+    # 0.28 (tui-tree-widget) and 0.29; no fixed release exists.
+    "RUSTSEC-2024-0436",
+    # rand 0.9 unsoundness only triggers via a custom logger calling
+    # rand::rng(); rand 0.9 is a dev-only dep (proptest), the shipped binary
+    # uses rand 0.8 and no such logger exists.
+    "RUSTSEC-2026-0097",
+]
 
 [licenses]
 allow = [
@@ -19,8 +27,17 @@ allow = [
     "Zlib",
     "CC0-1.0",
     "0BSD",
+    # webpki-roots ships Mozilla's CA bundle under this permissive data license.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
+
+# icy_sixel (via ratatui-image) ships an MIT LICENSE file but declares no SPDX
+# expression, so the scanner can't classify it. Assert MIT against the file.
+[[licenses.clarify]]
+crate = "icy_sixel"
+expression = "MIT"
+license-files = [{ path = "LICENSE", hash = 0xbafbf624 }]
 
 [bans]
 multiple-versions = "warn"
