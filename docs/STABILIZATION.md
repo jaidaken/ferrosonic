@@ -16,6 +16,55 @@ Output rules: deduplicated, no fixes written, plan only. Drives prompts
 
 ---
 
+## STATUS RE-BASELINE 2026-06-15 (HEAD `3896a62`)
+
+Verified prompts 4-10 against current code + git ancestry (grep + commit
+check, not a fresh audit). Prompts 5 and 6 over-delivered via the
+content-driven testing phase; several prompt-7 structural fixes landed
+under a DIFFERENT mechanism than this plan proposed. Sections 1-6 below
+are retained as the original audit reference; THIS section is the
+authoritative current status.
+
+### Prompt status
+
+- **P2 LOCK_ORDER** DONE. `docs/LOCK-ORDER.md` + `tests/lock_order.rs`.
+- **P2.5 STATE_INVARIANT** DONE. `tests/state_invariant.rs`.
+- **P3 PASSWORD** DONE. `src/secret.rs`, 4 highest-traffic sites migrated.
+- **P4 IPC_PROTOCOL** PARTIAL.
+  - done: frame caps (`MAX_FRAME_BYTES` 16MiB + tighter `MAX_REQUEST_FRAME_BYTES`, `frame.rs:11-13`); unknown-variant leniency (version skew no longer severs the connection); frame-boundary + fuzz tests (`tests/ipc_frame_boundary.rs`, `tests/fuzz_ipc_frame.rs`).
+  - open: `Hello`/`protocol_version` handshake; per-connection idle timeout; `CancelRequest`; per-frame version tag; `Resync`-on-`Lagged` event. None present in `src/ipc/`.
+- **P5 PROPERTY + INTEGRATION TESTS** DONE, over-delivered. 1377 tests: queue/playback/stress proptest, `state_invariant`, `lock_order`, `password_redaction`, plus security + daemon integration tests. Exceeds original scope.
+- **P6 FUZZ** DONE via bolero (NOT cargo-fuzz; `CLAUDE.md` rule 8 ratified the switch). Targets: cava vt100, config TOML, IPC frame, subsonic response, mpv reply.
+- **P7 HIGH CATCH-ALL** PARTIAL.
+  - done, alt mechanism: task-outlives-shutdown leak solved by `shutdown: AtomicBool` + `shutdown_signal()` checked every spawn loop (`core.rs:173,574`; `CLAUDE.md` rule 3), NOT the `CancellationToken` this plan named. Subprocess orphans (mpv/cava) solved by `PR_SET_PDEATHSIG(SIGKILL)` + `Drop` kill (`1c88f0a`, `d38a75a`).
+  - open/low-value: cava raw-FD RAII guard (`cava_pipe.rs` still `from_raw_fd` without a guard); mpv reader single-line framing (works in practice: mpv emits one JSON per line; parser is fuzz-guarded); `queue.json` 0o600 (now in the config dir not `/tmp`, so low severity; song ids are not secrets).
+  - false-positive: mpv `send_command` multi-lock on `pending` is safe; request ids are unique (`AtomicU64`), so no wrong-oneshot demux. No fix.
+- **P8 MEDIUM/LOW TRIAGE** NOT done as a formal pass. No `KNOWN-ISSUES.md`. Residue = the 847-warning pedantic/nursery clippy backlog.
+- **P9 CI GATES** PARTIAL.
+  - done: `test.yml` + `release.yml` exist; `deny.toml` (cargo-deny); nightly cron.
+  - open: CI triggers are `workflow_dispatch` + cron only, NOT push/PR (`test.yml:6-8`); clippy `unwrap_used`/`expect_used` still `warn` not `deny` (`Cargo.toml:147-148`; `CLAUDE.md` rule 2 treats as deny manually + a CI grep backstop).
+- **P10 RELEASE** not started.
+
+### New finding (not in the original audit)
+
+- **TEST-FIXTURE /tmp LEAK.** Tests call `tempfile::tempdir()` (135 call sites) producing `/tmp/.tmpXXXXXX/`. `TempDir`'s `Drop` is skipped on SIGKILL (nextest timeout, cargo-mutants group-kill, `panic=abort`), so the dirs survive. 9,594 present 2026-06-15, accumulating. The production mpv socket no longer leaks (fixed path, `paths.rs:27`). Fix = design choice (relocate test roots under a swept prefix vs janitor pass).
+
+### Worth doing, value-ranked
+
+1. **CI on push/PR** (P9). Nothing auto-gates regressions today. Low effort (edit `test.yml` triggers).
+2. **Test-fixture /tmp leak.** Active, accumulating. Fix needs a call (135 sites).
+3. **IPC per-connection idle timeout** (P4). Real: a hung client holds a writer task forever.
+4. **clippy `unwrap`/`expect` to deny** (P9). Closes the gap between `CLAUDE.md` rule 2 (manual) and machine enforcement. Blocked on triaging the 847 pedantic backlog OR scoping deny to just those two lints.
+5. **Release cut** (P10) once the above settle.
+
+### Low-value / defer (localhost single-user IPC; defense-in-depth)
+
+- P4 `Hello` handshake, per-frame version tag, `CancelRequest`, `Resync`-on-`Lagged`.
+- P7 cava `RawFdGuard`, mpv length-prefixed framing, `queue.json` 0o600.
+- P8 formal MEDIUM/LOW triage + `KNOWN-ISSUES.md`.
+
+---
+
 ## 1. Open findings (deduplicated)
 
 Severity tiers: HIGH (real bug observable today), MEDIUM (race / leak /

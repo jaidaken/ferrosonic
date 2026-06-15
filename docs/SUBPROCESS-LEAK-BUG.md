@@ -15,8 +15,35 @@ The **daemon-never-dies** half is fixed:
   `FERROSONIC_TEST_REAP_DAEMON`) the daemon skips `setsid` (stays in the test's process
   group for a timeout group-kill) and arms `PR_SET_PDEATHSIG(SIGKILL)`.
 
-STILL OPEN: the **mpv/cava child reaping** below (a dying daemon still orphans its mpv
-child; the TUI still orphans cava). Those `Child` handles need Drop-based kill + IPC quit.
+## UPDATE 2026-06-15 (later): mpv/cava reaping also CLOSED
+
+The mpv/cava child-reaping half is now fixed too, verified against HEAD `3896a62`:
+
+- **mpv** (`1c88f0a`): spawned with `set_die_with_parent` (`PR_SET_PDEATHSIG(SIGKILL)`,
+  `src/proc_util.rs`), so the kernel kills mpv when the daemon dies by ANY means
+  including SIGKILL or crash. Plus graceful `quit_mpv` (3s timeout in `run.rs::shutdown`)
+  and a `Drop` on `MpvController` that kills the child and removes the socket.
+- **cava** (`d38a75a`): same `set_die_with_parent` on spawn; `stop_cava` kills+waits and
+  `start_cava` replaces any prior instance; a `sweep_stale_tmp_files("ferrosonic-cava-",
+  ".conf", 1h)` backstop removes configs leaked by a SIGKILLed prior session.
+- **mpv socket dir leak GONE at the root**: the socket is now a fixed path
+  (`$XDG_RUNTIME_DIR/ferrosonic-mpv.sock` or `/tmp/ferrosonic-mpv-{uid}.sock`,
+  `paths.rs:27`), not a per-launch `TempDir`, so the 67k `.tmpXXXX` dir leak from this
+  path cannot recur.
+
+Measured 2026-06-15: 0 orphaned cava, 0 orphaned daemons, mpv count matches running
+sessions.
+
+STILL OPEN: only the **test-fixture `/tmp` leak** below (section "Test fixture leak").
+Tests create `tempfile::tempdir()` dirs (135 call sites) that survive SIGKILL from the
+nextest/cargo-mutants timeout group-kill. 9,594 present on 2026-06-15. This is a
+test-harness concern, not a production subprocess leak.
+
+## ORIGINAL (now historical): mpv/cava child reaping
+
+The text below recorded the leak before the fix above landed; kept for context.
+
+Those `Child` handles need Drop-based kill + IPC quit.
 
 ## Summary
 
