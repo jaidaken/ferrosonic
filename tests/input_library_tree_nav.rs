@@ -124,6 +124,35 @@ async fn k_moves_up_like_up_arrow() {
 
 #[tokio::test]
 #[serial]
+async fn song_pane_down_then_up_moves_selection_by_exactly_one() {
+    // Right (song) pane focus != 0: the `<`/`>`/`+`/`-` cursor mutants either
+    // freeze the selection or move it the wrong distance.
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.artists.focus = 1;
+        cs.artists.songs = vec![song("s0"), song("s1"), song("s2"), song("s3")];
+        cs.artists.selected_song = Some(1);
+    }
+
+    fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.artists.selected_song,
+        Some(2),
+        "Down moves the song selection forward by one"
+    );
+
+    fx.app.handle_key(key(KeyCode::Up)).await.unwrap();
+    fx.app.handle_key(key(KeyCode::Up)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.artists.selected_song,
+        Some(0),
+        "two Ups move the song selection back by exactly two"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn tab_cycles_between_tree_and_songs_pane() {
     let mut fx = build_app().await;
     let initial = fx.app.client_state.read().await.artists.focus;
