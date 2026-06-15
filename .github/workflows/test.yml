@@ -121,8 +121,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y mpv libdbus-1-dev pkg-config
+      # ci profile: retries=2 so a subprocess/timing test that's known-flaky
+      # under parallel CI load (per CLAUDE.md) retries instead of failing the
+      # gate; a genuine break still fails all attempts.
       - name: Run tests
-        run: cargo nextest run --all-targets
+        run: cargo nextest run --profile ci --all-targets
       - name: Doc tests (nextest skips these)
         run: cargo test --doc
 

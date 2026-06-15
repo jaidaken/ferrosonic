@@ -22,11 +22,13 @@ fn build_player() -> (MprisPlayer, Arc<RecordingClient>, SharedDaemonState) {
 }
 
 async fn drain_fire(rec: &RecordingClient, expected: usize) {
+    // fire() spawns the dispatch, so off-runtime callers record after join();
+    // a real poll interval lets that task run (yield_now spins too fast).
     for _ in 0..500 {
         if rec.requests().await.len() >= expected {
             return;
         }
-        tokio::task::yield_now().await;
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     }
 }
 
