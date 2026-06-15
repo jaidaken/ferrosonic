@@ -1,6 +1,15 @@
+---
+description: Historical cargo-mutants kill-rate snapshot of ferrosonic's critical modules (2026-05-15). Informational baseline, not a gate.
+tags: [testing, mutation, audit, baseline]
+date: 2026-05-15
+status: historical
+---
+
 # Mutation baseline (2026-05-15)
 
-Phase E of TESTING-PLAN.md. Establishes a cargo-mutants kill-rate
+STATUS 2026-06-15: snapshot from the concluded test phase. The "M75 floor" / "below the floor" framing is the SUPERSEDED gate; testing is content-driven now (`CLAUDE.md` rule 8). Kill rates here are point-in-time data, not targets. `TESTING-PLAN.md` never existed; [TESTING](TESTING.md) is its content-driven successor.
+
+Phase E. Establishes a cargo-mutants kill-rate
 baseline on the critical modules. Full-workspace mutation is the
 CI nightly responsibility per
 `~/.claude/rules/common/testing.md` MUTATION section (estimated

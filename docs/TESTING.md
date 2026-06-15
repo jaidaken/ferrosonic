@@ -1,10 +1,13 @@
 ---
 description: Per-file test-coverage audit, gaps, and the gap-fill plan + progress ledger for ferrosonic. Read before adding test coverage or judging where coverage is thin.
 tags: [testing, mutation, audit, coverage, plan]
-date: 2026-06-14
+date: 2026-06-15
+status: historical
 ---
 
 # TESTING AUDIT + PLAN
+
+STATUS 2026-06-15: test phase CONCLUDED, content-driven (no %-gate; see `CLAUDE.md` rule 8). The `>=92` / `>=75` floor language, the STATUS LEGEND, and the P1-P5 plan below are the SUPERSEDED gate from the original sprint, retained as the historical work record. The kill-% numbers are point-in-time measurements, not targets.
 
 scope: every `src/*.rs` file. **NO percentage gate** (user 2026-06-14: "every percent is pointless, tests should be decided based on the actual contents"). goal = strong asserts (A1) on logic that can break in a way that MATTERS (state transitions, parsing, IO, arithmetic feeding a decision, protocol framing, security boundaries); trivial getters / pure render / log-only / provably-equivalent code get no new test. mutation = DISCOVERY tool to find code that runs unchecked, then judge each survivor; kill the real ones, document equivalents, leave unreachable-boundary + timing-only mutants. supersedes the missing `TESTING-PLAN.md` referenced by [mutation baseline](MUTATION-BASELINE.md).
 
