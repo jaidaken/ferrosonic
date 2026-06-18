@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Library search is now one unified search.** Typing after `/` searches
+  artists, albums, and songs at once; the old `/` `//` `///` scope cycle is
+  gone. Matched albums group under their parent artist (greyed when only the
+  album matched), with matched songs at the bottom. Collapsed artists show
+  only their matching albums; Enter expands the full catalog.
+
+### Fixed
+
+- Searching for an artist now lists and plays their albums; expanding a
+  searched artist was previously a no-op.
+- `q` while viewing search results returns to the artist tree instead of
+  quitting; an active search box types a literal `q`.
+
 ## [0.5.0] - 2026-06-15
 
 ### Added
