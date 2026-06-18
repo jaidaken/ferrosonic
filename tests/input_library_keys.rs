@@ -1,10 +1,11 @@
-//! Library page key handlers: tree navigation, search, scope cycle.
+//! Library page key handlers: tree navigation and unified search.
 
 mod common;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
+use ferrosonic::subsonic::models::{Album, Artist, SearchResult3};
 use serial_test::serial;
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -65,6 +66,49 @@ async fn esc_closes_and_clears_filter() {
     let cs = fx.app.client_state.read().await;
     assert!(!cs.artists.filter_active);
     assert!(cs.artists.filter.is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn down_skips_the_greyed_album_artist_label() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.artists.focus = 0;
+        cs.artists.filter = "x".into();
+        cs.artists.filter_active = false;
+        cs.artists.search_results = Some(SearchResult3 {
+            artist: vec![Artist {
+                id: "a1".into(),
+                name: "Matched Artist".into(),
+                album_count: Some(1),
+                cover_art: None,
+            }],
+            album: vec![Album {
+                id: "alb1".into(),
+                name: "An Album".into(),
+                artist: Some("Other Artist".into()),
+                artist_id: Some("a2".into()),
+                cover_art: None,
+                song_count: Some(1),
+                original_release_date: None,
+                duration: Some(100),
+                year: Some(2000),
+                genre: None,
+            }],
+            song: vec![],
+        });
+        cs.artists.selected_index = Some(0);
+    }
+
+    // tree = [Artist(0), ArtistLabel(1), Album(2)]; Down from 0 skips the label.
+    fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+
+    assert_eq!(
+        fx.app.client_state.read().await.artists.selected_index,
+        Some(2),
+        "Down must skip the greyed ArtistLabel and land on the album"
+    );
 }
 
 #[tokio::test]

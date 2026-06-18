@@ -167,13 +167,11 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => {
                 if state.client.artists.focus == 0 {
                     let tree_items = build_tree_items(&state);
-                    if let Some(sel) = state.client.artists.selected_index {
-                        if sel > 0 {
-                            state.client.artists.selected_index = Some(sel - 1);
-                        }
-                    } else if !tree_items.is_empty() {
-                        state.client.artists.selected_index = Some(0);
-                    }
+                    state.client.artists.selected_index = step_tree_selection(
+                        &tree_items,
+                        state.client.artists.selected_index,
+                        false,
+                    );
                     let album_id = state
                         .client
                         .artists
@@ -214,14 +212,8 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => {
                 if state.client.artists.focus == 0 {
                     let tree_items = build_tree_items(&state);
-                    let max = tree_items.len().saturating_sub(1);
-                    if let Some(sel) = state.client.artists.selected_index {
-                        if sel < max {
-                            state.client.artists.selected_index = Some(sel + 1);
-                        }
-                    } else if !tree_items.is_empty() {
-                        state.client.artists.selected_index = Some(0);
-                    }
+                    state.client.artists.selected_index =
+                        step_tree_selection(&tree_items, state.client.artists.selected_index, true);
                     let album_id = state
                         .client
                         .artists
@@ -893,4 +885,23 @@ fn album_sort_key(name: &str) -> String {
     let trimmed = name.trim_start_matches(|c: char| !c.is_alphanumeric());
     let base = if trimmed.is_empty() { name } else { trimmed };
     base.to_lowercase()
+}
+
+/// Step the tree selection one row, skipping non-selectable `ArtistLabel`
+/// headers and clamping at the ends. `None` starts at the first selectable row.
+fn step_tree_selection(
+    items: &[crate::ui::pages::library::TreeItem],
+    from: Option<usize>,
+    down: bool,
+) -> Option<usize> {
+    use crate::ui::pages::library::TreeItem;
+    let selectable = |i: usize| !matches!(items[i], TreeItem::ArtistLabel { .. });
+    let Some(cur) = from else {
+        return (0..items.len()).find(|&i| selectable(i));
+    };
+    if down {
+        ((cur + 1)..items.len()).find(|&i| selectable(i)).or(Some(cur))
+    } else {
+        (0..cur).rev().find(|&i| selectable(i)).or(Some(cur))
+    }
 }
