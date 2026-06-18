@@ -44,14 +44,18 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
     if !ui.filter.is_empty() {
         if let Some(results) = &ui.search_results {
             return match ui.filter_scope {
-                FilterScope::Artists => results
-                    .artist
-                    .iter()
-                    .map(|a| TreeItem::Artist {
-                        artist: a.clone(),
-                        expanded: ui.expanded.contains(&a.id),
-                    })
-                    .collect(),
+                FilterScope::Artists => {
+                    let mut items = Vec::new();
+                    for a in &results.artist {
+                        push_artist_with_albums(
+                            &mut items,
+                            a,
+                            ui.expanded.contains(&a.id),
+                            albums_cache.get(&a.id).map(Vec::as_slice),
+                        );
+                    }
+                    items
+                }
                 FilterScope::Albums => results
                     .album
                     .iter()
@@ -79,29 +83,39 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
 
     let mut items = Vec::new();
     for artist in filtered_artists {
-        let is_expanded = ui.expanded.contains(&artist.id);
-        items.push(TreeItem::Artist {
-            artist: artist.clone(),
-            expanded: is_expanded,
-        });
-
-        if is_expanded {
-            if let Some(albums) = albums_cache.get(&artist.id) {
-                let mut sorted_albums: Vec<Album> = albums.to_vec();
-                sorted_albums.sort_by(|a, b| match (a.year, b.year) {
-                    (None, None) => std::cmp::Ordering::Equal,
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (Some(y1), Some(y2)) => std::cmp::Ord::cmp(&y1, &y2),
-                });
-                for album in sorted_albums {
-                    items.push(TreeItem::Album { album });
-                }
-            }
-        }
+        push_artist_with_albums(
+            &mut items,
+            artist,
+            ui.expanded.contains(&artist.id),
+            albums_cache.get(&artist.id).map(Vec::as_slice),
+        );
     }
-
     items
+}
+
+/// Push an artist row, then its albums (release-year sorted) when expanded.
+/// Shared by the search and tree paths so both drill into albums identically.
+fn push_artist_with_albums(
+    items: &mut Vec<TreeItem>,
+    artist: &Artist,
+    expanded: bool,
+    albums: Option<&[Album]>,
+) {
+    items.push(TreeItem::Artist {
+        artist: artist.clone(),
+        expanded,
+    });
+    let Some(albums) = albums.filter(|_| expanded) else {
+        return;
+    };
+    let mut sorted: Vec<Album> = albums.to_vec();
+    sorted.sort_by(|a, b| match (a.year, b.year) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(y1), Some(y2)) => y1.cmp(&y2),
+    });
+    items.extend(sorted.into_iter().map(|album| TreeItem::Album { album }));
 }
 
 /// Render the Library page.

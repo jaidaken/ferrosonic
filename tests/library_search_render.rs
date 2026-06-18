@@ -156,3 +156,46 @@ fn filter_active_with_empty_text_still_shows_the_search_title() {
         frame
     );
 }
+
+#[test]
+fn search_artist_when_expanded_lists_their_albums() {
+    // Regression #28: the search render dropped an expanded artist's albums, so
+    // expanding a searched artist was a no-op with no drill-in to its music.
+    let (mut daemon, mut client) = build_state();
+    client.page = Page::Library;
+    client.artists.filter_active = true;
+    client.artists.filter = "cure".into();
+    client.artists.filter_scope = FilterScope::Artists;
+    client.artists.search_results = Some(SearchResult3 {
+        artist: vec![Artist {
+            id: "a0".into(),
+            name: "The Cure".into(),
+            album_count: Some(1),
+            cover_art: None,
+        }],
+        album: vec![],
+        song: vec![],
+    });
+    client.artists.expanded.insert("a0".into());
+    daemon.library.albums_cache.insert(
+        "a0".into(),
+        vec![Album {
+            id: "alb0".into(),
+            name: "Disintegration".into(),
+            artist: Some("The Cure".into()),
+            artist_id: Some("a0".into()),
+            cover_art: None,
+            song_count: Some(12),
+            original_release_date: None,
+            duration: Some(4000),
+            year: Some(1989),
+            genre: None,
+        }],
+    );
+    let frame = render(120, 30, &daemon, &mut client);
+    assert!(
+        frame.contains("Disintegration"),
+        "an expanded searched artist must list its albums;\n{}",
+        frame
+    );
+}
