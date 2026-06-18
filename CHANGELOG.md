@@ -6,14 +6,19 @@
 
 - **Library search is now one unified search.** Typing after `/` searches
   artists, albums, and songs at once; the old `/` `//` `///` scope cycle is
-  gone. Matched albums group under their parent artist (greyed when only the
-  album matched), with matched songs at the bottom. Collapsed artists show
-  only their matching albums; Enter expands the full catalog.
+  gone. Results form a tree that stops at the match: an artist match is a
+  single row (Enter expands its full catalog), a matched album nests under
+  its artist (greyed when only the album matched) and loads its tracks into
+  the song pane when you highlight it, and a matched song nests under its
+  album and artist (both greyed) so you can see where it lives.
 
 ### Fixed
 
 - Searching for an artist now lists and plays their albums; expanding a
   searched artist was previously a no-op.
+- Search matches songs by title only. A query like `beach` no longer lists
+  every track by an artist whose name contains it; albums likewise show only
+  when their own name matches.
 - `q` while viewing search results returns to the artist tree instead of
   quitting; an active search box types a literal `q`.
 

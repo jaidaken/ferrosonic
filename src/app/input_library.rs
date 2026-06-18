@@ -398,7 +398,7 @@ impl App {
                                     .map(|_| ())
                                     .map_err(Error::from);
                             }
-                            TreeItem::ArtistLabel { .. } => {}
+                            TreeItem::ArtistLabel { .. } | TreeItem::AlbumLabel { .. } => {}
                         }
                     }
                 }
@@ -524,7 +524,7 @@ impl App {
                                         .await;
                                     return Ok(());
                                 }
-                                TreeItem::ArtistLabel { .. } => {}
+                                TreeItem::ArtistLabel { .. } | TreeItem::AlbumLabel { .. } => {}
                             }
                         }
                     }
@@ -851,7 +851,7 @@ impl App {
     ) -> Vec<crate::subsonic::models::Child> {
         use crate::ui::pages::library::TreeItem;
         match item {
-            TreeItem::ArtistLabel { .. } => Vec::new(),
+            TreeItem::ArtistLabel { .. } | TreeItem::AlbumLabel { .. } => Vec::new(),
             TreeItem::Song { song } => vec![song.clone()],
             TreeItem::Album { album } => self.load_album(&album.id).await,
             TreeItem::Artist { artist, .. } => {
@@ -899,7 +899,12 @@ fn step_tree_selection(
     down: bool,
 ) -> Option<usize> {
     use crate::ui::pages::library::TreeItem;
-    let selectable = |i: usize| !matches!(items[i], TreeItem::ArtistLabel { .. });
+    let selectable = |i: usize| {
+        !matches!(
+            items[i],
+            TreeItem::ArtistLabel { .. } | TreeItem::AlbumLabel { .. }
+        )
+    };
     let Some(cur) = from else {
         return (0..items.len()).find(|&i| selectable(i));
     };

@@ -105,7 +105,7 @@ async fn enter_on_song_in_search_replace_plays_from_zero() {
     let (mut app, td) = build_app_with_td().await;
     {
         let mut cs = app.client_state.write().await;
-        cs.artists.filter = "s".into();
+        cs.artists.filter = "only".into();
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],

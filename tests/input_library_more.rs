@@ -153,7 +153,7 @@ async fn t_on_song_in_tree_plays_single() {
     let (mut app, td) = build_app_with_td().await;
     {
         let mut cs = app.client_state.write().await;
-        cs.artists.filter = "x".into();
+        cs.artists.filter = "song".into();
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],

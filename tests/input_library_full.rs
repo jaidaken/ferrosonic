@@ -331,7 +331,7 @@ async fn t_on_song_in_search_mode_replays_the_song() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.artists.filter = "x".into();
+        cs.artists.filter = "s0".into();
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],
@@ -475,7 +475,7 @@ async fn e_in_search_mode_for_song_collects_and_appends() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.artists.filter = "x".into();
+        cs.artists.filter = "s".into();
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],
@@ -523,7 +523,7 @@ async fn i_in_search_mode_for_song_inserts_next() {
     }
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.artists.filter = "x".into();
+        cs.artists.filter = "new".into();
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],

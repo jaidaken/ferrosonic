@@ -11,9 +11,10 @@ use ratatui::{
 use std::collections::HashMap;
 
 use crate::app::state::AppState;
-use crate::subsonic::models::{Album, Artist, Child};
+use crate::subsonic::models::{Album, Artist, Child, SearchResult3};
 use crate::ui::styled_lines::get_song_without_artist_line;
 use crate::ui::theme::ThemeColors;
+use std::collections::HashSet;
 
 #[derive(Clone)]
 /// One row of the library tree.
@@ -40,6 +41,170 @@ pub enum TreeItem {
         /// The parent artist's name.
         name: String,
     },
+    /// Greyed, non-selectable album header grouping matched songs in search.
+    AlbumLabel {
+        /// The parent album's name.
+        name: String,
+        /// The album's release year, if known.
+        year: Option<i32>,
+    },
+}
+
+/// One album node within a search artist group: a selectable matched album
+/// (`album`) or a greyed context header, with any matched songs beneath it.
+struct SearchAlbum {
+    album: Option<Album>,
+    name: String,
+    year: Option<i32>,
+    songs: Vec<Child>,
+}
+
+/// One artist group within the search tree, keyed by lowercased artist name.
+struct SearchArtist {
+    matched: Option<Artist>,
+    name: String,
+    albums: Vec<SearchAlbum>,
+    album_idx: HashMap<String, usize>,
+    direct_songs: Vec<Child>,
+}
+
+/// Get or create the artist group for `name`, preserving first-seen order.
+fn artist_slot<'m>(
+    order: &mut Vec<String>,
+    groups: &'m mut HashMap<String, SearchArtist>,
+    name: &str,
+) -> &'m mut SearchArtist {
+    let key = name.to_lowercase();
+    groups.entry(key.clone()).or_insert_with(|| {
+        order.push(key);
+        SearchArtist {
+            matched: None,
+            name: name.to_string(),
+            albums: Vec::new(),
+            album_idx: HashMap::new(),
+            direct_songs: Vec::new(),
+        }
+    })
+}
+
+/// Get or create the album node for `name` within an artist group.
+fn album_slot<'a>(
+    artist: &'a mut SearchArtist,
+    name: &str,
+    year: Option<i32>,
+) -> &'a mut SearchAlbum {
+    let key = name.to_lowercase();
+    if let Some(&i) = artist.album_idx.get(&key) {
+        return &mut artist.albums[i];
+    }
+    let i = artist.albums.len();
+    artist.album_idx.insert(key, i);
+    artist.albums.push(SearchAlbum {
+        album: None,
+        name: name.to_string(),
+        year,
+        songs: Vec::new(),
+    });
+    &mut artist.albums[i]
+}
+
+/// Build the search tree: a match-depth view where every row matches the
+/// query on its own name. Artist matches render as a row (Enter expands the
+/// full cached catalog); album-name matches nest under their artist (greyed
+/// when the artist did not match), no songs until selected; title matches nest
+/// under album under artist. `search3` also matches via artist/album, so album
+/// and song results are re-filtered to own-name hits.
+fn build_search_items(
+    filter: &str,
+    expanded: &HashSet<String>,
+    albums_cache: &HashMap<String, Vec<Album>>,
+    results: &SearchResult3,
+) -> Vec<TreeItem> {
+    let q = filter.to_lowercase();
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, SearchArtist> = HashMap::new();
+
+    // Matched artists lead the order.
+    for a in &results.artist {
+        artist_slot(&mut order, &mut groups, &a.name).matched = Some(a.clone());
+    }
+    // Albums whose own name matches.
+    for alb in results
+        .album
+        .iter()
+        .filter(|a| a.name.to_lowercase().contains(&q))
+    {
+        let artist_name = alb.artist.as_deref().unwrap_or("");
+        let group = artist_slot(&mut order, &mut groups, artist_name);
+        let node = album_slot(group, &alb.name, alb.year);
+        node.album = Some(alb.clone());
+        if node.year.is_none() {
+            node.year = alb.year;
+        }
+    }
+    // Songs whose own title matches.
+    for song in results
+        .song
+        .iter()
+        .filter(|s| s.title.to_lowercase().contains(&q))
+    {
+        let artist_name = song.artist.as_deref().unwrap_or("");
+        let group = artist_slot(&mut order, &mut groups, artist_name);
+        match song.album.as_deref() {
+            Some(album_name) if !album_name.is_empty() => {
+                album_slot(group, album_name, song.year)
+                    .songs
+                    .push(song.clone());
+            }
+            _ => group.direct_songs.push(song.clone()),
+        }
+    }
+
+    let mut items = Vec::new();
+    for key in &order {
+        let group = &groups[key];
+        match &group.matched {
+            Some(a) => {
+                let is_expanded = expanded.contains(&a.id);
+                items.push(TreeItem::Artist {
+                    artist: a.clone(),
+                    expanded: is_expanded,
+                });
+                // Expanding a matched artist drills into its full cached catalog
+                // (issue #28: reach albums no name matched); collapsed stops here.
+                if is_expanded {
+                    push_sorted_albums(
+                        &mut items,
+                        albums_cache.get(&a.id).cloned().unwrap_or_default(),
+                    );
+                    continue;
+                }
+            }
+            // A song with no artist renders directly; no blank greyed header.
+            None if !group.name.is_empty() => items.push(TreeItem::ArtistLabel {
+                name: group.name.clone(),
+            }),
+            None => {}
+        }
+        for node in &group.albums {
+            match &node.album {
+                Some(album) => items.push(TreeItem::Album {
+                    album: album.clone(),
+                }),
+                None => items.push(TreeItem::AlbumLabel {
+                    name: node.name.clone(),
+                    year: node.year,
+                }),
+            }
+            for song in &node.songs {
+                items.push(TreeItem::Song { song: song.clone() });
+            }
+        }
+        for song in &group.direct_songs {
+            items.push(TreeItem::Song { song: song.clone() });
+        }
+    }
+    items
 }
 
 /// Search-results path takes over when the filter is non-empty and a
@@ -50,65 +215,7 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
 
     if !ui.filter.is_empty() {
         if let Some(results) = &ui.search_results {
-            let mut items = Vec::new();
-
-            // Group matched albums by their parent artist (first-seen order).
-            let mut artist_order: Vec<&str> = Vec::new();
-            let mut by_artist: HashMap<&str, Vec<Album>> = HashMap::new();
-            for album in &results.album {
-                let key = album
-                    .artist_id
-                    .as_deref()
-                    .or(album.artist.as_deref())
-                    .unwrap_or("");
-                by_artist
-                    .entry(key)
-                    .or_insert_with(|| {
-                        artist_order.push(key);
-                        Vec::new()
-                    })
-                    .push(album.clone());
-            }
-
-            // Matched artists: collapsed shows only their matched albums, Enter
-            // expands the full cached catalog (search opens expansion-cleared).
-            let matched: std::collections::HashSet<&str> =
-                results.artist.iter().map(|a| a.id.as_str()).collect();
-            for a in &results.artist {
-                let expanded = ui.expanded.contains(&a.id);
-                items.push(TreeItem::Artist {
-                    artist: a.clone(),
-                    expanded,
-                });
-                let albums = if expanded {
-                    albums_cache.get(&a.id).cloned().unwrap_or_default()
-                } else {
-                    by_artist.get(a.id.as_str()).cloned().unwrap_or_default()
-                };
-                push_sorted_albums(&mut items, albums);
-            }
-
-            // Albums whose artist did NOT match: greyed parent-artist label.
-            for key in artist_order {
-                if matched.contains(key) {
-                    continue;
-                }
-                let albums = by_artist.remove(key).unwrap_or_default();
-                items.push(TreeItem::ArtistLabel {
-                    name: albums
-                        .first()
-                        .and_then(|a| a.artist.clone())
-                        .unwrap_or_default(),
-                });
-                push_sorted_albums(&mut items, albums);
-            }
-
-            // Matched songs last.
-            for song in &results.song {
-                items.push(TreeItem::Song { song: song.clone() });
-            }
-
-            return items;
+            return build_search_items(&ui.filter, &ui.expanded, albums_cache, results);
         }
     }
 
@@ -161,6 +268,58 @@ fn push_sorted_albums(items: &mut Vec<TreeItem>, mut albums: Vec<Album>) {
         (Some(y1), Some(y2)) => y1.cmp(&y2),
     });
     items.extend(albums.into_iter().map(|album| TreeItem::Album { album }));
+}
+
+/// Render one flat album-list row: name, optional year, then muted artist.
+fn album_row(album: &Album, is_selected: bool, colors: &ThemeColors) -> ListItem<'static> {
+    let album_style = if is_selected {
+        Style::default()
+            .fg(colors.album)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(colors.album)
+    };
+    let muted = Style::default().fg(colors.muted);
+    let mut spans = vec![Span::styled(album.name.clone(), album_style)];
+    if let Some(y) = album.sort_year() {
+        spans.push(Span::styled(format!(" [{y}]"), muted));
+    }
+    let artist = album.artist.as_deref().unwrap_or("");
+    if !artist.is_empty() {
+        spans.push(Span::styled(format!("  {artist}"), muted));
+    }
+    ListItem::new(Line::from(spans))
+}
+
+/// Render one library-tree row. Selectable rows take their type colour and
+/// bold when selected; greyed labels are muted context headers.
+fn tree_row(item: &TreeItem, is_selected: bool, colors: &ThemeColors) -> ListItem<'static> {
+    let styled = |fg| {
+        if is_selected {
+            Style::default().fg(fg).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(fg)
+        }
+    };
+    match item {
+        TreeItem::Artist { artist, .. } => {
+            ListItem::new(artist.name.clone()).style(styled(colors.artist))
+        }
+        TreeItem::Album { album } => {
+            let year_str = album.year.map(|y| format!(" [{y}]")).unwrap_or_default();
+            ListItem::new(format!("  └─ {}{year_str}", album.name)).style(styled(colors.album))
+        }
+        TreeItem::Song { song } => {
+            ListItem::new(format!("      └─ {}", song.title)).style(styled(colors.song))
+        }
+        TreeItem::ArtistLabel { name } => {
+            ListItem::new(name.clone()).style(Style::default().fg(colors.muted))
+        }
+        TreeItem::AlbumLabel { name, year } => {
+            let year_str = year.map(|y| format!(" [{y}]")).unwrap_or_default();
+            ListItem::new(format!("  └─ {name}{year_str}")).style(Style::default().fg(colors.muted))
+        }
+    }
 }
 
 /// Render the Library page.
@@ -232,82 +391,13 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
             .albums
             .iter()
             .enumerate()
-            .map(|(i, album)| {
-                let album_style = if Some(i) == artists.album_selected {
-                    Style::default()
-                        .fg(colors.album)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(colors.album)
-                };
-                let muted = Style::default().fg(colors.muted);
-                let mut spans = vec![Span::styled(album.name.clone(), album_style)];
-                if let Some(y) = album.sort_year() {
-                    spans.push(Span::styled(format!(" [{y}]"), muted));
-                }
-                let artist = album.artist.as_deref().unwrap_or("");
-                if !artist.is_empty() {
-                    spans.push(Span::styled(format!("  {artist}"), muted));
-                }
-                ListItem::new(Line::from(spans))
-            })
+            .map(|(i, album)| album_row(album, Some(i) == artists.album_selected, colors))
             .collect()
     } else {
         build_tree_items(state)
             .iter()
             .enumerate()
-            .map(|(i, item)| {
-                let is_selected = Some(i) == artists.selected_index;
-
-                match item {
-                    TreeItem::Artist {
-                        artist,
-                        expanded: _,
-                    } => {
-                        let style = if is_selected {
-                            Style::default()
-                                .fg(colors.artist)
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default().fg(colors.artist)
-                        };
-
-                        ListItem::new(artist.name.clone()).style(style)
-                    }
-                    TreeItem::Album { album } => {
-                        let style = if is_selected {
-                            Style::default()
-                                .fg(colors.album)
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default().fg(colors.album)
-                        };
-
-                        let year_str = album.year.map(|y| format!(" [{}]", y)).unwrap_or_default();
-                        ListItem::new(format!("  └─ {}{}", album.name, year_str)).style(style)
-                    }
-                    TreeItem::Song { song } => {
-                        let style = if is_selected {
-                            Style::default()
-                                .fg(colors.song)
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default().fg(colors.song)
-                        };
-                        let artist = song.artist.as_deref().unwrap_or("");
-                        let text = if artist.is_empty() {
-                            song.title.clone()
-                        } else {
-                            format!("{} — {}", artist, song.title)
-                        };
-                        ListItem::new(text).style(style)
-                    }
-                    TreeItem::ArtistLabel { name } => {
-                        // Greyed context header for the matched albums beneath it.
-                        ListItem::new(name.clone()).style(Style::default().fg(colors.muted))
-                    }
-                }
-            })
+            .map(|(i, item)| tree_row(item, Some(i) == artists.selected_index, colors))
             .collect()
     };
 

@@ -75,7 +75,7 @@ async fn down_skips_the_greyed_album_artist_label() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.focus = 0;
-        cs.artists.filter = "x".into();
+        cs.artists.filter = "a".into();
         cs.artists.filter_active = false;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![Artist {
