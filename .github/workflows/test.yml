@@ -97,11 +97,16 @@ jobs:
         with:
           tool: cargo-mutants
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config mpv
+      # Exclude stress_proptest: its ~44s property run blows the per-mutant
+      # timeout and aborts the whole baseline (weak per-mutant signal anyway,
+      # per docs/MUTATION-BASELINE.md). nextest backend matches the repo runner.
       - name: Run cargo-mutants
-        run: cargo mutants --no-shuffle --timeout 60 -- --all-targets
+        run: |
+          cargo mutants --no-shuffle --test-tool nextest --timeout 120 \
+            --cargo-test-arg '-E' --cargo-test-arg 'not binary(stress_proptest)'
       - name: Upload mutants report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mutants-report
           path: mutants.out/
@@ -158,7 +163,7 @@ jobs:
       - name: Generate HTML report
         run: cargo llvm-cov report --html
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-html
           path: target/llvm-cov/html/
