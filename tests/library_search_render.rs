@@ -121,9 +121,18 @@ fn unified_search_shows_artists_albums_and_songs_at_once() {
         song: vec![song("s1", "Blue Monday")],
     });
     let frame = render(120, 40, &daemon, &mut client);
-    assert!(frame.contains("Blur"), "matched artist must render;\n{frame}");
-    assert!(frame.contains("Low") && frame.contains("Heroes"), "both albums;\n{frame}");
-    assert!(frame.contains("Blue Monday"), "matched song must render;\n{frame}");
+    assert!(
+        frame.contains("Blur"),
+        "matched artist must render;\n{frame}"
+    );
+    assert!(
+        frame.contains("Low") && frame.contains("Heroes"),
+        "both albums;\n{frame}"
+    );
+    assert!(
+        frame.contains("Blue Monday"),
+        "matched song must render;\n{frame}"
+    );
     assert_eq!(
         frame.matches("David Bowie").count(),
         1,

@@ -900,7 +900,9 @@ fn step_tree_selection(
         return (0..items.len()).find(|&i| selectable(i));
     };
     if down {
-        ((cur + 1)..items.len()).find(|&i| selectable(i)).or(Some(cur))
+        ((cur + 1)..items.len())
+            .find(|&i| selectable(i))
+            .or(Some(cur))
     } else {
         (0..cur).rev().find(|&i| selectable(i)).or(Some(cur))
     }
