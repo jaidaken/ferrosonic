@@ -96,7 +96,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants
-      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config mpv
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev pkg-config mpv
       # Exclude stress_proptest: its ~44s property run blows the per-mutant
       # timeout and aborts the whole baseline (weak per-mutant signal anyway,
       # per docs/MUTATION-BASELINE.md). nextest backend matches the repo runner.
@@ -125,7 +125,7 @@ jobs:
       - name: Install runtime deps (mpv for real-mpv smoke test)
         run: |
           sudo apt-get update
-          sudo apt-get install -y mpv libdbus-1-dev pkg-config
+          sudo apt-get install -y --no-install-recommends mpv libdbus-1-dev pkg-config
       # ci profile: retries=2 so a subprocess/timing test that's known-flaky
       # under parallel CI load (per CLAUDE.md) retries instead of failing the
       # gate; a genuine break still fails all attempts.
@@ -147,7 +147,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,cargo-nextest
-      - run: sudo apt-get update && sudo apt-get install -y mpv libdbus-1-dev pkg-config
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mpv libdbus-1-dev pkg-config
       # nextest backend = process-per-test, matching the gating test job. The
       # plain `cargo test` backend shares one process, so tests that set the
       # process-global FERROSONIC_CONFIG_DIR env race and crash a spawned daemon.
