@@ -23,10 +23,17 @@ jobs:
         with:
           key: musl-release
 
+      # Direct pinned download instead of a setup-zig action: every zig-setup
+      # action is still stuck on the deprecated Node 20 runtime. Deterministic
+      # (version + sha256). cargo-zigbuild 0.23 supports zig 0.15.
       - name: Install zig (cargo-zigbuild backend)
-        uses: korandoru/setup-zig@v1
-        with:
-          zig-version: 0.13.0
+        run: |
+          ZIG_VERSION=0.15.2
+          ZIG_SHA256=02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239
+          curl -fsSL "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz" -o zig.tar.xz
+          echo "$ZIG_SHA256  zig.tar.xz" | sha256sum -c -
+          tar -xf zig.tar.xz
+          echo "$PWD/zig-x86_64-linux-$ZIG_VERSION" >> "$GITHUB_PATH"
 
       - uses: taiki-e/install-action@v2
         with:
