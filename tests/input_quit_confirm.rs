@@ -168,3 +168,24 @@ async fn q_in_library_search_exits_search_instead_of_quitting() {
         "q in a search must not raise the quit prompt"
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn q_while_search_box_active_types_into_the_filter() {
+    let mut app = build_app().await;
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Library;
+        cs.artists.filter_active = true;
+    }
+
+    app.handle_key(key(KeyCode::Char('q'))).await.unwrap();
+
+    let cs = app.client_state.read().await;
+    assert_eq!(
+        cs.artists.filter, "q",
+        "q must type into the active search box"
+    );
+    assert!(!cs.should_quit, "typing q must not quit");
+    assert!(!cs.quit_prompt, "typing q must not raise the prompt");
+}

@@ -109,11 +109,9 @@ impl App {
 
         match (key.code, key.modifiers) {
             (KeyCode::Char('q'), KeyModifiers::NONE) => {
-                // In a Library search, q backs out to the tree before it quits.
-                if state.client.page == Page::Library
-                    && (state.client.artists.filter_active
-                        || !state.client.artists.filter.is_empty())
-                {
+                // Results showing but box not capturing: q backs out to the
+                // tree. An active box routes q to the filter above (types q).
+                if state.client.page == Page::Library && !state.client.artists.filter.is_empty() {
                     state.client.artists.exit_search();
                     return Ok(());
                 }
