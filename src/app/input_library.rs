@@ -148,6 +148,10 @@ impl App {
         match key.code {
             KeyCode::Char('/') => {
                 state.client.artists.filter_active = true;
+                // Start collapsed so matched artists don't dump their whole
+                // catalog from stale tree expansion.
+                state.client.artists.expanded.clear();
+                state.client.artists.selected_index = Some(0);
             }
             KeyCode::Esc => {
                 state.client.artists.exit_search();

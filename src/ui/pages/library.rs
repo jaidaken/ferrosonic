@@ -52,20 +52,9 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
         if let Some(results) = &ui.search_results {
             let mut items = Vec::new();
 
-            // Matched artists first, each expandable like the tree.
-            for a in &results.artist {
-                push_artist_with_albums(
-                    &mut items,
-                    a,
-                    ui.expanded.contains(&a.id),
-                    albums_cache.get(&a.id).map(Vec::as_slice),
-                );
-            }
-
-            // Matched albums next, grouped under a greyed parent-artist label
-            // (first-seen artist order; all of an artist's albums together).
+            // Group matched albums by their parent artist (first-seen order).
             let mut artist_order: Vec<&str> = Vec::new();
-            let mut by_artist: HashMap<&str, Vec<&Album>> = HashMap::new();
+            let mut by_artist: HashMap<&str, Vec<Album>> = HashMap::new();
             for album in &results.album {
                 let key = album
                     .artist_id
@@ -78,18 +67,40 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
                         artist_order.push(key);
                         Vec::new()
                     })
-                    .push(album);
+                    .push(album.clone());
             }
-            for key in artist_order {
-                let albums = &by_artist[key];
-                items.push(TreeItem::ArtistLabel {
-                    name: albums[0].artist.clone().unwrap_or_default(),
+
+            // Matched artists: collapsed shows only their matched albums, Enter
+            // expands the full cached catalog (search opens expansion-cleared).
+            let matched: std::collections::HashSet<&str> =
+                results.artist.iter().map(|a| a.id.as_str()).collect();
+            for a in &results.artist {
+                let expanded = ui.expanded.contains(&a.id);
+                items.push(TreeItem::Artist {
+                    artist: a.clone(),
+                    expanded,
                 });
-                for album in albums {
-                    items.push(TreeItem::Album {
-                        album: (*album).clone(),
-                    });
+                let albums = if expanded {
+                    albums_cache.get(&a.id).cloned().unwrap_or_default()
+                } else {
+                    by_artist.get(a.id.as_str()).cloned().unwrap_or_default()
+                };
+                push_sorted_albums(&mut items, albums);
+            }
+
+            // Albums whose artist did NOT match: greyed parent-artist label.
+            for key in artist_order {
+                if matched.contains(key) {
+                    continue;
                 }
+                let albums = by_artist.remove(key).unwrap_or_default();
+                items.push(TreeItem::ArtistLabel {
+                    name: albums
+                        .first()
+                        .and_then(|a| a.artist.clone())
+                        .unwrap_or_default(),
+                });
+                push_sorted_albums(&mut items, albums);
             }
 
             // Matched songs last.
@@ -136,17 +147,20 @@ fn push_artist_with_albums(
         artist: artist.clone(),
         expanded,
     });
-    let Some(albums) = albums.filter(|_| expanded) else {
-        return;
-    };
-    let mut sorted: Vec<Album> = albums.to_vec();
-    sorted.sort_by(|a, b| match (a.year, b.year) {
+    if expanded {
+        push_sorted_albums(items, albums.map(<[Album]>::to_vec).unwrap_or_default());
+    }
+}
+
+/// Push album rows sorted by release year (oldest first; undated last).
+fn push_sorted_albums(items: &mut Vec<TreeItem>, mut albums: Vec<Album>) {
+    albums.sort_by(|a, b| match (a.year, b.year) {
         (None, None) => std::cmp::Ordering::Equal,
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (Some(_), None) => std::cmp::Ordering::Less,
         (Some(y1), Some(y2)) => y1.cmp(&y2),
     });
-    items.extend(sorted.into_iter().map(|album| TreeItem::Album { album }));
+    items.extend(albums.into_iter().map(|album| TreeItem::Album { album }));
 }
 
 /// Render the Library page.
