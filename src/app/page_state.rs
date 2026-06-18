@@ -57,6 +57,27 @@ pub struct ArtistsState {
     pub album_scroll_offset: usize,
 }
 
+impl ArtistsState {
+    /// Reset the library search back to the pristine artist tree.
+    ///
+    /// ```
+    /// use ferrosonic::app::page_state::ArtistsState;
+    /// let mut a = ArtistsState::default();
+    /// a.filter = "cure".into();
+    /// a.filter_active = true;
+    /// a.exit_search();
+    /// assert!(a.filter.is_empty() && !a.filter_active);
+    /// ```
+    pub fn exit_search(&mut self) {
+        self.filter_active = false;
+        self.filter.clear();
+        self.search_results = None;
+        self.filter_scope = FilterScope::default();
+        self.expanded.clear();
+        self.selected_index = Some(0);
+    }
+}
+
 /// Library left-pane view mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LibraryView {

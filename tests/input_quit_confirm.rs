@@ -138,3 +138,27 @@ async fn y_at_prompt_quits_and_clears_prompt() {
     assert!(cs.should_quit, "y quits the TUI");
     assert!(!cs.quit_prompt, "y dismisses the prompt");
 }
+
+#[tokio::test]
+#[serial]
+async fn q_in_library_search_exits_search_instead_of_quitting() {
+    let mut app = build_app().await;
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Library;
+        // Results showing: filter text present but not capturing keys.
+        cs.artists.filter = "cure".into();
+        cs.artists.filter_active = false;
+    }
+
+    app.handle_key(key(KeyCode::Char('q'))).await.unwrap();
+
+    let cs = app.client_state.read().await;
+    assert!(cs.artists.filter.is_empty(), "q must clear the search filter");
+    assert!(
+        cs.artists.search_results.is_none(),
+        "q must drop the search results"
+    );
+    assert!(!cs.should_quit, "q in a search must not quit");
+    assert!(!cs.quit_prompt, "q in a search must not raise the quit prompt");
+}

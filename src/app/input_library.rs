@@ -164,11 +164,7 @@ impl App {
                 state.client.artists.filter_active = true;
             }
             KeyCode::Esc => {
-                state.client.artists.filter.clear();
-                state.client.artists.search_results = None;
-                state.client.artists.filter_scope = Default::default();
-                state.client.artists.expanded.clear();
-                state.client.artists.selected_index = Some(0);
+                state.client.artists.exit_search();
             }
             KeyCode::Tab => {
                 state.client.artists.focus = (state.client.artists.focus + 1) % 2;
