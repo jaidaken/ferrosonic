@@ -94,7 +94,6 @@ async fn e_in_search_mode_for_artist_collects_all_songs() {
     {
         let mut cs = app.client_state.write().await;
         cs.artists.filter = "co".into();
-        cs.artists.filter_scope = ferrosonic::app::state::FilterScope::Artists;
         cs.artists.search_results = Some(ferrosonic::subsonic::models::SearchResult3 {
             artist: vec![ferrosonic::subsonic::models::Artist {
                 id: "artist-2".into(),
@@ -144,7 +143,6 @@ async fn i_in_search_mode_for_album_inserts_next() {
     {
         let mut cs = app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = ferrosonic::app::state::FilterScope::Albums;
         cs.artists.search_results = Some(ferrosonic::subsonic::models::SearchResult3 {
             artist: vec![],
             album: vec![ferrosonic::subsonic::models::Album {

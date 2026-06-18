@@ -2,7 +2,6 @@
 
 mod common;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ferrosonic::app::state::FilterScope;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
 use ferrosonic::subsonic::models::{Album, Artist, Child, SearchResult3};
@@ -150,7 +149,6 @@ async fn esc_outside_filter_resets_full_library_state() {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "abc".into();
         cs.artists.expanded.insert("a0".into());
-        cs.artists.filter_scope = FilterScope::Albums;
         cs.artists.search_results = Some(SearchResult3::default());
     }
     fx.app.handle_key(key(KeyCode::Esc)).await.unwrap();
@@ -158,7 +156,6 @@ async fn esc_outside_filter_resets_full_library_state() {
     assert!(cs.artists.filter.is_empty());
     assert!(cs.artists.expanded.is_empty());
     assert!(cs.artists.search_results.is_none());
-    assert_eq!(cs.artists.filter_scope, FilterScope::Artists);
     assert_eq!(cs.artists.selected_index, Some(0));
 }
 
@@ -335,7 +332,6 @@ async fn t_on_song_in_search_mode_replays_the_song() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Songs;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],
@@ -355,7 +351,6 @@ async fn t_on_album_in_cache_attempts_shuffle_play() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Albums;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![album("alb0", "A")],
@@ -408,7 +403,6 @@ async fn enter_on_album_with_no_songs_notifies_error() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Albums;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![album("alb0", "A")],
@@ -426,7 +420,6 @@ async fn enter_on_song_in_search_mode_plays_it() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Songs;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],
@@ -483,7 +476,6 @@ async fn e_in_search_mode_for_song_collects_and_appends() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Songs;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],
@@ -532,7 +524,6 @@ async fn i_in_search_mode_for_song_inserts_next() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Songs;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],
@@ -571,7 +562,6 @@ async fn m_on_song_in_search_mode_dispatches_star_toggle() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Songs;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],
@@ -589,7 +579,6 @@ async fn m_on_non_song_search_item_is_noop() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Albums;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![album("alb0", "A")],

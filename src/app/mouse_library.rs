@@ -153,6 +153,7 @@ impl App {
                             self.last_click = Some((x, y, std::time::Instant::now()));
                             return Ok(());
                         }
+                        TreeItem::ArtistLabel { .. } => {}
                     }
                 } else if let TreeItem::Album { album } = &tree_items[item_index] {
                     let album_id = album.id.clone();

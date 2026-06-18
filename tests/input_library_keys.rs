@@ -2,7 +2,7 @@
 
 mod common;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ferrosonic::app::state::{FilterScope, Page};
+use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
 use serial_test::serial;
@@ -77,35 +77,6 @@ async fn enter_closes_filter_but_keeps_content() {
     let cs = fx.app.client_state.read().await;
     assert!(!cs.artists.filter_active);
     assert_eq!(cs.artists.filter, "q");
-}
-
-#[tokio::test]
-#[serial]
-async fn slash_on_empty_filter_cycles_scope() {
-    let mut fx = build_app().await;
-    fx.app.handle_key(key(KeyCode::Char('/'))).await.unwrap();
-    assert_eq!(
-        fx.app.client_state.read().await.artists.filter_scope,
-        FilterScope::Artists
-    );
-
-    fx.app.handle_key(key(KeyCode::Char('/'))).await.unwrap();
-    assert_eq!(
-        fx.app.client_state.read().await.artists.filter_scope,
-        FilterScope::Albums
-    );
-
-    fx.app.handle_key(key(KeyCode::Char('/'))).await.unwrap();
-    assert_eq!(
-        fx.app.client_state.read().await.artists.filter_scope,
-        FilterScope::Songs
-    );
-
-    fx.app.handle_key(key(KeyCode::Char('/'))).await.unwrap();
-    assert_eq!(
-        fx.app.client_state.read().await.artists.filter_scope,
-        FilterScope::Artists
-    );
 }
 
 #[tokio::test]

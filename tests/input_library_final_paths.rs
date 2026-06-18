@@ -4,7 +4,6 @@ mod common;
 
 use common::TestDaemon;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ferrosonic::app::state::FilterScope;
 use ferrosonic::app::App;
 use ferrosonic::subsonic::models::{Album, Artist, Child, SearchResult3};
 use serial_test::serial;
@@ -122,7 +121,6 @@ async fn e_in_search_mode_for_artist_with_subsonic_appends() {
     {
         let mut cs = app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Artists;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![artist("artist-x", "X")],
             album: vec![],
@@ -153,7 +151,6 @@ async fn i_in_search_mode_for_artist_inserts_after_position() {
     {
         let mut cs = app.client_state.write().await;
         cs.artists.filter = "y".into();
-        cs.artists.filter_scope = FilterScope::Artists;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![artist("artist-y", "Y")],
             album: vec![],

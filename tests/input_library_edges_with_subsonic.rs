@@ -4,7 +4,6 @@ mod common;
 
 use common::TestDaemon;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ferrosonic::app::state::FilterScope;
 use ferrosonic::app::App;
 use ferrosonic::subsonic::models::{Album, Artist, Child, SearchResult3};
 use serial_test::serial;
@@ -107,7 +106,6 @@ async fn enter_on_song_in_search_replace_plays_from_zero() {
     {
         let mut cs = app.client_state.write().await;
         cs.artists.filter = "s".into();
-        cs.artists.filter_scope = FilterScope::Songs;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],

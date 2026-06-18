@@ -8,7 +8,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::state::{AppState, FilterScope};
+use std::collections::HashMap;
+
+use crate::app::state::AppState;
 use crate::subsonic::models::{Album, Artist, Child};
 use crate::ui::styled_lines::get_song_without_artist_line;
 use crate::ui::theme::ThemeColors;
@@ -33,6 +35,11 @@ pub enum TreeItem {
         /// The song shown.
         song: Child,
     },
+    /// Greyed, non-selectable artist header grouping matched albums in search.
+    ArtistLabel {
+        /// The parent artist's name.
+        name: String,
+    },
 }
 
 /// Search-results path takes over when the filter is non-empty and a
@@ -43,30 +50,54 @@ pub fn build_tree_items(state: &AppState<'_>) -> Vec<TreeItem> {
 
     if !ui.filter.is_empty() {
         if let Some(results) = &ui.search_results {
-            return match ui.filter_scope {
-                FilterScope::Artists => {
-                    let mut items = Vec::new();
-                    for a in &results.artist {
-                        push_artist_with_albums(
-                            &mut items,
-                            a,
-                            ui.expanded.contains(&a.id),
-                            albums_cache.get(&a.id).map(Vec::as_slice),
-                        );
-                    }
-                    items
+            let mut items = Vec::new();
+
+            // Matched artists first, each expandable like the tree.
+            for a in &results.artist {
+                push_artist_with_albums(
+                    &mut items,
+                    a,
+                    ui.expanded.contains(&a.id),
+                    albums_cache.get(&a.id).map(Vec::as_slice),
+                );
+            }
+
+            // Matched albums next, grouped under a greyed parent-artist label
+            // (first-seen artist order; all of an artist's albums together).
+            let mut artist_order: Vec<&str> = Vec::new();
+            let mut by_artist: HashMap<&str, Vec<&Album>> = HashMap::new();
+            for album in &results.album {
+                let key = album
+                    .artist_id
+                    .as_deref()
+                    .or(album.artist.as_deref())
+                    .unwrap_or("");
+                by_artist
+                    .entry(key)
+                    .or_insert_with(|| {
+                        artist_order.push(key);
+                        Vec::new()
+                    })
+                    .push(album);
+            }
+            for key in artist_order {
+                let albums = &by_artist[key];
+                items.push(TreeItem::ArtistLabel {
+                    name: albums[0].artist.clone().unwrap_or_default(),
+                });
+                for album in albums {
+                    items.push(TreeItem::Album {
+                        album: (*album).clone(),
+                    });
                 }
-                FilterScope::Albums => results
-                    .album
-                    .iter()
-                    .map(|a| TreeItem::Album { album: a.clone() })
-                    .collect(),
-                FilterScope::Songs => results
-                    .song
-                    .iter()
-                    .map(|s| TreeItem::Song { song: s.clone() })
-                    .collect(),
-            };
+            }
+
+            // Matched songs last.
+            for song in &results.song {
+                items.push(TreeItem::Song { song: song.clone() });
+            }
+
+            return items;
         }
     }
 
@@ -147,25 +178,13 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
         Style::default().fg(colors.border_unfocused)
     };
 
-    let scope_label = artists.filter_scope.label();
-    // Slash count mirrors the cycle depth — `/` artists, `//` albums,
-    // `///` songs — so the prompt itself tells you which scope you're
-    // searching across.
-    let scope_slashes = match artists.filter_scope {
-        FilterScope::Artists => "/",
-        FilterScope::Albums => "//",
-        FilterScope::Songs => "///",
-    };
     let album_view = artists.view == crate::app::page_state::LibraryView::AlbumList;
 
     let base_block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style);
     let block = if searching {
-        base_block.title(format!(
-            " Search {} ({}{}) ",
-            scope_label, scope_slashes, artists.filter
-        ))
+        base_block.title(format!(" Search ({}) ", artists.filter))
     } else {
         // Toggle hint: Artists <-> Albums. The active mode shows in its accent
         // colour, the other label and the arrow are muted; they flip on 'v'.
@@ -251,21 +270,7 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
                         };
 
                         let year_str = album.year.map(|y| format!(" [{}]", y)).unwrap_or_default();
-                        let text = if !artists.filter.is_empty()
-                            && artists.search_results.is_some()
-                            && artists.filter_scope == FilterScope::Albums
-                        {
-                            let artist = album.artist.as_deref().unwrap_or("");
-                            if artist.is_empty() {
-                                format!("{}{}", album.name, year_str)
-                            } else {
-                                format!("{} — {}{}", artist, album.name, year_str)
-                            }
-                        } else {
-                            format!("  └─ {}{}", album.name, year_str)
-                        };
-
-                        ListItem::new(text).style(style)
+                        ListItem::new(format!("  └─ {}{}", album.name, year_str)).style(style)
                     }
                     TreeItem::Song { song } => {
                         let style = if is_selected {
@@ -282,6 +287,10 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
                             format!("{} — {}", artist, song.title)
                         };
                         ListItem::new(text).style(style)
+                    }
+                    TreeItem::ArtistLabel { name } => {
+                        // Greyed context header for the matched albums beneath it.
+                        ListItem::new(name.clone()).style(Style::default().fg(colors.muted))
                     }
                 }
             })

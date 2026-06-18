@@ -1,4 +1,4 @@
-//! Per-page UI state structs and the FilterScope enum.
+//! Per-page UI state structs.
 
 use crate::app::models::SongOption;
 use crate::secret::Secret;
@@ -33,8 +33,6 @@ pub struct ArtistsState {
     pub filter: String,
     /// Whether the filter input is capturing keystrokes.
     pub filter_active: bool,
-    /// Which item kind the filter matches against.
-    pub filter_scope: FilterScope,
     /// Server-side search results replacing the tree while filtering.
     pub search_results: Option<crate::subsonic::models::SearchResult3>,
     /// Bumped on every keystroke; spawned search tasks only commit a reply if the gen still matches, drops stale results.
@@ -72,7 +70,6 @@ impl ArtistsState {
         self.filter_active = false;
         self.filter.clear();
         self.search_results = None;
-        self.filter_scope = FilterScope::default();
         self.expanded.clear();
         self.selected_index = Some(0);
     }
@@ -114,37 +111,6 @@ impl AlbumSort {
         match self {
             Self::Name => "Name",
             Self::ReleaseDate => "Date",
-        }
-    }
-}
-
-/// Item kind the Library page filter matches against.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum FilterScope {
-    /// Match artist names.
-    #[default]
-    Artists,
-    /// Match album titles.
-    Albums,
-    /// Match song titles.
-    Songs,
-}
-
-impl FilterScope {
-    /// Lowercase label shown in the filter prompt.
-    pub fn label(self) -> &'static str {
-        match self {
-            FilterScope::Artists => "artists",
-            FilterScope::Albums => "albums",
-            FilterScope::Songs => "songs",
-        }
-    }
-    /// Next scope in the artists, albums, songs rotation.
-    pub fn cycle(self) -> Self {
-        match self {
-            FilterScope::Artists => FilterScope::Albums,
-            FilterScope::Albums => FilterScope::Songs,
-            FilterScope::Songs => FilterScope::Artists,
         }
     }
 }

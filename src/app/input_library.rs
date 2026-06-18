@@ -30,7 +30,6 @@ impl App {
                     state.client.artists.filter_active = false;
                     state.client.artists.filter.clear();
                     state.client.artists.search_results = None;
-                    state.client.artists.filter_scope = Default::default();
                     drop(state);
                     drop(cs);
                     drop(ds);
@@ -46,19 +45,6 @@ impl App {
                 KeyCode::Backspace => {
                     state.client.artists.filter.pop();
                     scope_or_query_changed = true;
-                }
-                KeyCode::Char('/') => {
-                    // Empty filter: cycle scope. Non-empty: append literal '/'.
-                    if state.client.artists.filter.is_empty() {
-                        let new_scope = state.client.artists.filter_scope.cycle();
-                        state.client.artists.filter_scope = new_scope;
-                        state.client.artists.search_results = None;
-                        let label = new_scope.label();
-                        state.client.notify(format!("Filter: {}", label));
-                    } else {
-                        state.client.artists.filter.push('/');
-                        scope_or_query_changed = true;
-                    }
                 }
                 KeyCode::Char(c) => {
                     state.client.artists.filter.push(c);
@@ -416,6 +402,7 @@ impl App {
                                     .map(|_| ())
                                     .map_err(Error::from);
                             }
+                            TreeItem::ArtistLabel { .. } => {}
                         }
                     }
                 }
@@ -541,6 +528,7 @@ impl App {
                                         .await;
                                     return Ok(());
                                 }
+                                TreeItem::ArtistLabel { .. } => {}
                             }
                         }
                     }
@@ -867,6 +855,7 @@ impl App {
     ) -> Vec<crate::subsonic::models::Child> {
         use crate::ui::pages::library::TreeItem;
         match item {
+            TreeItem::ArtistLabel { .. } => Vec::new(),
             TreeItem::Song { song } => vec![song.clone()],
             TreeItem::Album { album } => self.load_album(&album.id).await,
             TreeItem::Artist { artist, .. } => {

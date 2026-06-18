@@ -4,7 +4,7 @@ mod common;
 
 use common::{render, song};
 use ferrosonic::app::client_state::ClientState;
-use ferrosonic::app::state::{FilterScope, Page};
+use ferrosonic::app::state::Page;
 use ferrosonic::config::Config;
 use ferrosonic::daemon::DaemonState;
 use ferrosonic::subsonic::models::{Album, Artist, SearchResult3};
@@ -23,7 +23,6 @@ fn search_scope_artists_renders_artist_results() {
     client.page = Page::Library;
     client.artists.filter_active = true;
     client.artists.filter = "the".into();
-    client.artists.filter_scope = FilterScope::Artists;
     client.artists.search_results = Some(SearchResult3 {
         artist: vec![Artist {
             id: "a0".into(),
@@ -48,7 +47,6 @@ fn search_scope_albums_renders_album_results() {
     client.page = Page::Library;
     client.artists.filter_active = true;
     client.artists.filter = "blue".into();
-    client.artists.filter_scope = FilterScope::Albums;
     client.artists.search_results = Some(SearchResult3 {
         artist: vec![],
         album: vec![Album {
@@ -79,7 +77,6 @@ fn search_scope_songs_renders_song_results() {
     client.page = Page::Library;
     client.artists.filter_active = true;
     client.artists.filter = "lull".into();
-    client.artists.filter_scope = FilterScope::Songs;
     client.artists.search_results = Some(SearchResult3 {
         artist: vec![],
         album: vec![],
@@ -94,17 +91,43 @@ fn search_scope_songs_renders_song_results() {
 }
 
 #[test]
-fn filter_scope_slash_count_shows_in_title() {
+fn unified_search_shows_artists_albums_and_songs_at_once() {
+    // One search returns all kinds (no scope). Albums group under one greyed
+    // parent-artist label; that label is the only place its name appears.
     let (daemon, mut client) = build_state();
     client.page = Page::Library;
     client.artists.filter_active = true;
-    client.artists.filter = "x".into();
-    client.artists.filter_scope = FilterScope::Songs;
-    let frame = render(120, 30, &daemon, &mut client);
-    assert!(
-        frame.contains("///"),
-        "Songs scope must show 3 slashes in the title;\n{}",
-        frame
+    client.artists.filter = "b".into();
+    let alb = |id: &str, name: &str| Album {
+        id: id.into(),
+        name: name.into(),
+        artist: Some("David Bowie".into()),
+        artist_id: Some("a-bowie".into()),
+        cover_art: None,
+        song_count: Some(10),
+        original_release_date: None,
+        duration: Some(2000),
+        year: Some(1977),
+        genre: None,
+    };
+    client.artists.search_results = Some(SearchResult3 {
+        artist: vec![Artist {
+            id: "a-blur".into(),
+            name: "Blur".into(),
+            album_count: Some(2),
+            cover_art: None,
+        }],
+        album: vec![alb("alb1", "Low"), alb("alb2", "Heroes")],
+        song: vec![song("s1", "Blue Monday")],
+    });
+    let frame = render(120, 40, &daemon, &mut client);
+    assert!(frame.contains("Blur"), "matched artist must render;\n{frame}");
+    assert!(frame.contains("Low") && frame.contains("Heroes"), "both albums;\n{frame}");
+    assert!(frame.contains("Blue Monday"), "matched song must render;\n{frame}");
+    assert_eq!(
+        frame.matches("David Bowie").count(),
+        1,
+        "two albums by one artist group under a single greyed label;\n{frame}"
     );
 }
 
@@ -116,7 +139,6 @@ fn search_album_result_shows_the_artist_name() {
     client.page = Page::Library;
     client.artists.filter_active = true;
     client.artists.filter = "blue".into();
-    client.artists.filter_scope = FilterScope::Albums;
     client.artists.search_results = Some(SearchResult3 {
         artist: vec![],
         album: vec![Album {
@@ -165,7 +187,6 @@ fn search_artist_when_expanded_lists_their_albums() {
     client.page = Page::Library;
     client.artists.filter_active = true;
     client.artists.filter = "cure".into();
-    client.artists.filter_scope = FilterScope::Artists;
     client.artists.search_results = Some(SearchResult3 {
         artist: vec![Artist {
             id: "a0".into(),

@@ -8,7 +8,7 @@ mod common;
 use common::{render_styled, song};
 use ferrosonic::app::client_state::ClientState;
 use ferrosonic::app::models::SongOption;
-use ferrosonic::app::state::{FilterScope, Page};
+use ferrosonic::app::state::Page;
 use ferrosonic::config::Config;
 use ferrosonic::daemon::DaemonState;
 use ferrosonic::subsonic::models::{Album, Artist, Child, SearchResult3};
@@ -235,7 +235,6 @@ fn library_tree_album_omits_artist_prefix_with_stale_search_results() {
     );
     client.artists.expanded.insert("a0".into());
     client.artists.filter = String::new();
-    client.artists.filter_scope = FilterScope::Albums;
     client.artists.search_results = Some(SearchResult3 {
         artist: vec![],
         album: vec![],

@@ -4,7 +4,6 @@ mod common;
 
 use common::TestDaemon;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ferrosonic::app::state::FilterScope;
 use ferrosonic::app::App;
 use ferrosonic::subsonic::models::{Album, Child, SearchResult3};
 use serial_test::serial;
@@ -77,7 +76,6 @@ async fn e_in_search_mode_for_empty_album_collects_nothing_and_does_not_enqueue(
     {
         let mut cs = app.client_state.write().await;
         cs.artists.filter = "e".into();
-        cs.artists.filter_scope = FilterScope::Albums;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![album("alb-empty", "Empty")],
@@ -100,7 +98,6 @@ async fn i_in_search_mode_for_empty_album_collects_nothing() {
     {
         let mut cs = app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Albums;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![album("alb-empty2", "Empty2")],
@@ -156,7 +153,6 @@ async fn t_in_search_mode_with_no_selection_is_noop() {
     {
         let mut cs = app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Songs;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],

@@ -2,7 +2,7 @@
 
 mod common;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use ferrosonic::app::state::{FilterScope, Page};
+use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
 use ferrosonic::subsonic::models::{Album, Artist, Child, SearchResult3};
@@ -142,7 +142,6 @@ async fn double_click_on_album_in_search_mode_plays_replace() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Albums;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![album("alb0", "A")],
@@ -160,7 +159,6 @@ async fn double_click_on_song_in_search_mode_plays_replace() {
     {
         let mut cs = fx.app.client_state.write().await;
         cs.artists.filter = "x".into();
-        cs.artists.filter_scope = FilterScope::Songs;
         cs.artists.search_results = Some(SearchResult3 {
             artist: vec![],
             album: vec![],
