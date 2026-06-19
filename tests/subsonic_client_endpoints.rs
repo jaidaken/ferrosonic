@@ -57,6 +57,63 @@ async fn get_album_returns_api_error_on_failed_response() {
 
 #[tokio::test]
 #[serial]
+async fn get_open_subsonic_extensions_lists_names() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_open_subsonic_extensions(&["playbackReport", "transcoding"])
+        .await;
+    let c = build_client(&fake).await;
+    let exts = c.get_open_subsonic_extensions().await.unwrap();
+    assert!(
+        exts.iter().any(|e| e == "playbackReport"),
+        "extension names parsed; got {exts:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn scrobble_sends_id_and_submission() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_scrobble().await;
+    let c = build_client(&fake).await;
+    c.scrobble("trk-7", true, None).await.unwrap();
+    let reqs = fake.received_requests().await;
+    let r = reqs
+        .iter()
+        .find(|r| r.url.path() == "/rest/scrobble")
+        .expect("scrobble request sent");
+    let q = r.url.query().unwrap_or_default();
+    assert!(
+        q.contains("id=trk-7") && q.contains("submission=true"),
+        "id + submission in query; was {q}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn report_playback_sends_state_position_and_media_type() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_report_playback().await;
+    let c = build_client(&fake).await;
+    c.report_playback("m-1", 1234, "stopped", false)
+        .await
+        .unwrap();
+    let reqs = fake.received_requests().await;
+    let r = reqs
+        .iter()
+        .find(|r| r.url.path() == "/rest/reportPlayback")
+        .expect("reportPlayback request sent");
+    let q = r.url.query().unwrap_or_default();
+    assert!(
+        q.contains("mediaId=m-1")
+            && q.contains("mediaType=song")
+            && q.contains("positionMs=1234")
+            && q.contains("state=stopped"),
+        "reportPlayback params in query; was {q}"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn get_playlist_returns_api_error_on_failed_response() {
     let fake = FakeSubsonic::start().await;
     fake.expect_error("getPlaylist", 70, "not found").await;

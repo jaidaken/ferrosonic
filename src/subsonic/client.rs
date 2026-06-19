@@ -124,6 +124,46 @@ impl SubsonicClient {
         self.request_action(&endpoint).await
     }
 
+    /// List the OpenSubsonic extensions the server advertises, by name.
+    pub async fn get_open_subsonic_extensions(&self) -> Result<Vec<String>, SubsonicError> {
+        let data: OpenSubsonicExtensionsData = self.request("getOpenSubsonicExtensions").await?;
+        Ok(data.extensions.into_iter().map(|e| e.name).collect())
+    }
+
+    /// Classic Subsonic scrobble. `submission=false` is now-playing only;
+    /// `submission=true` records a played track. `time_ms` backdates the play.
+    pub async fn scrobble(
+        &self,
+        id: &str,
+        submission: bool,
+        time_ms: Option<u64>,
+    ) -> Result<(), SubsonicError> {
+        let mut endpoint = format!(
+            "scrobble?id={}&submission={submission}",
+            urlencoding::encode(id),
+        );
+        if let Some(t) = time_ms {
+            endpoint.push_str(&format!("&time={t}"));
+        }
+        self.request_action(&endpoint).await
+    }
+
+    /// OpenSubsonic `reportPlayback` (extension `playbackReport`). Reports a
+    /// playback-timeline state; the server owns the scrobble decision.
+    pub async fn report_playback(
+        &self,
+        media_id: &str,
+        position_ms: u64,
+        state: &str,
+        ignore_scrobble: bool,
+    ) -> Result<(), SubsonicError> {
+        let endpoint = format!(
+            "reportPlayback?mediaId={}&mediaType=song&positionMs={position_ms}&state={state}&ignoreScrobble={ignore_scrobble}",
+            urlencoding::encode(media_id),
+        );
+        self.request_action(&endpoint).await
+    }
+
     async fn request<T>(&self, endpoint: &str) -> Result<T, SubsonicError>
     where
         T: serde::de::DeserializeOwned,

@@ -85,6 +85,10 @@ pub struct Config {
     /// 3 (2 border rows + 1 progress bar row).
     #[serde(rename = "CoverArtSize", default = "Config::default_cover_art_size")]
     pub cover_art_size: u8,
+
+    /// Report plays to the server (scrobble / playbackReport). On by default.
+    #[serde(rename = "Scrobble", default = "Config::default_scrobble")]
+    pub scrobble: bool,
 }
 
 #[derive(Serialize)]
@@ -117,6 +121,8 @@ struct ConfigOnDisk<'a> {
     cover_art: bool,
     #[serde(rename = "CoverArtSize")]
     cover_art_size: u8,
+    #[serde(rename = "Scrobble")]
+    scrobble: bool,
 }
 
 fn serialize_revealed_opt<S: serde::Serializer>(
@@ -149,6 +155,7 @@ impl Config {
             repeat_mode: self.repeat_mode,
             cover_art: self.cover_art,
             cover_art_size: self.cover_art_size,
+            scrobble: self.scrobble,
         }
     }
 }
@@ -270,6 +277,7 @@ impl Default for Config {
             repeat_mode: RepeatMode::Off,
             cover_art: false,
             cover_art_size: Self::default_cover_art_size(),
+            scrobble: Self::default_scrobble(),
         }
     }
 }
@@ -285,6 +293,10 @@ impl Config {
 
     fn default_cover_art_size() -> u8 {
         16
+    }
+
+    fn default_scrobble() -> bool {
+        true
     }
 
     /// Alias for [`Config::default`].

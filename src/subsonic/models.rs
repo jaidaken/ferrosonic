@@ -25,6 +25,24 @@ pub struct SubsonicResponseInner<T> {
     pub data: Option<T>,
 }
 
+/// Payload of `getOpenSubsonicExtensions`: the extensions the server supports.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct OpenSubsonicExtensionsData {
+    /// Supported extensions; empty on a non-OpenSubsonic server.
+    #[serde(rename = "openSubsonicExtensions", default)]
+    pub extensions: Vec<OpenSubsonicExtension>,
+}
+
+/// One advertised OpenSubsonic extension.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenSubsonicExtension {
+    /// Extension key, e.g. `playbackReport`.
+    pub name: String,
+    /// Supported versions of the extension.
+    #[serde(default)]
+    pub versions: Vec<i32>,
+}
+
 /// Error object returned when a Subsonic call fails.
 #[derive(Debug, Deserialize)]
 pub struct ApiError {

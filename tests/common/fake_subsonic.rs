@@ -117,6 +117,34 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_open_subsonic_extensions(&self, names: &[&str]) {
+        let exts: Vec<Value> = names
+            .iter()
+            .map(|n| json!({ "name": n, "versions": [1] }))
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getOpenSubsonicExtensions"))
+            .respond_with(ok_body(json!({ "openSubsonicExtensions": exts })))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_scrobble(&self) {
+        Mock::given(method("GET"))
+            .and(path("/rest/scrobble"))
+            .respond_with(ok_body(json!({})))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_report_playback(&self) {
+        Mock::given(method("GET"))
+            .and(path("/rest/reportPlayback"))
+            .respond_with(ok_body(json!({})))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_create_playlist(&self) {
         Mock::given(method("GET"))
             .and(path("/rest/createPlaylist"))
