@@ -342,7 +342,7 @@ impl DaemonCore {
             }
             let cover = match song.cover_art.as_deref() {
                 Some(cid) => {
-                    let bytes = core.get_cover_art(cid, 256).await;
+                    let bytes = core.get_cover_art(cid, 512).await;
                     (!bytes.is_empty()).then_some(bytes)
                 }
                 None => None,
