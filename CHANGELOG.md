@@ -2,7 +2,22 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Desktop notifications on track change.** A freedesktop.org notification
+  (any Linux daemon: mako, dunst, GNOME, KDE) with cover art, fired from the
+  daemon so it shows whether or not the TUI is open. On by default; toggle
+  under Settings, Notifications. Cover fetched at 512px for sharp icons.
+
 ### Changed
+
+- **Resume re-clocks cleanly.** Pausing releases the audio-device rate pin so
+  other apps (a browser) play at their own rate; resuming compares the device
+  rate to the track's and, if they differ, switches and waits the settle
+  before audio, so resume is gapless. Same rate resumes at once.
+- **Auto-continue no longer replays a track** until the library is exhausted.
+- **Changed cover art shows fresh.** The in-memory cover cache clears on a
+  library refresh (also at startup and `Ctrl+R`) and when a new album plays.
 
 - **No gap at song start when the sample rate changes.** Loading an album
   recorded at a different sample rate than the last one used to start the
