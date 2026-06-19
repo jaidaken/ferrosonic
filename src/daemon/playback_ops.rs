@@ -226,7 +226,6 @@ impl DaemonCore {
         }
         self.emit_now_playing().await;
         self.emit_queue().await;
-        self.spawn_fast_probe();
         Ok(())
     }
 

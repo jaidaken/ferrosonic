@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **No gap at song start when the sample rate changes.** Loading an album
+  recorded at a different sample rate than the last one used to start the
+  song and then re-clock the audio device a moment later, leaving an audible
+  gap in the first instant of music. Now the track loads silently, the device
+  re-clocks to the new rate during that silence, and playback begins only once
+  the rate is locked. Tracks at the same rate start with no added delay. A new
+  advanced setting `RateSwitchDelayMs` (default 250) tunes the silent settle
+  for DACs that re-lock slowly.
+
+### Fixed
+
+- **Streams are no longer transcoded by the server.** The stream request now
+  asks for the original file (`format=raw`), so playback is bit-perfect from
+  source instead of whatever format the server would transcode to by default.
+
 ## [0.5.1] - 2026-06-19
 
 ### Added

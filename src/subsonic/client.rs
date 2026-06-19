@@ -479,6 +479,7 @@ impl SubsonicClient {
     /// assert!(url.contains("u=alice"));
     /// assert!(url.contains("&t="));
     /// assert!(url.contains("&s="));
+    /// assert!(url.contains("format=raw"));
     /// ```
     pub fn get_stream_url(&self, song_id: &str) -> Result<String, SubsonicError> {
         let mut url = self.base_url.join("rest/stream")?;
@@ -491,7 +492,10 @@ impl SubsonicClient {
             .append_pair("t", &token)
             .append_pair("s", &salt)
             .append_pair("v", API_VERSION)
-            .append_pair("c", CLIENT_NAME);
+            .append_pair("c", CLIENT_NAME)
+            // No server-side transcode: stream the original bytes so the
+            // decoded rate matches the source and playback stays bit-perfect.
+            .append_pair("format", "raw");
 
         Ok(url.to_string())
     }

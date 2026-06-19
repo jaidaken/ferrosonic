@@ -89,6 +89,16 @@ pub struct Config {
     /// Report plays to the server (scrobble / playbackReport). On by default.
     #[serde(rename = "Scrobble", default = "Config::default_scrobble")]
     pub scrobble: bool,
+
+    /// Milliseconds to hold the track paused after re-clocking the audio
+    /// device so the `PipeWire` rate switch lands in silence, not in the
+    /// first frames of music. Device-dependent; raise for DACs that
+    /// re-lock slowly. Only applied when the rate actually changes.
+    #[serde(
+        rename = "RateSwitchDelayMs",
+        default = "Config::default_rate_switch_delay_ms"
+    )]
+    pub rate_switch_delay_ms: u32,
 }
 
 #[derive(Serialize)]
@@ -123,6 +133,8 @@ struct ConfigOnDisk<'a> {
     cover_art_size: u8,
     #[serde(rename = "Scrobble")]
     scrobble: bool,
+    #[serde(rename = "RateSwitchDelayMs")]
+    rate_switch_delay_ms: u32,
 }
 
 fn serialize_revealed_opt<S: serde::Serializer>(
@@ -156,6 +168,7 @@ impl Config {
             cover_art: self.cover_art,
             cover_art_size: self.cover_art_size,
             scrobble: self.scrobble,
+            rate_switch_delay_ms: self.rate_switch_delay_ms,
         }
     }
 }
@@ -278,6 +291,7 @@ impl Default for Config {
             cover_art: false,
             cover_art_size: Self::default_cover_art_size(),
             scrobble: Self::default_scrobble(),
+            rate_switch_delay_ms: Self::default_rate_switch_delay_ms(),
         }
     }
 }
@@ -297,6 +311,10 @@ impl Config {
 
     fn default_scrobble() -> bool {
         true
+    }
+
+    fn default_rate_switch_delay_ms() -> u32 {
+        250
     }
 
     /// Alias for [`Config::default`].

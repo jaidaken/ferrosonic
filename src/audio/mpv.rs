@@ -318,6 +318,10 @@ impl MpvController {
     /// Replace the playlist with `path` and start playing it.
     pub async fn loadfile(&mut self, path: &str) -> Result<(), AudioError> {
         info!("Loading: {}", path.split('?').next().unwrap_or(path));
+        // mpv keeps `pause` across loadfile; clear it so this is the
+        // unambiguous play-now primitive (paused load = loadfile_paused).
+        self.send_command(vec![json!("set_property"), json!("pause"), json!(false)])
+            .await?;
         self.send_command(vec![json!("loadfile"), json!(path), json!("replace")])
             .await?;
         Ok(())
@@ -333,6 +337,52 @@ impl MpvController {
     pub async fn loadfile_at(&mut self, path: &str, start_secs: f64) -> Result<(), AudioError> {
         info!(
             "Loading at {}s: {}",
+            start_secs,
+            path.split('?').next().unwrap_or(path)
+        );
+        self.send_command(vec![
+            json!("loadfile"),
+            json!(path),
+            json!("replace"),
+            json!(-1),
+            json!(format!("start={}", start_secs)),
+        ])
+        .await?;
+        Ok(())
+    }
+
+    /// Replace the playlist with `path` and load it paused, so the caller
+    /// can probe the decoded rate and re-clock the device in silence before
+    /// unpausing. mpv's `pause` property persists across `loadfile`, so
+    /// setting it first leaves the new track paused.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either mpv IPC command fails.
+    pub async fn loadfile_paused(&mut self, path: &str) -> Result<(), AudioError> {
+        self.send_command(vec![json!("set_property"), json!("pause"), json!(true)])
+            .await?;
+        info!("Loading paused: {}", path.split('?').next().unwrap_or(path));
+        self.send_command(vec![json!("loadfile"), json!(path), json!("replace")])
+            .await?;
+        Ok(())
+    }
+
+    /// Like [`loadfile_paused`](Self::loadfile_paused) but decoding begins at
+    /// `start_secs` (mpv 0.38+ 5-arg loadfile), for resume-from-position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either mpv IPC command fails.
+    pub async fn loadfile_at_paused(
+        &mut self,
+        path: &str,
+        start_secs: f64,
+    ) -> Result<(), AudioError> {
+        self.send_command(vec![json!("set_property"), json!("pause"), json!(true)])
+            .await?;
+        info!(
+            "Loading paused at {}s: {}",
             start_secs,
             path.split('?').next().unwrap_or(path)
         );

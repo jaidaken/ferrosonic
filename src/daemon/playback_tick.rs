@@ -225,6 +225,9 @@ impl DaemonCore {
         self.preload_next_track(next_pos).await;
         self.emit_now_playing().await;
         self.emit_queue().await;
+        // Re-clock near the boundary: a gapless jump across sample rates
+        // must re-pin instead of riding the 500ms backstop tick.
+        self.spawn_fast_probe();
         GaplessOutcome::Advanced
     }
 

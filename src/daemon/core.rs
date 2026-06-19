@@ -161,6 +161,11 @@ pub struct DaemonCore {
     /// still report idle-active for a short window after loadfile, so
     /// the idle-advance branch ignores idle within ~1.5s of this.
     pub(super) last_loadfile: std::sync::Mutex<Option<std::time::Instant>>,
+    /// Bumped by `stamp_loadfile` on every loadfile. A spawned rate-settle
+    /// captures the gen at its load and refuses to unpause if a newer load
+    /// has superseded it, so a rapid track switch can't start the wrong
+    /// track at the previous track's pinned rate.
+    pub(super) loadfile_gen: std::sync::atomic::AtomicU64,
     /// Bumped on every `update_server_config`; library refresh handlers
     /// capture the gen at start and discard their result if it changed,
     /// preventing stale results from one server polluting the next.
@@ -233,6 +238,7 @@ impl DaemonCore {
             prebuffer_files: Mutex::new(Vec::new()),
             prebuffer_loading: Mutex::new(None),
             last_loadfile: std::sync::Mutex::new(None),
+            loadfile_gen: std::sync::atomic::AtomicU64::new(0),
             config_gen: std::sync::atomic::AtomicU64::new(0),
             shutdown: std::sync::atomic::AtomicBool::new(false),
             shutdown_notify: tokio::sync::Notify::new(),
@@ -261,12 +267,15 @@ impl DaemonCore {
         );
     }
 
-    fn stamp_loadfile(&self) {
+    /// Mark a fresh loadfile and return its generation; a spawned settle
+    /// passes this back to `settle_rate_then_unpause` to detect supersession.
+    fn stamp_loadfile(&self) -> u64 {
         let mut guard = self
             .last_loadfile
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(std::time::Instant::now());
+        self.loadfile_gen.fetch_add(1, Ordering::Release) + 1
     }
 
     /// Idempotent — no-ops if mpv is already running.
@@ -444,7 +453,6 @@ impl DaemonCore {
             .await?;
         self.emit_now_playing().await;
         self.emit_queue().await;
-        self.spawn_fast_probe();
         Ok(true)
     }
 
@@ -495,26 +503,28 @@ impl DaemonCore {
     ) -> Result<(), Error> {
         match mode {
             PlayMode::Direct => {
-                let mut mpv = self.mpv.lock().await;
-                if mpv.is_paused().await.unwrap_or(false) {
-                    let _ = mpv.resume().await;
-                }
-                let load = if start_at > 0.0 {
-                    mpv.loadfile_at(&stream_url, start_at).await
-                } else {
-                    mpv.loadfile(&stream_url).await
+                let gen = {
+                    let mut mpv = self.mpv.lock().await;
+                    let load = if start_at > 0.0 {
+                        mpv.loadfile_at_paused(&stream_url, start_at).await
+                    } else {
+                        mpv.loadfile_paused(&stream_url).await
+                    };
+                    if let Err(e) = load {
+                        error!("Failed to play: {}", e);
+                        drop(mpv);
+                        self.emit(DaemonEvent::Notification {
+                            message: format!("MPV error: {}", e),
+                            is_error: true,
+                        });
+                        return Ok(());
+                    }
+                    self.stamp_loadfile()
                 };
-                if let Err(e) = load {
-                    error!("Failed to play: {}", e);
-                    drop(mpv);
-                    self.emit(DaemonEvent::Notification {
-                        message: format!("MPV error: {}", e),
-                        is_error: true,
-                    });
-                    return Ok(());
-                }
-                self.stamp_loadfile();
-                drop(mpv);
+                // Spawn the probe/re-clock/unpause so the IPC caller is not
+                // blocked by the settle; the gen guard drops it if superseded.
+                let core = self.clone();
+                tokio::spawn(async move { core.settle_rate_then_unpause(gen).await });
                 self.preload_next_track(pos).await;
             }
             PlayMode::Buffered => {
@@ -784,7 +794,7 @@ impl DaemonCore {
                         start.elapsed(),
                         path_str
                     );
-                    {
+                    let gen = {
                         let mut mpv = core.mpv.lock().await;
                         // Re-check cancel with the mpv lock held; a newer
                         // switch may have set it between the loop check
@@ -795,17 +805,18 @@ impl DaemonCore {
                             slot_cleaner.disarm();
                             return;
                         }
-                        if let Err(e) = mpv.loadfile(&path_str).await {
+                        if let Err(e) = mpv.loadfile_paused(&path_str).await {
                             error!("Pre-buffer loadfile failed: {}", e);
                             return;
                         }
-                        core.stamp_loadfile();
-                    }
+                        core.stamp_loadfile()
+                    };
                     if cancel_task.load(Ordering::Relaxed) {
                         gate.disarm();
                         slot_cleaner.disarm();
                         return;
                     }
+                    core.settle_rate_then_unpause(gen).await;
                     core.preload_next_track(preload_pos).await;
                 }
             }
@@ -816,7 +827,7 @@ impl DaemonCore {
                     "Pre-buffer download complete without hitting threshold ({} KB); loading",
                     bytes_written / 1024
                 );
-                {
+                let gen = {
                     let mut mpv = core.mpv.lock().await;
                     if cancel_task.load(Ordering::Relaxed) {
                         debug!("Pre-buffer cancelled before final loadfile");
@@ -824,17 +835,18 @@ impl DaemonCore {
                         slot_cleaner.disarm();
                         return;
                     }
-                    if let Err(e) = mpv.loadfile(&path_str).await {
+                    if let Err(e) = mpv.loadfile_paused(&path_str).await {
                         error!("Pre-buffer loadfile failed: {}", e);
                         return;
                     }
-                    core.stamp_loadfile();
-                }
+                    core.stamp_loadfile()
+                };
                 if cancel_task.load(Ordering::Relaxed) {
                     gate.disarm();
                     slot_cleaner.disarm();
                     return;
                 }
+                core.settle_rate_then_unpause(gen).await;
                 core.preload_next_track(preload_pos).await;
             } else {
                 info!(
@@ -882,6 +894,103 @@ impl DaemonCore {
         }
         self.emit_now_playing().await;
         true
+    }
+
+    /// Probe the decoded rate after a paused load, re-clock the `PipeWire`
+    /// graph during the paused silence, then unpause. A rate change settles
+    /// for `rate_switch_delay_ms` so the device re-lock lands in the pre-roll
+    /// gap and not in the first frames of music; same-rate tracks unpause
+    /// immediately. Writes the audio props and emits `NowPlayingChanged`.
+    /// `gen` is the loadfile generation from the paused load this settles.
+    /// Invariant: the caller loaded the track paused; this fn starts it. Bails
+    /// at each step if a newer load has superseded `gen`, so it never unpauses
+    /// or re-clocks for a track that is no longer current.
+    pub(super) async fn settle_rate_then_unpause(self: &Arc<Self>, gen: u64) {
+        if self.settle_superseded(gen) {
+            return;
+        }
+        let settle = if let Some((rate, bd, fmt, ch)) = self.probe_audio_params(gen).await {
+            if self.settle_superseded(gen) {
+                return;
+            }
+            let changed = {
+                let mut pw = self.pipewire.lock().await;
+                // Re-check under the pw lock: a newer load taken between the
+                // probe and here must not re-clock for a superseded track.
+                if self.settle_superseded(gen) {
+                    return;
+                }
+                let changed = pw.get_current_rate() != Some(rate);
+                // Always re-issue (staleness defense vs external pw-metadata);
+                // only the settle delay is gated on an actual rate change.
+                if let Err(e) = pw.set_rate(rate).await {
+                    warn!("Failed to set PipeWire sample rate: {}", e);
+                }
+                changed
+            };
+            let mut state = self.state.write().await;
+            state.now_playing.sample_rate = Some(rate);
+            state.now_playing.bit_depth = bd;
+            state.now_playing.format = fmt;
+            state.now_playing.channels = ch;
+            changed.then(|| {
+                std::time::Duration::from_millis(u64::from(state.config.rate_switch_delay_ms))
+            })
+        } else {
+            None
+        };
+        if let Some(settle) = settle {
+            tokio::time::sleep(settle).await;
+        }
+        if self.settle_superseded(gen) {
+            return;
+        }
+        {
+            let mut mpv = self.mpv.lock().await;
+            if let Err(e) = mpv.resume().await {
+                warn!("Failed to unpause after rate settle: {}", e);
+            }
+        }
+        self.emit_now_playing().await;
+    }
+
+    /// True when a rate-settle for load `gen` should abandon: shutting down,
+    /// or a newer loadfile has bumped the generation past `gen`.
+    fn settle_superseded(&self, gen: u64) -> bool {
+        self.shutdown.load(Ordering::Acquire) || self.loadfile_gen.load(Ordering::Acquire) != gen
+    }
+
+    /// Poll mpv for decoded audio params after a paused load until the sample
+    /// rate populates, bounded so a stream that never reports still unblocks
+    /// playback (the 500ms tick re-pins it). Bails early if load `gen` is
+    /// superseded. Returns `(rate, bit_depth, format, channels)` once known.
+    async fn probe_audio_params(
+        self: &Arc<Self>,
+        gen: u64,
+    ) -> Option<(u32, Option<u32>, Option<String>, Option<String>)> {
+        const PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(30);
+        const PROBE_MAX_ITERS: u32 = 50;
+        for i in 0..PROBE_MAX_ITERS {
+            if self.settle_superseded(gen) {
+                return None;
+            }
+            let (sr, bd, fmt, ch) = {
+                let mut mpv = self.mpv.lock().await;
+                (
+                    mpv.get_sample_rate().await.ok().flatten(),
+                    mpv.get_bit_depth().await.ok().flatten(),
+                    mpv.get_audio_format().await.ok().flatten(),
+                    mpv.get_channels().await.ok().flatten(),
+                )
+            };
+            if let Some(rate) = sr {
+                return Some((rate, bd, fmt, ch));
+            }
+            if i + 1 < PROBE_MAX_ITERS {
+                tokio::time::sleep(PROBE_INTERVAL).await;
+            }
+        }
+        None
     }
 
     /// Drop the `PipeWire` force-rate pin so the graph follows live streams again; call when playback leaves `Playing` (pause/stop) so an idle daemon stops holding the device at the track's rate.

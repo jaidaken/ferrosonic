@@ -38,9 +38,16 @@ impl FakeMpv {
         let tempdir = super::tempdir();
         let socket_path = tempdir.path().join("fake-mpv.sock");
         let listener = UnixListener::bind(&socket_path).expect("bind fake mpv socket");
+        // Seed decoded audio params so the post-load rate probe resolves at
+        // once, as real mpv reports them shortly after a file loads.
+        let mut properties = HashMap::new();
+        properties.insert("audio-params/samplerate".to_string(), json!(44_100));
+        properties.insert("audio-params/format".to_string(), json!("s16"));
+        properties.insert("audio-params/channel-count".to_string(), json!(2));
         let state = Arc::new(Mutex::new(FakeMpvState {
             volume: 100.0,
             duration: 180.0,
+            properties,
             ..Default::default()
         }));
         let changed = Arc::new(Notify::new());
@@ -235,7 +242,8 @@ async fn process_command(
                 s.playlist.clear();
                 s.playlist.push(path);
                 s.position = start;
-                s.paused = false;
+                // Real mpv preserves the pause property across loadfile; a
+                // load-paused start stays paused until explicitly resumed.
             }
             ("success".into(), None)
         }
