@@ -219,6 +219,18 @@ impl FakeSubsonic {
             .await;
     }
 
+    /// A non-ok response that carries no `error` object, to exercise the
+    /// fall-through path in the hand-rolled get_* handlers.
+    pub async fn expect_failed_without_error(&self, endpoint: &str) {
+        Mock::given(method("GET"))
+            .and(path(format!("/rest/{}", endpoint)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "subsonic-response": { "status": "failed", "version": "1.16.1" }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_http_status(&self, endpoint: &str, status: u16) {
         Mock::given(method("GET"))
             .and(path(format!("/rest/{}", endpoint)))

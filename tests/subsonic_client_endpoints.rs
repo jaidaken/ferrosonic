@@ -57,6 +57,42 @@ async fn get_album_returns_api_error_on_failed_response() {
 
 #[tokio::test]
 #[serial]
+async fn get_artist_errors_on_failed_status_without_error_object() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_failed_without_error("getArtist").await;
+    let c = build_client(&fake).await;
+    match c.get_artist("a1").await {
+        Err(SubsonicError::Api { code, .. }) => assert_eq!(code, 0),
+        other => panic!("non-ok without an error object must be an Api error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn get_album_errors_on_failed_status_without_error_object() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_failed_without_error("getAlbum").await;
+    let c = build_client(&fake).await;
+    match c.get_album("al1").await {
+        Err(SubsonicError::Api { code, .. }) => assert_eq!(code, 0),
+        other => panic!("non-ok without an error object must be an Api error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn get_playlist_errors_on_failed_status_without_error_object() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_failed_without_error("getPlaylist").await;
+    let c = build_client(&fake).await;
+    match c.get_playlist("p1").await {
+        Err(SubsonicError::Api { code, .. }) => assert_eq!(code, 0),
+        other => panic!("non-ok without an error object must be an Api error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[serial]
 async fn get_open_subsonic_extensions_lists_names() {
     let fake = FakeSubsonic::start().await;
     fake.expect_open_subsonic_extensions(&["playbackReport", "transcoding"])

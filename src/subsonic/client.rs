@@ -31,6 +31,10 @@ impl SubsonicClient {
 
         let http = Client::builder()
             .user_agent(CLIENT_NAME)
+            // Bound every API call so a hung (not refused) server cannot
+            // stall library, star, or scrobble requests indefinitely.
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(SubsonicError::Http)?;
 
@@ -212,12 +216,11 @@ impl SubsonicClient {
             .map_err(|e| SubsonicError::Parse(format!("Failed to parse ping response: {}", e)))?;
 
         if parsed.subsonic_response.status != "ok" {
-            if let Some(error) = parsed.subsonic_response.error {
-                return Err(SubsonicError::Api {
-                    code: error.code,
-                    message: error.message,
-                });
-            }
+            let (code, message) = match parsed.subsonic_response.error {
+                Some(e) => (e.code, e.message),
+                None => (0, "Unknown error".to_string()),
+            };
+            return Err(SubsonicError::Api { code, message });
         }
 
         info!("Server ping successful");
@@ -312,12 +315,11 @@ impl SubsonicClient {
             .map_err(|e| SubsonicError::Parse(format!("Failed to parse artist response: {}", e)))?;
 
         if parsed.subsonic_response.status != "ok" {
-            if let Some(error) = parsed.subsonic_response.error {
-                return Err(SubsonicError::Api {
-                    code: error.code,
-                    message: error.message,
-                });
-            }
+            let (code, message) = match parsed.subsonic_response.error {
+                Some(e) => (e.code, e.message),
+                None => (0, "Unknown error".to_string()),
+            };
+            return Err(SubsonicError::Api { code, message });
         }
 
         let detail = parsed
@@ -353,12 +355,11 @@ impl SubsonicClient {
             .map_err(|e| SubsonicError::Parse(format!("Failed to parse album response: {}", e)))?;
 
         if parsed.subsonic_response.status != "ok" {
-            if let Some(error) = parsed.subsonic_response.error {
-                return Err(SubsonicError::Api {
-                    code: error.code,
-                    message: error.message,
-                });
-            }
+            let (code, message) = match parsed.subsonic_response.error {
+                Some(e) => (e.code, e.message),
+                None => (0, "Unknown error".to_string()),
+            };
+            return Err(SubsonicError::Api { code, message });
         }
 
         let detail = parsed
@@ -409,12 +410,11 @@ impl SubsonicClient {
         })?;
 
         if parsed.subsonic_response.status != "ok" {
-            if let Some(error) = parsed.subsonic_response.error {
-                return Err(SubsonicError::Api {
-                    code: error.code,
-                    message: error.message,
-                });
-            }
+            let (code, message) = match parsed.subsonic_response.error {
+                Some(e) => (e.code, e.message),
+                None => (0, "Unknown error".to_string()),
+            };
+            return Err(SubsonicError::Api { code, message });
         }
 
         let detail = parsed
