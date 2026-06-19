@@ -187,6 +187,9 @@ pub struct DaemonCore {
     pub(super) scrobble_state: Mutex<crate::daemon::scrobble::ScrobbleState>,
     /// True when the server advertises the `playbackReport` extension.
     pub(super) playback_report_supported: AtomicBool,
+    /// Sends desktop notifications on track change (Linux D-Bus); no-op when
+    /// disabled in config or when no session bus is reachable.
+    pub(super) notifier: crate::daemon::notify::Notifier,
 }
 
 impl DaemonCore {
@@ -247,6 +250,7 @@ impl DaemonCore {
             active_clients: std::sync::atomic::AtomicUsize::new(0),
             scrobble_state: Mutex::new(crate::daemon::scrobble::ScrobbleState::default()),
             playback_report_supported: AtomicBool::new(false),
+            notifier: crate::daemon::notify::Notifier::new(),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);

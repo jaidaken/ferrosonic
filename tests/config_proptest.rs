@@ -24,7 +24,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
         arb_repeat_mode(),
         any::<bool>(),
         any::<u8>(),
-        (any::<bool>(), any::<u32>()),
+        (any::<bool>(), any::<bool>(), any::<u32>()),
     )
         .prop_map(
             |(
@@ -39,7 +39,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
                 repeat_mode,
                 cover_art,
                 cover_art_size,
-                (scrobble, rate_switch_delay_ms),
+                (scrobble, notifications, rate_switch_delay_ms),
             )| Config {
                 base_url,
                 username,
@@ -54,6 +54,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
                 cover_art,
                 cover_art_size,
                 scrobble,
+                notifications,
                 rate_switch_delay_ms,
             },
         )
@@ -78,6 +79,7 @@ fn config_round_trips_through_toml() {
             prop_assert_eq!(parsed.cover_art, c.cover_art);
             prop_assert_eq!(parsed.auto_continue, c.auto_continue);
             prop_assert_eq!(parsed.scrobble, c.scrobble);
+            prop_assert_eq!(parsed.notifications, c.notifications);
             prop_assert_eq!(parsed.rate_switch_delay_ms, c.rate_switch_delay_ms);
             Ok(())
         })

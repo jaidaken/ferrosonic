@@ -216,6 +216,7 @@ pub async fn apply_event(
             let cover_art_size = cfg.cover_art_size;
             let auto_continue = cfg.auto_continue;
             let scrobble = cfg.scrobble;
+            let notifications = cfg.notifications;
             {
                 let mut ds = daemon_state.write().await;
                 ds.config = cfg;
@@ -227,6 +228,7 @@ pub async fn apply_event(
                 cs.settings_state.cover_art_size = cover_art_size;
                 cs.settings_state.auto_continue = auto_continue;
                 cs.settings_state.scrobble = scrobble;
+                cs.settings_state.notifications = notifications;
             }
 
             if cover_art_enabled {

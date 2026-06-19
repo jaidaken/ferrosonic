@@ -1,5 +1,6 @@
 ---
 source: tests/ui_smoke.rs
+assertion_line: 64
 expression: frame
 ---
  F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
@@ -20,7 +21,7 @@ expression: frame
 │                                                                              │
 │System                                                                        │
 │  Daemon            On                                                        │
-│                                                                              │
+│  Notifications     On                                                        │
 │← → or Enter to change theme (auto-saves)                                     │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 

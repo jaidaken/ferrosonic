@@ -131,6 +131,8 @@ pub enum DaemonRequest {
     SetAutoContinue(bool),
     /// Enable or disable reporting plays to the server (scrobbling).
     SetScrobble(bool),
+    /// Enable or disable desktop notifications on track change.
+    SetNotifications(bool),
     /// Set the repeat mode and persist the choice.
     SetRepeatMode(RepeatMode),
     /// Enable or disable cover art rendering.

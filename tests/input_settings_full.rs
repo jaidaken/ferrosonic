@@ -65,7 +65,7 @@ async fn down_stops_at_max_field() {
             .await
             .settings_state
             .selected_field,
-        8
+        9
     );
 }
 

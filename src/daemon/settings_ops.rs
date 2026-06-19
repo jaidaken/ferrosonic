@@ -66,6 +66,17 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Persist the desktop-notifications toggle and broadcast the config change.
+    pub async fn set_notifications(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.config.notifications = on;
+            state.config.save_default().map_err(Error::Config)?;
+        }
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
     /// Probe credentials without persisting; returns (ok, message).
     pub async fn test_server_connection(
         self: &Arc<Self>,

@@ -50,6 +50,16 @@ async fn set_auto_continue_persists() {
 
 #[tokio::test]
 #[serial]
+async fn set_notifications_persists() {
+    let td = TestDaemon::new().await;
+    td.core.set_notifications(false).await.unwrap();
+    assert!(!td.state.read().await.config.notifications);
+    td.core.set_notifications(true).await.unwrap();
+    assert!(td.state.read().await.config.notifications);
+}
+
+#[tokio::test]
+#[serial]
 async fn set_repeat_mode_persists_and_broadcasts() {
     let td = TestDaemon::new().await;
     let mut rx = td.core.subscribe();

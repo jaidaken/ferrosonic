@@ -317,6 +317,43 @@ impl DaemonCore {
         }
     }
 
+    /// Fire a desktop notification once per track change while Playing, off the
+    /// tick so the cover-art fetch never blocks playback. No-op when the
+    /// notifications config is off or no session bus is reachable.
+    async fn tick_desktop_notification(self: &Arc<Self>) {
+        use crate::daemon::state::PlaybackState;
+        let (enabled, song) = {
+            let s = self.state.read().await;
+            if s.now_playing.state != PlaybackState::Playing {
+                return;
+            }
+            (s.config.notifications, s.now_playing.song.clone())
+        };
+        let Some(song) = song.filter(|_| enabled) else {
+            return;
+        };
+        if !self.notifier.mark_if_changed(&song.id) {
+            return;
+        }
+        let core = self.clone();
+        tokio::spawn(async move {
+            if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+                return;
+            }
+            let cover = match song.cover_art.as_deref() {
+                Some(cid) => {
+                    let bytes = core.get_cover_art(cid, 256).await;
+                    (!bytes.is_empty()).then_some(bytes)
+                }
+                None => None,
+            };
+            let body = crate::daemon::notify::track_body(&song);
+            core.notifier
+                .show(&song.title, &body, cover.as_deref())
+                .await;
+        });
+    }
+
     /// Fetch sample-rate + bit-depth + format + channels if not yet known. Backstop poll.
     async fn tick_fetch_audio_properties_if_needed(self: &Arc<Self>) {
         let need_sr = self.state.read().await.now_playing.sample_rate.is_none();
@@ -333,6 +370,7 @@ impl DaemonCore {
         // Runs every tick, including Skip/Stop, so a stop or end-of-queue still
         // finalizes the played track (the modern path reports "stopped" there).
         self.scrobble_tick().await;
+        self.tick_desktop_notification().await;
         if matches!(cont, TickContinuation::Stop) {
             return;
         }

@@ -67,6 +67,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let auto_val = if s.auto_continue { "On" } else { "Off" }.to_string();
     let scrobble_val = if s.scrobble { "On" } else { "Off" }.to_string();
     let daemon_val = if s.daemon_enabled { "On" } else { "Off" }.to_string();
+    let notifications_val = if s.notifications { "On" } else { "Off" }.to_string();
 
     let x = inner.x;
     let w = inner.width;
@@ -126,6 +127,11 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
             value: daemon_val,
             idx: 8,
         },
+        Item::Row {
+            label: "Notifications",
+            value: notifications_val,
+            idx: 9,
+        },
     ];
 
     {
@@ -171,7 +177,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
 }
 
 /// Help-line text for the selected settings field. Indices MUST track the
-/// `Item::Row { idx }` order in `render`: 7 is Scrobble, 8 is Daemon.
+/// `Item::Row { idx }` order in `render`: 7 Scrobble, 8 Daemon, 9 Notifications.
 fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
     match sel {
         0 => "← → or Enter to change theme (auto-saves)",
@@ -185,6 +191,7 @@ fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
         6 => "← → or Enter to toggle auto-continue (random songs when queue ends)",
         7 => "← → or Enter to toggle scrobbling (report plays to the server)",
         8 => "← → or Enter to toggle background daemon (takes effect on next launch)",
+        9 => "← → or Enter to toggle desktop notifications on track change",
         _ => "",
     }
 }
@@ -261,7 +268,15 @@ mod tests {
             settings_help_text(8, true).contains("daemon"),
             "idx 8 is Daemon"
         );
-        assert_eq!(settings_help_text(9, true), "", "no field beyond Daemon");
+        assert!(
+            settings_help_text(9, true).contains("notifications"),
+            "idx 9 is Desktop Notifications"
+        );
+        assert_eq!(
+            settings_help_text(10, true),
+            "",
+            "no field beyond Notifications"
+        );
     }
 
     #[test]

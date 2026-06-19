@@ -258,7 +258,7 @@ pub struct AlbumDetail {
 }
 
 /// Song / media item. Subsonic calls this `Child`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Child {
     /// Unique Subsonic ID.
     pub id: String,
