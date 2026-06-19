@@ -164,6 +164,8 @@ async fn pause_resume_under_replace_storm_stays_consistent() {
         s.queue = songs("t", 16);
         s.queue_position = Some(0);
         s.now_playing.state = PlaybackState::Playing;
+        // This test exercises lock consistency, not the resume settle delay.
+        s.config.rate_switch_delay_ms = 0;
     }
     let client = Arc::new(InProcessClient::new(td.core.clone())) as Arc<dyn DaemonClient>;
 

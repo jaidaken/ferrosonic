@@ -10,7 +10,7 @@
   gap in the first instant of music. Now the track loads silently, the device
   re-clocks to the new rate during that silence, and playback begins only once
   the rate is locked. Tracks at the same rate start with no added delay. A new
-  advanced setting `RateSwitchDelayMs` (default 250) tunes the silent settle
+  advanced setting `RateSwitchDelayMs` (default 500) tunes the silent settle
   for DACs that re-lock slowly.
 
 ### Fixed

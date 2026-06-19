@@ -207,6 +207,8 @@ async fn r1_toggle_pause_state_stays_consistent_under_replace() {
         s.queue_position = Some(0);
         s.now_playing.state = PlaybackState::Playing;
         s.now_playing.song = Some(s.queue[0].clone());
+        // This test exercises state consistency, not the resume settle delay.
+        s.config.rate_switch_delay_ms = 0;
     }
     let client = Arc::new(InProcessClient::new(td.core.clone())) as Arc<dyn DaemonClient>;
 

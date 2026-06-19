@@ -326,7 +326,7 @@ impl Config {
     }
 
     fn default_rate_switch_delay_ms() -> u32 {
-        250
+        500
     }
 
     /// Alias for [`Config::default`].

@@ -32,7 +32,7 @@ async fn wait_for_force_rate(pw: &RecordingPwRunner, want: &str) -> bool {
 
 #[tokio::test]
 #[serial]
-async fn pause_keeps_force_rate_pin() {
+async fn pause_releases_force_rate_pin() {
     let (td, pw) = TestDaemon::new_with_pw_recorder().await;
     {
         let mut s = td.state.write().await;
@@ -47,9 +47,10 @@ async fn pause_keeps_force_rate_pin() {
         .expect("pause did not hang")
         .unwrap();
 
-    assert!(
-        pw.force_rate_values().is_empty(),
-        "pause must keep the pin (issue no force-rate change) so resume is gapless"
+    assert_eq!(
+        pw.force_rate_values(),
+        vec!["0".to_string()],
+        "pause must clear the force-rate so other apps can use the device"
     );
 }
 
@@ -79,7 +80,7 @@ async fn stop_releases_force_rate_pin() {
 
 #[tokio::test]
 #[serial]
-async fn play_pins_rate_then_pause_keeps_it() {
+async fn play_pins_rate_then_pause_clears_it() {
     let (td, pw) = TestDaemon::new_with_pw_recorder().await;
     td.fake_mpv
         .set_property("audio-params/samplerate", json!(44_100))
@@ -106,7 +107,48 @@ async fn play_pins_rate_then_pause_keeps_it() {
 
     assert_eq!(
         pw.force_rate_values().last().map(String::as_str),
-        Some("44100"),
-        "pause keeps the pin at the track rate (released only on stop)"
+        Some("0"),
+        "pause after play must clear the pin back to 0"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn resume_re_pins_the_track_rate() {
+    let (td, pw) = TestDaemon::new_with_pw_recorder().await;
+    td.fake_mpv
+        .set_property("audio-params/samplerate", json!(96_000))
+        .await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = songs("t", 1);
+        // Keep the settle sleep out of the test.
+        s.config.rate_switch_delay_ms = 0;
+    }
+
+    timeout(OP, td.core.play_queue_position(0, PlayMode::Direct))
+        .await
+        .expect("play did not hang")
+        .unwrap();
+    assert!(wait_for_force_rate(&pw, "96000").await, "play pins 96000");
+
+    timeout(OP, td.core.pause_playback())
+        .await
+        .expect("pause did not hang")
+        .unwrap();
+    assert_eq!(
+        pw.force_rate_values().last().map(String::as_str),
+        Some("0"),
+        "pause releases the pin"
+    );
+
+    timeout(OP, td.core.resume_playback())
+        .await
+        .expect("resume did not hang")
+        .unwrap();
+    assert_eq!(
+        pw.force_rate_values().last().map(String::as_str),
+        Some("96000"),
+        "resume re-pins the device to the track's rate before audio"
     );
 }
