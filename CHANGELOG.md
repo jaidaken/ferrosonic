@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-19
+
 ### Added
 
 - **Scrobbling.** Plays are reported to the server so play counts, last-played,
