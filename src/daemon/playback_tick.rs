@@ -176,6 +176,12 @@ impl DaemonCore {
     }
 
     /// Verify-then-commit a gapless advance: under one write lock, re-derive the next song and atomically swap state. Returns whether the advance happened.
+    /// Test seam: run a gapless advance and discard the internal outcome.
+    #[doc(hidden)]
+    pub async fn try_gapless_advance_for_test(self: &Arc<Self>) {
+        let _ = self.try_gapless_advance().await;
+    }
+
     async fn try_gapless_advance(self: &Arc<Self>) -> GaplessOutcome {
         let next_pos = {
             let mut state = self.state.write().await;
@@ -191,6 +197,10 @@ impl DaemonCore {
                 state.now_playing.song = Some(song.clone());
                 state.now_playing.position = 0.0;
                 state.now_playing.duration = song.duration.unwrap_or(0) as f64;
+                // Clear so the tick re-probes + re-pins; a gapless jump across
+                // sample rates must not stay pinned to the previous track's rate.
+                state.now_playing.sample_rate = None;
+                state.now_playing.bit_depth = None;
                 Some(next_pos)
             } else {
                 None
