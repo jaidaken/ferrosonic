@@ -46,6 +46,7 @@ fn song(id: &str) -> Child {
         is_dir: false,
         album: None,
         artist: None,
+        artist_id: None,
         track: None,
         year: None,
         genre: None,
@@ -259,6 +260,40 @@ async fn enter_on_greyed_album_artist_expands_its_full_catalog() {
     assert!(
         cs.artists.expanded.contains("a2"),
         "Enter on the greyed album-artist expands its catalog so non-matching albums show"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn enter_on_a_search_songs_artist_expands_it_via_the_song_artist_id() {
+    let (mut app, _td) = build_app_with_td().await;
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.library
+            .albums_cache
+            .insert("a3".into(), vec![album("alb-cat", "Catalogue")]);
+    }
+    {
+        let mut cs = app.client_state.write().await;
+        cs.artists.filter = "redempt".into();
+        let mut s = song("redempt-track");
+        s.title = "Redemption".into();
+        s.artist = Some("Marley".into());
+        s.artist_id = Some("a3".into());
+        s.album = Some("Catalogue".into());
+        cs.artists.search_results = Some(SearchResult3 {
+            artist: vec![],
+            album: vec![],
+            song: vec![s],
+        });
+        // The song's artist is row 0, selectable via its artistId.
+        cs.artists.selected_index = Some(0);
+    }
+    app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    let cs = app.client_state.read().await;
+    assert!(
+        cs.artists.expanded.contains("a3"),
+        "Enter on a matched song's artist expands it using the song's artistId"
     );
 }
 

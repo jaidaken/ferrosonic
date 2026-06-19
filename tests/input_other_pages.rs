@@ -50,6 +50,7 @@ async fn queue_page_down_advances_selected() {
                 is_dir: false,
                 album: None,
                 artist: None,
+                artist_id: None,
                 track: None,
                 year: None,
                 genre: None,

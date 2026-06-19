@@ -161,6 +161,9 @@ fn build_search_items(
     {
         let artist_name = song.artist.as_deref().unwrap_or("");
         let group = artist_slot(&mut order, &mut groups, artist_name);
+        if group.id.is_none() {
+            group.id.clone_from(&song.artist_id);
+        }
         match song.album.as_deref() {
             Some(album_name) if !album_name.is_empty() => {
                 album_slot(group, album_name, song.year)
@@ -202,10 +205,8 @@ fn build_search_items(
         }
         if is_expanded {
             if let Some(id) = &expand_id {
-                push_sorted_albums(
-                    &mut items,
-                    albums_cache.get(id).cloned().unwrap_or_default(),
-                );
+                let catalog = albums_cache.get(id).cloned().unwrap_or_default();
+                push_expanded_catalog(&mut items, catalog, group);
                 continue;
             }
         }
@@ -285,13 +286,50 @@ fn push_artist_with_albums(
 
 /// Push album rows sorted by release year (oldest first; undated last).
 fn push_sorted_albums(items: &mut Vec<TreeItem>, mut albums: Vec<Album>) {
+    sort_albums_by_year(&mut albums);
+    items.extend(albums.into_iter().map(|album| TreeItem::Album { album }));
+}
+
+/// Sort albums by release year, oldest first, undated last.
+fn sort_albums_by_year(albums: &mut [Album]) {
     albums.sort_by(|a, b| match (a.year, b.year) {
         (None, None) => std::cmp::Ordering::Equal,
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (Some(_), None) => std::cmp::Ordering::Less,
         (Some(y1), Some(y2)) => y1.cmp(&y2),
     });
-    items.extend(albums.into_iter().map(|album| TreeItem::Album { album }));
+}
+
+/// Push an expanded artist's full catalogue, nesting the group's matched songs
+/// under the album they belong to so a searched track keeps its place; songs
+/// whose album is not in the catalogue, then album-less songs, follow at the end.
+fn push_expanded_catalog(items: &mut Vec<TreeItem>, mut catalog: Vec<Album>, group: &SearchArtist) {
+    sort_albums_by_year(&mut catalog);
+    let mut by_album: HashMap<String, Vec<Child>> = HashMap::new();
+    for node in &group.albums {
+        if !node.songs.is_empty() {
+            by_album.insert(node.name.to_lowercase(), node.songs.clone());
+        }
+    }
+    for album in catalog {
+        let key = album.name.to_lowercase();
+        items.push(TreeItem::Album { album });
+        if let Some(songs) = by_album.remove(&key) {
+            items.extend(songs.into_iter().map(|song| TreeItem::Song { song }));
+        }
+    }
+    for node in &group.albums {
+        if let Some(songs) = by_album.remove(&node.name.to_lowercase()) {
+            items.push(TreeItem::AlbumLabel {
+                name: node.name.clone(),
+                year: node.year,
+            });
+            items.extend(songs.into_iter().map(|song| TreeItem::Song { song }));
+        }
+    }
+    for song in &group.direct_songs {
+        items.push(TreeItem::Song { song: song.clone() });
+    }
 }
 
 /// Render one flat album-list row: name, optional year, then muted artist.

@@ -11,9 +11,11 @@
 ### Changed
 
 - **Drill into any artist from search.** Enter on a matched artist opens its
-  albums; a greyed album-artist (shown because one of its albums matched) is
-  now selectable too, so Enter on it reveals the rest of that artist's
-  catalogue. Press Enter on an album to play it.
+  albums; a greyed artist shown because one of its albums *or songs* matched
+  is now selectable too, so Enter on it reveals the rest of that artist's
+  catalogue. The matched song stays nested under its own album, and the
+  album's other tracks load into the right pane when you highlight it. Press
+  Enter on an album to play it.
 - **Matched text is highlighted** in search results, so you can see at a
   glance why each row came back.
 - **Highlighting a search song follows its album.** Moving onto a song in

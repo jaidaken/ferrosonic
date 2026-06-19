@@ -76,6 +76,7 @@ async fn n_with_current_song_stars_it() {
             is_dir: false,
             album: None,
             artist: None,
+            artist_id: None,
             track: None,
             year: None,
             genre: None,

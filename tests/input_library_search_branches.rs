@@ -37,6 +37,7 @@ fn song(id: &str) -> Child {
         is_dir: false,
         album: None,
         artist: None,
+        artist_id: None,
         track: None,
         year: None,
         genre: None,

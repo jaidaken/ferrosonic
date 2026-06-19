@@ -258,6 +258,9 @@ pub struct Child {
     /// Artist name.
     #[serde(default)]
     pub artist: Option<String>,
+    /// ID of the song's artist, when the server provides it.
+    #[serde(default, rename = "artistId")]
+    pub artist_id: Option<String>,
     /// Track number within the disc.
     #[serde(default)]
     pub track: Option<i32>,

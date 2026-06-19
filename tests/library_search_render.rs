@@ -222,6 +222,56 @@ fn search_album_match_does_not_show_its_songs_in_the_tree() {
 }
 
 #[test]
+fn search_expanded_song_artist_nests_the_matched_song_under_its_catalog_album() {
+    // A title match exposes its artist (greyed, via the song's artistId);
+    // expanding it shows the catalogue with the matched song still nested.
+    let (mut daemon, mut client) = build_state();
+    client.page = Page::Library;
+    client.artists.filter_active = true;
+    client.artists.filter = "redempt".into();
+    let mut s = song("s0", "Redemption Song");
+    s.artist = Some("Bob Marley".into());
+    s.artist_id = Some("a-marley".into());
+    s.album = Some("Uprising".into());
+    client.artists.search_results = Some(SearchResult3 {
+        artist: vec![],
+        album: vec![],
+        song: vec![s],
+    });
+    client.artists.expanded.insert("a-marley".into());
+    let cat = |id: &str, name: &str, year: i32| Album {
+        id: id.into(),
+        name: name.into(),
+        artist: Some("Bob Marley".into()),
+        artist_id: Some("a-marley".into()),
+        cover_art: None,
+        song_count: Some(10),
+        original_release_date: None,
+        duration: Some(2400),
+        year: Some(year),
+        genre: None,
+    };
+    daemon.library.albums_cache.insert(
+        "a-marley".into(),
+        vec![
+            cat("alb-up", "Uprising", 1980),
+            cat("alb-ex", "Exodus", 1977),
+        ],
+    );
+    let frame = render(120, 40, &daemon, &mut client);
+    assert!(
+        frame.contains("Exodus") && frame.contains("Uprising"),
+        "the expanded artist shows its whole catalogue;\n{frame}"
+    );
+    let up = frame.find("Uprising");
+    let song_at = frame.find("Redemption Song");
+    assert!(
+        matches!((up, song_at), (Some(u), Some(s)) if s > u),
+        "the matched song nests under its album, after it;\n{frame}"
+    );
+}
+
+#[test]
 fn search_matched_song_nests_under_greyed_album_and_artist() {
     // Title match: the song is the selectable leaf; its album and artist render
     // as greyed context above it.

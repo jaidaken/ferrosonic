@@ -10,6 +10,7 @@ pub fn song(id: &str, title: &str) -> Child {
         is_dir: false,
         album: Some("Test Album".into()),
         artist: Some("Test Artist".into()),
+        artist_id: None,
         track: None,
         year: None,
         genre: None,
