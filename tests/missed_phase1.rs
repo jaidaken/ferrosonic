@@ -163,9 +163,9 @@ async fn load_album_songs_cache_hit_uses_cached_value() {
     }
     let songs = td.core.load_album_songs("alb-cached").await;
     assert_eq!(
-        songs.len(),
-        0,
-        "load_album_songs hits subsonic regardless of cache (cache is only library state)"
+        songs.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+        vec!["cached-s0", "cached-s1"],
+        "load_album_songs serves cached songs instead of re-hitting subsonic on every hover"
     );
 }
 

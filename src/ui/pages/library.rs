@@ -357,9 +357,12 @@ fn album_row(album: &Album, is_selected: bool, colors: &ThemeColors) -> ListItem
 /// `hit` and the rest with `base`. Bails to one `base` span when the query is
 /// empty or lowercasing shifts byte lengths, so it never slices mid-`char`.
 fn highlight_spans(text: &str, query: &str, base: Style, hit: Style) -> Vec<Span<'static>> {
+    if query.is_empty() {
+        return vec![Span::styled(text.to_string(), base)];
+    }
     let lower = text.to_lowercase();
     let q = query.to_lowercase();
-    if q.is_empty() || lower.len() != text.len() {
+    if lower.len() != text.len() {
         return vec![Span::styled(text.to_string(), base)];
     }
     let mut spans = Vec::new();
@@ -403,42 +406,47 @@ fn tree_row(
             Style::default().fg(fg)
         }
     };
-    let hit = styled(colors.primary).add_modifier(Modifier::BOLD);
-    let name_spans = |text: &str, base: Style| highlight_spans(text, query, base, hit);
-    match item {
+    let (prefix, name, suffix, base): (&str, &str, String, Style) = match item {
         TreeItem::Artist { artist, greyed, .. } => {
-            let base = styled(if *greyed { colors.muted } else { colors.artist });
-            ListItem::new(Line::from(name_spans(&artist.name, base)))
+            let fg = if *greyed { colors.muted } else { colors.artist };
+            ("", artist.name.as_str(), String::new(), styled(fg))
         }
         TreeItem::Album { album } => {
-            let base = styled(colors.album);
-            let mut spans = vec![Span::styled("  └─ ".to_string(), base)];
-            spans.extend(name_spans(&album.name, base));
-            if let Some(y) = album.year {
-                spans.push(Span::styled(format!(" [{y}]"), base));
-            }
-            ListItem::new(Line::from(spans))
+            let year = album.year.map(|y| format!(" [{y}]")).unwrap_or_default();
+            ("  └─ ", album.name.as_str(), year, styled(colors.album))
         }
-        TreeItem::Song { song } => {
-            let base = styled(colors.song);
-            let mut spans = vec![Span::styled("      └─ ".to_string(), base)];
-            spans.extend(name_spans(&song.title, base));
-            ListItem::new(Line::from(spans))
-        }
-        TreeItem::ArtistLabel { name } => {
-            let base = Style::default().fg(colors.muted);
-            ListItem::new(Line::from(name_spans(name, base)))
-        }
+        TreeItem::Song { song } => (
+            "      └─ ",
+            song.title.as_str(),
+            String::new(),
+            styled(colors.song),
+        ),
+        TreeItem::ArtistLabel { name } => (
+            "",
+            name.as_str(),
+            String::new(),
+            Style::default().fg(colors.muted),
+        ),
         TreeItem::AlbumLabel { name, year } => {
-            let base = Style::default().fg(colors.muted);
-            let mut spans = vec![Span::styled("  └─ ".to_string(), base)];
-            spans.extend(name_spans(name, base));
-            if let Some(y) = year {
-                spans.push(Span::styled(format!(" [{y}]"), base));
-            }
-            ListItem::new(Line::from(spans))
+            let y = year.map(|y| format!(" [{y}]")).unwrap_or_default();
+            ("  └─ ", name.as_str(), y, Style::default().fg(colors.muted))
         }
+    };
+    // Browsing (no query) keeps the cheap one-string path; only search pays for
+    // span-splitting. tree_row runs per row every frame, so this matters.
+    if query.is_empty() {
+        return ListItem::new(format!("{prefix}{name}{suffix}")).style(base);
     }
+    let hit = styled(colors.primary).add_modifier(Modifier::BOLD);
+    let mut spans = Vec::new();
+    if !prefix.is_empty() {
+        spans.push(Span::styled(prefix.to_string(), base));
+    }
+    spans.extend(highlight_spans(name, query, base, hit));
+    if !suffix.is_empty() {
+        spans.push(Span::styled(suffix, base));
+    }
+    ListItem::new(Line::from(spans))
 }
 
 /// Render the Library page.

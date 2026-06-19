@@ -13,6 +13,18 @@ impl DaemonCore {
         self: &Arc<Self>,
         album_id: &str,
     ) -> Vec<crate::subsonic::models::Child> {
+        // Serve cached songs so hovering rows in the tree does not re-hit the
+        // network on every keystroke; the cache tracks star changes already.
+        if let Some(songs) = self
+            .state
+            .read()
+            .await
+            .library
+            .album_songs_cache
+            .get(album_id)
+        {
+            return songs.clone();
+        }
         let Some(client) = self.subsonic.read().await.clone() else {
             return Vec::new();
         };
