@@ -171,40 +171,18 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => {
                 if state.client.artists.focus == 0 {
                     let tree_items = build_tree_items(&state);
-                    state.client.artists.selected_index = step_tree_selection(
+                    let sel = step_tree_selection(
                         &tree_items,
                         state.client.artists.selected_index,
                         false,
                     );
-                    let album_id = state
-                        .client
-                        .artists
-                        .selected_index
-                        .and_then(|i| tree_items.get(i))
-                        .and_then(|item| match item {
-                            TreeItem::Album { album } => Some(album.id.clone()),
-                            _ => None,
-                        });
-                    if let Some(album_id) = album_id {
-                        drop(state);
-                        drop(cs);
-                        drop(ds);
-                        let songs = self.load_album(&album_id).await;
-                        if !songs.is_empty() {
-                            let ds = self.daemon_state.read().await;
-                            let mut cs = self.client_state.write().await;
-                            let state = AppState {
-                                daemon: &ds,
-                                client: &mut cs,
-                            };
-                            state.client.artists.songs = songs;
-                            state.client.artists.selected_song = Some(0);
-                        }
-                        return Ok(());
-                    }
-                    // Artist row: no album hovered, show the playing album.
-                    state.client.artists.songs = state.daemon.queue.clone();
-                    state.client.artists.selected_song = state.daemon.queue_position;
+                    state.client.artists.selected_index = sel;
+                    let item = sel.and_then(|i| tree_items.get(i).cloned());
+                    drop(state);
+                    drop(cs);
+                    drop(ds);
+                    self.load_pane_for_tree_item(item).await;
+                    return Ok(());
                 } else if let Some(sel) = state.client.artists.selected_song {
                     if sel > 0 {
                         state.client.artists.selected_song = Some(sel - 1);
@@ -216,46 +194,23 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => {
                 if state.client.artists.focus == 0 {
                     let tree_items = build_tree_items(&state);
-                    state.client.artists.selected_index =
+                    let sel =
                         step_tree_selection(&tree_items, state.client.artists.selected_index, true);
-                    let album_id = state
-                        .client
-                        .artists
-                        .selected_index
-                        .and_then(|i| tree_items.get(i))
-                        .and_then(|item| match item {
-                            TreeItem::Album { album } => Some(album.id.clone()),
-                            _ => None,
-                        });
-                    if let Some(album_id) = album_id {
-                        drop(state);
-                        drop(cs);
-                        drop(ds);
-                        let songs = self.load_album(&album_id).await;
-                        if !songs.is_empty() {
-                            let ds = self.daemon_state.read().await;
-                            let mut cs = self.client_state.write().await;
-                            let state = AppState {
-                                daemon: &ds,
-                                client: &mut cs,
-                            };
-                            state.client.artists.songs = songs;
-                            state.client.artists.selected_song = Some(0);
-                        }
-                        return Ok(());
+                    state.client.artists.selected_index = sel;
+                    let item = sel.and_then(|i| tree_items.get(i).cloned());
+                    drop(state);
+                    drop(cs);
+                    drop(ds);
+                    self.load_pane_for_tree_item(item).await;
+                    return Ok(());
+                }
+                let max = state.client.artists.songs.len().saturating_sub(1);
+                if let Some(sel) = state.client.artists.selected_song {
+                    if sel < max {
+                        state.client.artists.selected_song = Some(sel + 1);
                     }
-                    // Artist row: no album hovered, show the playing album.
-                    state.client.artists.songs = state.daemon.queue.clone();
-                    state.client.artists.selected_song = state.daemon.queue_position;
-                } else {
-                    let max = state.client.artists.songs.len().saturating_sub(1);
-                    if let Some(sel) = state.client.artists.selected_song {
-                        if sel < max {
-                            state.client.artists.selected_song = Some(sel + 1);
-                        }
-                    } else if !state.client.artists.songs.is_empty() {
-                        state.client.artists.selected_song = Some(0);
-                    }
+                } else if !state.client.artists.songs.is_empty() {
+                    state.client.artists.selected_song = Some(0);
                 }
             }
             KeyCode::Char('t') if state.client.artists.focus == 0 => {
@@ -825,6 +780,44 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Update the right pane to follow the highlighted tree row (focus stays on
+    /// the tree). An album row shows its tracks; a song row shows that song's
+    /// album with the song itself pre-selected so Right lands on it; anything
+    /// else shows the playing queue.
+    async fn load_pane_for_tree_item(&self, item: Option<crate::ui::pages::library::TreeItem>) {
+        use crate::ui::pages::library::TreeItem;
+        match item {
+            Some(TreeItem::Album { album }) => {
+                let songs = self.load_album(&album.id).await;
+                if !songs.is_empty() {
+                    let mut cs = self.client_state.write().await;
+                    cs.artists.songs = songs;
+                    cs.artists.selected_song = Some(0);
+                }
+            }
+            Some(TreeItem::Song { song }) => {
+                let album_songs = match song.parent.as_deref() {
+                    Some(album_id) => self.load_album(album_id).await,
+                    None => Vec::new(),
+                };
+                let mut cs = self.client_state.write().await;
+                if let Some(idx) = album_songs.iter().position(|s| s.id == song.id) {
+                    cs.artists.songs = album_songs;
+                    cs.artists.selected_song = Some(idx);
+                } else {
+                    cs.artists.songs = vec![song];
+                    cs.artists.selected_song = Some(0);
+                }
+            }
+            _ => {
+                let ds = self.daemon_state.read().await;
+                let mut cs = self.client_state.write().await;
+                cs.artists.songs = ds.queue.clone();
+                cs.artists.selected_song = ds.queue_position;
+            }
+        }
     }
 
     /// Load the currently-selected album's songs into the right pane so it

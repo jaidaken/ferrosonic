@@ -149,6 +149,53 @@ async fn up_arrow_on_album_in_tree_auto_loads_songs() {
 
 #[tokio::test]
 #[serial]
+async fn highlighting_search_song_loads_its_album_with_that_song_preselected() {
+    let (mut app, td) = build_app_with_td().await;
+    td.fake_subsonic
+        .expect_get_album("alb-x", "Album X", &["First", "Second", "Third"])
+        .await;
+    {
+        let mut cs = app.client_state.write().await;
+        cs.artists.focus = 0;
+        cs.artists.filter = "second".into();
+        let mut s = song("song-1");
+        s.title = "Second".into();
+        s.parent = Some("alb-x".into());
+        cs.artists.search_results = Some(SearchResult3 {
+            artist: vec![],
+            album: vec![],
+            song: vec![s],
+        });
+        cs.artists.selected_index = None;
+    }
+    // Down lands on the lone song row; its album fills the pane.
+    app.handle_key(key(KeyCode::Down)).await.unwrap();
+    {
+        let cs = app.client_state.read().await;
+        assert_eq!(
+            cs.artists.songs.len(),
+            3,
+            "the song's whole album loads into the pane"
+        );
+        assert_eq!(
+            cs.artists.selected_song,
+            Some(1),
+            "the matched song is pre-selected within the album, not the first track"
+        );
+    }
+    // Right moves focus to the pane and keeps the matched song selected.
+    app.handle_key(key(KeyCode::Right)).await.unwrap();
+    let cs = app.client_state.read().await;
+    assert_eq!(cs.artists.focus, 1, "Right focuses the song pane");
+    assert_eq!(
+        cs.artists.selected_song,
+        Some(1),
+        "Right lands on the matched song, not the first"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn t_on_song_in_tree_plays_single() {
     let (mut app, td) = build_app_with_td().await;
     {
