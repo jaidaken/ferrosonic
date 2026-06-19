@@ -64,6 +64,13 @@ pub enum DaemonRequest {
     RefreshArtists,
     /// Re-fetch the playlist list from the server.
     RefreshPlaylists,
+    /// Create a server-side playlist from an ordered list of song IDs.
+    CreatePlaylist {
+        /// Playlist name as typed by the user.
+        name: String,
+        /// Song IDs in queue order.
+        song_ids: Vec<String>,
+    },
     /// Star or unstar the song with this ID.
     ToggleStarSong(String),
     /// Fetch the albums of the artist with this ID.

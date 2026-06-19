@@ -111,6 +111,19 @@ impl SubsonicClient {
             .await
     }
 
+    /// Create a new server-side playlist `name` containing `song_ids`, in order.
+    pub async fn create_playlist(
+        &self,
+        name: &str,
+        song_ids: &[String],
+    ) -> Result<(), SubsonicError> {
+        let mut endpoint = format!("createPlaylist?name={}", urlencoding::encode(name));
+        for id in song_ids {
+            endpoint.push_str(&format!("&songId={}", urlencoding::encode(id)));
+        }
+        self.request_action(&endpoint).await
+    }
+
     async fn request<T>(&self, endpoint: &str) -> Result<T, SubsonicError>
     where
         T: serde::de::DeserializeOwned,

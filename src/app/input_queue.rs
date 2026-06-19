@@ -13,6 +13,51 @@ impl App {
             client: &mut cs,
         };
 
+        // Save-as-playlist name box owns all keys while open.
+        if state.client.queue_state.naming_playlist {
+            match key.code {
+                KeyCode::Esc => {
+                    state.client.queue_state.naming_playlist = false;
+                    state.client.queue_state.playlist_name.clear();
+                }
+                KeyCode::Backspace => {
+                    state.client.queue_state.playlist_name.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.client.queue_state.playlist_name.push(c);
+                }
+                KeyCode::Enter => {
+                    let name = state.client.queue_state.playlist_name.trim().to_string();
+                    if name.is_empty() {
+                        state.client.notify("Playlist name cannot be empty");
+                        return Ok(());
+                    }
+                    let song_ids: Vec<String> =
+                        state.daemon.queue.iter().map(|s| s.id.clone()).collect();
+                    state.client.queue_state.naming_playlist = false;
+                    state.client.queue_state.playlist_name.clear();
+                    if song_ids.is_empty() {
+                        state.client.notify("Queue is empty");
+                        return Ok(());
+                    }
+                    let count = song_ids.len();
+                    state
+                        .client
+                        .notify(format!("Saved playlist: {name} ({count} songs)"));
+                    drop(state);
+                    drop(cs);
+                    drop(ds);
+                    let _ = self
+                        .client
+                        .request(DaemonRequest::CreatePlaylist { name, song_ids })
+                        .await;
+                    return Ok(());
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(sel) = state.client.queue_state.selected {
@@ -118,6 +163,14 @@ impl App {
                 drop(ds);
                 let _ = self.client.request(DaemonRequest::ShuffleQueue).await;
                 return Ok(());
+            }
+            KeyCode::Char('s') => {
+                if state.daemon.queue.is_empty() {
+                    state.client.notify("Queue is empty");
+                } else {
+                    state.client.queue_state.naming_playlist = true;
+                    state.client.queue_state.playlist_name.clear();
+                }
             }
             KeyCode::Char('c') => {
                 let pos = state.daemon.queue_position;

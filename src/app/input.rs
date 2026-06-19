@@ -88,13 +88,19 @@ impl App {
             if state.client.page == Page::Library && state.client.artists.filter_active {
                 state.client.artists.filter_active = false;
             }
+            if state.client.page == Page::Queue && state.client.queue_state.naming_playlist {
+                state.client.queue_state.naming_playlist = false;
+                state.client.queue_state.playlist_name.clear();
+            }
         } else {
             let is_server_text_field =
                 state.client.page == Page::Server && state.client.server_state.selected_field <= 2;
             let is_filtering =
                 state.client.page == Page::Library && state.client.artists.filter_active;
+            let is_naming_playlist =
+                state.client.page == Page::Queue && state.client.queue_state.naming_playlist;
 
-            if is_server_text_field || is_filtering {
+            if is_server_text_field || is_filtering || is_naming_playlist {
                 let page = state.client.page;
                 drop(state);
                 drop(cs);
@@ -102,6 +108,7 @@ impl App {
                 return match page {
                     Page::Server => self.handle_server_key(key).await,
                     Page::Library => self.handle_library_key(key).await,
+                    Page::Queue => self.handle_queue_key(key).await,
                     _ => Ok(()),
                 };
             }

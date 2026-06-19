@@ -117,6 +117,14 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_create_playlist(&self) {
+        Mock::given(method("GET"))
+            .and(path("/rest/createPlaylist"))
+            .respond_with(ok_body(json!({})))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_star(&self) {
         Mock::given(method("GET"))
             .and(path("/rest/star"))

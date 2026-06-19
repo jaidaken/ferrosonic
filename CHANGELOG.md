@@ -2,8 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Save the queue as a playlist.** Press `s` on the Queue page, type a
+  name, and Enter creates a server-side playlist from the queue in order.
+  Esc cancels.
+
 ### Changed
 
+- **Highlighting a search song follows its album.** Moving onto a song in
+  the search results loads that song's whole album into the right pane with
+  the song itself selected, so pressing Right lands on the matched track
+  instead of the first one.
 - **Library search is now one unified search.** Typing after `/` searches
   artists, albums, and songs at once; the old `/` `//` `///` scope cycle is
   gone. Results form a tree that stops at the match: an artist match is a

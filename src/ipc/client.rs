@@ -180,6 +180,13 @@ impl DaemonClient for InProcessClient {
                 self.core.refresh_playlists().await;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::CreatePlaylist { name, song_ids } => {
+                self.core
+                    .create_playlist(&name, &song_ids)
+                    .await
+                    .map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
             DaemonRequest::ToggleStarSong(id) => {
                 self.core.toggle_star_song(&id).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)

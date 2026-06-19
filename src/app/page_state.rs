@@ -122,6 +122,10 @@ pub struct QueueState {
     pub selected: Option<usize>,
     /// First visible row of the queue list.
     pub scroll_offset: usize,
+    /// True while the save-as-playlist name box is capturing input.
+    pub naming_playlist: bool,
+    /// Playlist name being typed in that box.
+    pub playlist_name: String,
 }
 
 /// UI state of the Playlists page.

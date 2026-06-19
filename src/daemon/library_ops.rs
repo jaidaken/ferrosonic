@@ -123,6 +123,27 @@ impl DaemonCore {
         }
     }
 
+    /// Create playlist `name` from `song_ids`, then refresh so the new playlist
+    /// lands in `state.library.playlists` and a `PlaylistsChanged` event fires.
+    pub async fn create_playlist(
+        self: &Arc<Self>,
+        name: &str,
+        song_ids: &[String],
+    ) -> Result<(), Error> {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return Err(Error::Subsonic(crate::error::SubsonicError::Api {
+                code: 0,
+                message: "Subsonic client not configured".to_string(),
+            }));
+        };
+        client
+            .create_playlist(name, song_ids)
+            .await
+            .map_err(Error::Subsonic)?;
+        self.refresh_playlists().await;
+        Ok(())
+    }
+
     /// Star or unstar `song_id`; returns the new starred state.
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
         let Some(client) = self.subsonic.read().await.clone() else {

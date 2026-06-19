@@ -95,6 +95,7 @@ impl<'a> Footer<'a> {
                 s("d", "Remove"),
                 s("J/K", "Move"),
                 s("t", "Shuffle"),
+                s("s", "Save playlist"),
                 s("c", "Clear history"),
                 s("Enter", "Play"),
             ],

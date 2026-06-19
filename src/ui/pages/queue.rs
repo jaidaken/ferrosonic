@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -123,4 +123,40 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
 
     frame.render_stateful_widget(list, area, &mut list_state);
     state.client.queue_state.scroll_offset = list_state.offset();
+
+    if state.client.queue_state.naming_playlist {
+        render_name_box(
+            frame,
+            area,
+            &state.client.queue_state.playlist_name,
+            &colors,
+        );
+    }
+}
+
+/// Draw the save-as-playlist input box over the bottom of the queue area.
+fn render_name_box(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    name: &str,
+    colors: &crate::ui::theme::ThemeColors,
+) {
+    let height = 3;
+    let width = area.width.saturating_sub(4).max(10);
+    let box_area = Rect {
+        x: area.x + 2,
+        y: area.y + area.height.saturating_sub(height + 1),
+        width,
+        height,
+    };
+    let input = Paragraph::new(format!("{name}\u{2588}"))
+        .style(Style::default().fg(colors.primary))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Save as playlist  (Enter: save  Esc: cancel) ")
+                .border_style(Style::default().fg(colors.primary)),
+        );
+    frame.render_widget(Clear, box_area);
+    frame.render_widget(input, box_area);
 }
