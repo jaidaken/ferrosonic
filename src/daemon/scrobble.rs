@@ -123,7 +123,10 @@ impl DaemonCore {
                     duration,
                     last_position: position,
                     last_state: state,
-                    ..Default::default()
+                    // A track first seen already past the threshold (scrobbling
+                    // re-enabled mid-play) must not re-submit a counted play.
+                    submitted: classic_reached(position, duration),
+                    now_playing_sent: false,
                 };
                 if let Some(nid) = id.clone() {
                     if state == PlaybackState::Playing {

@@ -316,16 +316,16 @@ impl DaemonCore {
     pub async fn update_playback_info(self: &Arc<Self>) {
         let inputs = self.gather_playback_tick_inputs().await;
         let action = Self::decide_playback_tick_action(&inputs);
-        if matches!(
-            self.apply_playback_tick_action(action).await,
-            TickContinuation::Stop
-        ) {
+        let cont = self.apply_playback_tick_action(action).await;
+        // Runs every tick, including Skip/Stop, so a stop or end-of-queue still
+        // finalizes the played track (the modern path reports "stopped" there).
+        self.scrobble_tick().await;
+        if matches!(cont, TickContinuation::Stop) {
             return;
         }
         self.tick_emit_position().await;
         self.tick_backfill_duration().await;
         self.tick_fetch_audio_properties_if_needed().await;
-        self.scrobble_tick().await;
     }
 }
 

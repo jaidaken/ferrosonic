@@ -126,6 +126,60 @@ async fn modern_reports_playing_on_start() {
 
 #[tokio::test]
 #[serial]
+async fn modern_reports_stopped_when_playback_ends() {
+    let td = TestDaemon::new().await;
+    settle_capability(&td).await;
+    td.core.set_playback_report_for_test(true);
+    td.fake_subsonic.expect_report_playback().await;
+
+    // Play, then clear the track (stop / end of queue).
+    set_now_playing(&td, "s1", PlaybackState::Playing, 100.0, 300.0).await;
+    td.core.scrobble_tick().await;
+    {
+        let mut s = td.state.write().await;
+        s.now_playing.song = None;
+        s.now_playing.state = PlaybackState::Stopped;
+        s.now_playing.position = 0.0;
+    }
+    td.core.scrobble_tick().await;
+
+    assert!(
+        wait_for(&td, "/rest/reportPlayback").await,
+        "reportPlayback sent"
+    );
+    let qs = query(&td, "/rest/reportPlayback").await;
+    assert!(
+        qs.iter()
+            .any(|q| q.contains("mediaId=s1") && q.contains("state=stopped")),
+        "a stopped/cleared track reports state=stopped so the server scrobbles it; saw {qs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn classic_does_not_resubmit_a_track_first_seen_past_threshold() {
+    let td = TestDaemon::new().await;
+    settle_capability(&td).await;
+    td.core.set_playback_report_for_test(false);
+    td.fake_subsonic.expect_scrobble().await;
+
+    // First observation already past 50% (scrobbling re-enabled mid-play); a
+    // played-submission must NOT fire, or the play double-counts.
+    set_now_playing(&td, "s1", PlaybackState::Playing, 200.0, 300.0).await;
+    td.core.scrobble_tick().await;
+    set_now_playing(&td, "s1", PlaybackState::Playing, 260.0, 300.0).await;
+    td.core.scrobble_tick().await;
+    tokio::time::sleep(Duration::from_millis(80)).await;
+
+    let qs = query(&td, "/rest/scrobble").await;
+    assert!(
+        !qs.iter().any(|q| q.contains("submission=true")),
+        "no played-submission for a track first seen past threshold; saw {qs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn disabled_config_sends_nothing() {
     let td = TestDaemon::new().await;
     settle_capability(&td).await;
