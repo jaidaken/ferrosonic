@@ -95,7 +95,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-mutants
+          tool: cargo-mutants,cargo-nextest
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev pkg-config mpv
       # Exclude stress_proptest: its ~44s property run blows the per-mutant
       # timeout and aborts the whole baseline (weak per-mutant signal anyway,
