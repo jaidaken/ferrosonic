@@ -39,7 +39,9 @@ impl App {
 
                 if is_second_click {
                     match &tree_items[item_index] {
-                        TreeItem::Artist { artist, expanded } => {
+                        TreeItem::Artist {
+                            artist, expanded, ..
+                        } => {
                             let artist_id = artist.id.clone();
                             let artist_name = artist.name.clone();
                             let was_expanded = *expanded;

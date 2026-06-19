@@ -25,6 +25,9 @@ pub enum TreeItem {
         artist: Artist,
         /// Whether its albums are expanded.
         expanded: bool,
+        /// Greyed context artist in search (the album matched, not the artist);
+        /// still selectable and Enter-expandable into its full catalog.
+        greyed: bool,
     },
     /// Album row under an expanded artist.
     Album {
@@ -62,6 +65,8 @@ struct SearchAlbum {
 /// One artist group within the search tree, keyed by lowercased artist name.
 struct SearchArtist {
     matched: Option<Artist>,
+    /// Artist ID from a matched album, enabling Enter-expand of a greyed group.
+    id: Option<String>,
     name: String,
     albums: Vec<SearchAlbum>,
     album_idx: HashMap<String, usize>,
@@ -79,6 +84,7 @@ fn artist_slot<'m>(
         order.push(key);
         SearchArtist {
             matched: None,
+            id: None,
             name: name.to_string(),
             albums: Vec::new(),
             album_idx: HashMap::new(),
@@ -126,7 +132,9 @@ fn build_search_items(
 
     // Matched artists lead the order.
     for a in &results.artist {
-        artist_slot(&mut order, &mut groups, &a.name).matched = Some(a.clone());
+        let group = artist_slot(&mut order, &mut groups, &a.name);
+        group.matched = Some(a.clone());
+        group.id = Some(a.id.clone());
     }
     // Albums whose own name matches.
     for alb in results
@@ -136,6 +144,9 @@ fn build_search_items(
     {
         let artist_name = alb.artist.as_deref().unwrap_or("");
         let group = artist_slot(&mut order, &mut groups, artist_name);
+        if group.id.is_none() {
+            group.id.clone_from(&alb.artist_id);
+        }
         let node = album_slot(group, &alb.name, alb.year);
         node.album = Some(alb.clone());
         if node.year.is_none() {
@@ -163,28 +174,40 @@ fn build_search_items(
     let mut items = Vec::new();
     for key in &order {
         let group = &groups[key];
-        match &group.matched {
-            Some(a) => {
-                let is_expanded = expanded.contains(&a.id);
-                items.push(TreeItem::Artist {
-                    artist: a.clone(),
-                    expanded: is_expanded,
-                });
-                // Expanding a matched artist drills into its full cached catalog
-                // (issue #28: reach albums no name matched); collapsed stops here.
-                if is_expanded {
-                    push_sorted_albums(
-                        &mut items,
-                        albums_cache.get(&a.id).cloned().unwrap_or_default(),
-                    );
-                    continue;
-                }
-            }
-            // A song with no artist renders directly; no blank greyed header.
-            None if !group.name.is_empty() => items.push(TreeItem::ArtistLabel {
+        // A known artist ID (matched, or parent of a matched album) gives a
+        // selectable Enter-expandable row drilling into the full catalog (#28).
+        let expand_id = group.id.clone();
+        let is_expanded = expand_id.as_deref().is_some_and(|id| expanded.contains(id));
+        match (&group.matched, &expand_id) {
+            (Some(a), _) => items.push(TreeItem::Artist {
+                artist: a.clone(),
+                expanded: is_expanded,
+                greyed: false,
+            }),
+            (None, Some(id)) if !group.name.is_empty() => items.push(TreeItem::Artist {
+                artist: Artist {
+                    id: id.clone(),
+                    name: group.name.clone(),
+                    album_count: None,
+                    cover_art: None,
+                },
+                expanded: is_expanded,
+                greyed: true,
+            }),
+            // A song with no artist ID renders directly; no blank greyed header.
+            (None, None) if !group.name.is_empty() => items.push(TreeItem::ArtistLabel {
                 name: group.name.clone(),
             }),
-            None => {}
+            _ => {}
+        }
+        if is_expanded {
+            if let Some(id) = &expand_id {
+                push_sorted_albums(
+                    &mut items,
+                    albums_cache.get(id).cloned().unwrap_or_default(),
+                );
+                continue;
+            }
         }
         for node in &group.albums {
             match &node.album {
@@ -253,6 +276,7 @@ fn push_artist_with_albums(
     items.push(TreeItem::Artist {
         artist: artist.clone(),
         expanded,
+        greyed: false,
     });
     if expanded {
         push_sorted_albums(items, albums.map(<[Album]>::to_vec).unwrap_or_default());
@@ -291,9 +315,49 @@ fn album_row(album: &Album, is_selected: bool, colors: &ThemeColors) -> ListItem
     ListItem::new(Line::from(spans))
 }
 
+/// Split `text` into spans, styling case-insensitive runs of `query` with
+/// `hit` and the rest with `base`. Bails to one `base` span when the query is
+/// empty or lowercasing shifts byte lengths, so it never slices mid-`char`.
+fn highlight_spans(text: &str, query: &str, base: Style, hit: Style) -> Vec<Span<'static>> {
+    let lower = text.to_lowercase();
+    let q = query.to_lowercase();
+    if q.is_empty() || lower.len() != text.len() {
+        return vec![Span::styled(text.to_string(), base)];
+    }
+    let mut spans = Vec::new();
+    let mut last = 0;
+    let mut from = 0;
+    while let Some(rel) = lower[from..].find(&q) {
+        let start = from + rel;
+        let end = start + q.len();
+        if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+            break;
+        }
+        if start > last {
+            spans.push(Span::styled(text[last..start].to_string(), base));
+        }
+        spans.push(Span::styled(text[start..end].to_string(), hit));
+        last = end;
+        from = end;
+    }
+    if last < text.len() {
+        spans.push(Span::styled(text[last..].to_string(), base));
+    }
+    if spans.is_empty() {
+        spans.push(Span::styled(text.to_string(), base));
+    }
+    spans
+}
+
 /// Render one library-tree row. Selectable rows take their type colour and
-/// bold when selected; greyed labels are muted context headers.
-fn tree_row(item: &TreeItem, is_selected: bool, colors: &ThemeColors) -> ListItem<'static> {
+/// bold when selected; greyed labels are muted context headers. Occurrences of
+/// `query` in the name are accented so the matched text stands out in search.
+fn tree_row(
+    item: &TreeItem,
+    is_selected: bool,
+    colors: &ThemeColors,
+    query: &str,
+) -> ListItem<'static> {
     let styled = |fg| {
         if is_selected {
             Style::default().fg(fg).add_modifier(Modifier::BOLD)
@@ -301,23 +365,40 @@ fn tree_row(item: &TreeItem, is_selected: bool, colors: &ThemeColors) -> ListIte
             Style::default().fg(fg)
         }
     };
+    let hit = styled(colors.primary).add_modifier(Modifier::BOLD);
+    let name_spans = |text: &str, base: Style| highlight_spans(text, query, base, hit);
     match item {
-        TreeItem::Artist { artist, .. } => {
-            ListItem::new(artist.name.clone()).style(styled(colors.artist))
+        TreeItem::Artist { artist, greyed, .. } => {
+            let base = styled(if *greyed { colors.muted } else { colors.artist });
+            ListItem::new(Line::from(name_spans(&artist.name, base)))
         }
         TreeItem::Album { album } => {
-            let year_str = album.year.map(|y| format!(" [{y}]")).unwrap_or_default();
-            ListItem::new(format!("  └─ {}{year_str}", album.name)).style(styled(colors.album))
+            let base = styled(colors.album);
+            let mut spans = vec![Span::styled("  └─ ".to_string(), base)];
+            spans.extend(name_spans(&album.name, base));
+            if let Some(y) = album.year {
+                spans.push(Span::styled(format!(" [{y}]"), base));
+            }
+            ListItem::new(Line::from(spans))
         }
         TreeItem::Song { song } => {
-            ListItem::new(format!("      └─ {}", song.title)).style(styled(colors.song))
+            let base = styled(colors.song);
+            let mut spans = vec![Span::styled("      └─ ".to_string(), base)];
+            spans.extend(name_spans(&song.title, base));
+            ListItem::new(Line::from(spans))
         }
         TreeItem::ArtistLabel { name } => {
-            ListItem::new(name.clone()).style(Style::default().fg(colors.muted))
+            let base = Style::default().fg(colors.muted);
+            ListItem::new(Line::from(name_spans(name, base)))
         }
         TreeItem::AlbumLabel { name, year } => {
-            let year_str = year.map(|y| format!(" [{y}]")).unwrap_or_default();
-            ListItem::new(format!("  └─ {name}{year_str}")).style(Style::default().fg(colors.muted))
+            let base = Style::default().fg(colors.muted);
+            let mut spans = vec![Span::styled("  └─ ".to_string(), base)];
+            spans.extend(name_spans(name, base));
+            if let Some(y) = year {
+                spans.push(Span::styled(format!(" [{y}]"), base));
+            }
+            ListItem::new(Line::from(spans))
         }
     }
 }
@@ -397,7 +478,14 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
         build_tree_items(state)
             .iter()
             .enumerate()
-            .map(|(i, item)| tree_row(item, Some(i) == artists.selected_index, colors))
+            .map(|(i, item)| {
+                tree_row(
+                    item,
+                    Some(i) == artists.selected_index,
+                    colors,
+                    &artists.filter,
+                )
+            })
             .collect()
     };
 
@@ -514,4 +602,61 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
 
     frame.render_stateful_widget(list, area, &mut list_state);
     state.client.artists.song_scroll_offset = list_state.offset();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Color;
+
+    fn contents(spans: &[Span<'_>]) -> Vec<String> {
+        spans.iter().map(|s| s.content.to_string()).collect()
+    }
+
+    #[test]
+    fn highlight_splits_the_matched_run_into_its_own_span() {
+        let base = Style::default().fg(Color::White);
+        let hit = Style::default().fg(Color::Red);
+        let spans = highlight_spans("Beach House", "beach", base, hit);
+        assert_eq!(contents(&spans), vec!["Beach", " House"]);
+        assert_eq!(spans[0].style, hit, "the matched run carries the hit style");
+        assert_eq!(spans[1].style, base, "the rest stays base-styled");
+    }
+
+    #[test]
+    fn highlight_matches_case_insensitively_in_the_middle() {
+        let s = Style::default();
+        let spans = highlight_spans("The Beach Boys", "BEACH", s, s);
+        assert_eq!(contents(&spans), vec!["The ", "Beach", " Boys"]);
+    }
+
+    #[test]
+    fn highlight_empty_query_is_one_plain_span() {
+        let s = Style::default();
+        assert_eq!(
+            contents(&highlight_spans("Anything", "", s, s)),
+            vec!["Anything"]
+        );
+    }
+
+    #[test]
+    fn highlight_no_match_is_one_plain_span() {
+        let s = Style::default();
+        assert_eq!(
+            contents(&highlight_spans("Nirvana", "beach", s, s)),
+            vec!["Nirvana"]
+        );
+    }
+
+    #[test]
+    fn highlight_does_not_panic_on_length_changing_lowercase() {
+        // 'İ' (U+0130) lowercases to two chars; the guard bails rather than
+        // slice mid-char. The full text must survive intact.
+        let s = Style::default();
+        let joined: String = highlight_spans("İstanbul", "stan", s, s)
+            .iter()
+            .map(|sp| sp.content.to_string())
+            .collect();
+        assert_eq!(joined, "İstanbul");
+    }
 }

@@ -221,6 +221,7 @@ impl App {
                             TreeItem::Artist {
                                 artist,
                                 expanded: _,
+                                ..
                             } => {
                                 let artist_id = artist.id.clone();
                                 let artist_name = artist.name.clone();
@@ -364,7 +365,9 @@ impl App {
                     if let Some(idx) = state.client.artists.selected_index {
                         if let Some(item) = tree_items.get(idx) {
                             match item {
-                                TreeItem::Artist { artist, expanded } => {
+                                TreeItem::Artist {
+                                    artist, expanded, ..
+                                } => {
                                     let artist_id = artist.id.clone();
                                     let artist_name = artist.name.clone();
                                     let was_expanded = *expanded;

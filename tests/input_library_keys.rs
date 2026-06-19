@@ -70,7 +70,7 @@ async fn esc_closes_and_clears_filter() {
 
 #[tokio::test]
 #[serial]
-async fn down_skips_the_greyed_album_artist_label() {
+async fn down_lands_on_the_greyed_album_artist_now_selectable() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
@@ -101,13 +101,14 @@ async fn down_skips_the_greyed_album_artist_label() {
         cs.artists.selected_index = Some(0);
     }
 
-    // tree = [Artist(0), ArtistLabel(1), Album(2)]; Down from 0 skips the label.
+    // tree = [Artist(0), greyed Artist(1), Album(2)]. The greyed album-artist
+    // carries an id now, so it is selectable: Down lands on it, not the album.
     fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
 
     assert_eq!(
         fx.app.client_state.read().await.artists.selected_index,
-        Some(2),
-        "Down must skip the greyed ArtistLabel and land on the album"
+        Some(1),
+        "Down lands on the greyed album-artist, which is now selectable"
     );
 }
 

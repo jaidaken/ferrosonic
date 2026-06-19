@@ -196,6 +196,74 @@ async fn highlighting_search_song_loads_its_album_with_that_song_preselected() {
 
 #[tokio::test]
 #[serial]
+async fn enter_on_matched_search_artist_expands_its_albums() {
+    let (mut app, _td) = build_app_with_td().await;
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.library
+            .albums_cache
+            .insert("a1".into(), vec![album("alb-a", "Greatest Hits")]);
+    }
+    {
+        let mut cs = app.client_state.write().await;
+        cs.artists.filter = "band".into();
+        cs.artists.search_results = Some(SearchResult3 {
+            artist: vec![artist("a1", "The Band")],
+            album: vec![],
+            song: vec![],
+        });
+        cs.artists.selected_index = Some(0);
+    }
+    app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    let cs = app.client_state.read().await;
+    assert!(
+        cs.artists.expanded.contains("a1"),
+        "Enter expands the matched search artist so its albums show"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn enter_on_greyed_album_artist_expands_its_full_catalog() {
+    let (mut app, _td) = build_app_with_td().await;
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.library
+            .albums_cache
+            .insert("a2".into(), vec![album("alb-x", "Deep Cut")]);
+    }
+    {
+        let mut cs = app.client_state.write().await;
+        cs.artists.filter = "hits".into();
+        cs.artists.search_results = Some(SearchResult3 {
+            artist: vec![],
+            album: vec![Album {
+                id: "alb-hits".into(),
+                name: "Greatest Hits".into(),
+                artist: Some("Context Artist".into()),
+                artist_id: Some("a2".into()),
+                cover_art: None,
+                song_count: Some(1),
+                original_release_date: None,
+                duration: Some(100),
+                year: Some(1999),
+                genre: None,
+            }],
+            song: vec![],
+        });
+        // The greyed album-artist is row 0 and now selectable.
+        cs.artists.selected_index = Some(0);
+    }
+    app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    let cs = app.client_state.read().await;
+    assert!(
+        cs.artists.expanded.contains("a2"),
+        "Enter on the greyed album-artist expands its catalog so non-matching albums show"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn t_on_song_in_tree_plays_single() {
     let (mut app, td) = build_app_with_td().await;
     {
