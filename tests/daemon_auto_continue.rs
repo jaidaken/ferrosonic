@@ -64,6 +64,71 @@ async fn advance_auto_at_end_with_auto_continue_appends_random_songs() {
 
 #[tokio::test]
 #[serial]
+async fn auto_continue_does_not_requeue_already_played_songs() {
+    let td = TestDaemon::new().await;
+    // The fake assigns ids `song-0`, `song-1`, `song-2` to these.
+    td.fake_subsonic
+        .expect_random_songs(&["t0", "t1", "t2"])
+        .await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("song-0", "Already Played")];
+        s.queue_position = Some(0);
+        s.config.auto_continue = true;
+        s.config.repeat_mode = RepeatMode::Off;
+    }
+    let _ = td.core.advance_auto().await;
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if td.state.read().await.queue.len() > 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("auto-continue did not extend queue");
+    let st = td.state.read().await;
+    let dup_count = st.queue.iter().filter(|s| s.id == "song-0").count();
+    assert_eq!(dup_count, 1, "already-queued song must not be re-added");
+    assert!(
+        st.queue.iter().any(|s| s.id == "song-1"),
+        "fresh song queued"
+    );
+    assert!(
+        st.queue.iter().any(|s| s.id == "song-2"),
+        "fresh song queued"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn auto_continue_allows_repeats_once_every_candidate_is_queued() {
+    let td = TestDaemon::new().await;
+    // The fake returns ids `song-0`, `song-1`; both are already queued below.
+    td.fake_subsonic.expect_random_songs(&["t0", "t1"]).await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("song-0", "A"), song("song-1", "B")];
+        s.queue_position = Some(1);
+        s.config.auto_continue = true;
+        s.config.repeat_mode = RepeatMode::Off;
+    }
+    let _ = td.core.advance_auto().await;
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if td.state.read().await.queue.len() > 2 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("exhausted bag must still extend (repeats allowed) so playback continues");
+}
+
+#[tokio::test]
+#[serial]
 async fn prev_track_with_position_above_three_seeks_to_zero() {
     let td = TestDaemon::new().await;
     {

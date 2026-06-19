@@ -413,12 +413,60 @@ impl DaemonCore {
 
 impl DaemonCore {
     /// Fetch random songs, extend queue and play first new track under one write lock so another client cannot mutate the queue between extend and play_from index.
+    /// Up to `LOOKAHEAD` random songs whose ids are not already in the queue,
+    /// so auto-continue never replays a track until the library is exhausted.
+    /// When every candidate is already queued the bag is spent, and the raw
+    /// batch is returned so playback can continue with repeats.
+    async fn pick_unplayed_random(
+        self: &Arc<Self>,
+        client: &SubsonicClient,
+    ) -> Result<Vec<crate::subsonic::models::Child>, crate::error::SubsonicError> {
+        const ATTEMPTS: u32 = 3;
+        const LOOKAHEAD: usize = 20;
+        let mut seen: std::collections::HashSet<String> = self
+            .state
+            .read()
+            .await
+            .queue
+            .iter()
+            .map(|s| s.id.clone())
+            .collect();
+        let mut fresh = Vec::new();
+        let mut fallback = Vec::new();
+        for _ in 0..ATTEMPTS {
+            let batch = client.get_random_songs().await?;
+            if batch.is_empty() {
+                break;
+            }
+            if fallback.is_empty() {
+                fallback = batch.clone();
+            }
+            for song in batch {
+                if fresh.len() >= LOOKAHEAD {
+                    break;
+                }
+                if seen.insert(song.id.clone()) {
+                    fresh.push(song);
+                }
+            }
+            if !fresh.is_empty() {
+                break;
+            }
+        }
+        if fresh.is_empty() {
+            fallback.truncate(LOOKAHEAD);
+            Ok(fallback)
+        } else {
+            Ok(fresh)
+        }
+    }
+
     pub(super) async fn extend_with_random_and_play(self: &Arc<Self>) -> Result<bool, Error> {
         info!("Queue ended, auto-continuing with random songs");
         let Some(client) = self.subsonic.read().await.clone() else {
             return Ok(false);
         };
-        let songs = match client.get_random_songs().await {
+        let songs = match self.pick_unplayed_random(&client).await {
             Ok(s) if !s.is_empty() => s,
             Ok(_) => {
                 self.emit(DaemonEvent::Notification {
