@@ -142,6 +142,7 @@ async fn right_arrow_with_songs_switches_focus_to_song_pane() {
             album: None,
             artist: None,
             artist_id: None,
+            album_id: None,
             track: None,
             year: None,
             genre: None,

@@ -141,6 +141,7 @@ async fn click_on_now_playing_progress_bar_seeks() {
             album: None,
             artist: None,
             artist_id: None,
+            album_id: None,
             track: None,
             year: None,
             genre: None,

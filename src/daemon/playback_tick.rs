@@ -370,9 +370,9 @@ impl DaemonCore {
             if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {
                 return;
             }
-            let cover = match song.cover_art.as_deref() {
+            let cover = match song.cover_id() {
                 Some(cid) => {
-                    let bytes = core.get_cover_art(cid, 512).await;
+                    let bytes = core.get_cover_art(&cid, 512).await;
                     (!bytes.is_empty()).then_some(bytes)
                 }
                 None => None,

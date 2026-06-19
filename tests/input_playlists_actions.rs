@@ -22,6 +22,7 @@ fn song(id: &str) -> Child {
         album: None,
         artist: None,
         artist_id: None,
+        album_id: None,
         track: None,
         year: None,
         genre: None,

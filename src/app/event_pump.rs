@@ -53,7 +53,10 @@ pub async fn apply_event(
             ds.queue_position = position;
         }
         DaemonEvent::NowPlayingChanged(np) => {
-            let new_cover_id = np.song.as_ref().and_then(|s| s.cover_art.clone());
+            let new_cover_id = np
+                .song
+                .as_ref()
+                .and_then(crate::subsonic::models::Child::cover_id);
             let cover_art_enabled = {
                 let mut ds = daemon_state.write().await;
                 let enabled = ds.config.cover_art;
@@ -237,7 +240,7 @@ pub async fn apply_event(
                     ds.now_playing
                         .song
                         .as_ref()
-                        .and_then(|s| s.cover_art.clone())
+                        .and_then(crate::subsonic::models::Child::cover_id)
                 };
                 if let Some(id) = current_id {
                     let should_fetch = {

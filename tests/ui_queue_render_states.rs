@@ -18,6 +18,7 @@ fn song(id: &str, title: &str) -> Child {
         album: Some("Album".into()),
         artist: Some("Artist".into()),
         artist_id: None,
+        album_id: None,
         track: None,
         year: None,
         genre: None,

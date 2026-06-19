@@ -126,6 +126,7 @@ async fn i_in_search_mode_for_album_inserts_next() {
             album: None,
             artist: None,
             artist_id: None,
+            album_id: None,
             track: None,
             year: None,
             genre: None,

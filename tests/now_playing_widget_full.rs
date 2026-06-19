@@ -31,6 +31,7 @@ fn song(id: &str, title: &str) -> Child {
         album: Some("Closer".into()),
         artist: Some("Joy Division".into()),
         artist_id: None,
+        album_id: None,
         track: Some(1),
         year: Some(1980),
         genre: None,

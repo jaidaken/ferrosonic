@@ -279,6 +279,9 @@ pub struct Child {
     /// ID of the song's artist, when the server provides it.
     #[serde(default, rename = "artistId")]
     pub artist_id: Option<String>,
+    /// ID of the song's album, when the server provides it.
+    #[serde(default, rename = "albumId")]
+    pub album_id: Option<String>,
     /// Track number within the disc.
     #[serde(default)]
     pub track: Option<i32>,
@@ -318,6 +321,30 @@ pub struct Child {
 }
 
 impl Child {
+    /// Cover art ID preferring the album cover over the per-song embedded art.
+    ///
+    /// Navidrome serves the song `coverArt` (`mf-<id>`) as the file's embedded
+    /// image, which goes stale when the album cover is changed. The album
+    /// `coverArt` (`al-<albumId>`) reflects the current cover, so prefer it
+    /// whenever the song points at embedded art and an album ID is known.
+    ///
+    /// ```
+    /// use ferrosonic::subsonic::models::Child;
+    /// let mut c = Child { id: "1".into(), title: "x".into(),
+    ///     cover_art: Some("mf-9_abc".into()), album_id: Some("al7".into()),
+    ///     ..Default::default() };
+    /// assert_eq!(c.cover_id().as_deref(), Some("al-al7"));
+    /// c.cover_art = Some("al-al7".into());
+    /// assert_eq!(c.cover_id().as_deref(), Some("al-al7"));
+    /// ```
+    #[must_use]
+    pub fn cover_id(&self) -> Option<String> {
+        match (&self.cover_art, &self.album_id) {
+            (Some(ca), Some(aid)) if ca.starts_with("mf-") => Some(format!("al-{aid}")),
+            _ => self.cover_art.clone(),
+        }
+    }
+
     /// Duration as `MM:SS`, or `--:--` when unknown.
     pub fn format_duration(&self) -> String {
         match self.duration {
