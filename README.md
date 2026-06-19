@@ -10,6 +10,8 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Gapless playback** - Seamless transitions between tracks with pre-buffered next track
 - **Persistent playback (optional)** - A background daemon owns the audio session so music keeps playing when you close the terminal. It is the same `ferrosonic` binary re-launched in the background, auto-spawned by the TUI; toggle off in Settings for single-process mode.
 - **MPRIS2 integration** - Full desktop media control support (play, pause, stop, next, previous, seek) with push-style `PropertiesChanged` notifications
+- **Desktop notifications** - Track-change notifications with cover art via the freedesktop.org `org.freedesktop.Notifications` interface (works under mako, dunst, GNOME, KDE); fired daemon-side so they appear even with the TUI closed
+- **Scrobbling** - Reports plays to the server (Last.fm / ListenBrainz when linked server-side) via classic `scrobble` plus the OpenSubsonic `reportPlayback` extension when the server advertises it
 - **Library page** - Tree-based artist/album browser with expandable artists and album listings
 - **Quick Play page** - Jump straight into your **Starred** songs or a **Random** roll without browsing
 - **Star songs** - Mark favourites with `n` (currently-playing) or `m` (highlighted); starred tracks show a ★ everywhere and populate the Quick Play Starred view
@@ -18,12 +20,13 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Cover art** - Display album art in the now-playing section using kitty / iTerm2 / sixel image protocols; falls back to half-blocks on plainer terminals (chafa-enhanced when the `chafa` library is installed)
 - **Playlist support** - Browse and play server playlists with shuffle capability
 - **Play queue management** - Add, remove, reorder, shuffle, and clear queue history; queue persists across daemon restarts
+- **Save queue as playlist** - Press `s` on the Queue page to create a server-side playlist from the current queue
 - **Audio quality display** - Real-time display of sample rate, bit depth, codec format, and channel layout
 - **Audio visualizer** - Integrated cava audio visualizer with theme-matched gradient colors
 - **13 built-in themes** - Default, Monokai, Dracula, Nord, Gruvbox, Catppuccin, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, One Dark, and Ayu Dark
 - **Custom themes** - Create your own themes as TOML files in `~/.config/ferrosonic/themes/`
 - **Mouse support** - Clickable buttons, tabs, lists, and progress bar seeking
-- **Library search** - `/` filters artists locally, `//` / `///` cycle scope to albums or songs and run a server-side `search3`
+- **Library search** - `/` runs a single unified server-side `search3` across artists, albums, and songs at once, results shown together in the tree
 - **Multi-disc album support** - Proper disc and track number display
 - **Keyboard-driven** - Vim-style navigation (j/k) alongside arrow keys
 
@@ -112,6 +115,9 @@ CavaSize = 40
 AutoContinue = false
 RepeatMode = "Off"
 CoverArt = false
+CoverArtSize = 16
+Scrobble = true
+Notifications = true
 ```
 
 | Field | Description |
@@ -126,7 +132,10 @@ CoverArt = false
 | `CavaSize` | Cava pane height percentage (10-80, step 5) |
 | `AutoContinue` | Fetch fresh random songs and keep playing when the queue ends |
 | `RepeatMode` | Queue repeat: `"Off"`, `"One"`, or `"All"` |
-| `CoverArt` | Show cover art in the cava band (kitty / iTerm2 / sixel terminals) |
+| `CoverArt` | Show cover art in the now-playing section (kitty / iTerm2 / sixel terminals) |
+| `CoverArtSize` | Cover art pane width in columns (default 16) |
+| `Scrobble` | Report plays to the server, default `true` (classic `scrobble` + OpenSubsonic `reportPlayback`) |
+| `Notifications` | Desktop track-change notifications with cover art, default `true` |
 
 Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/ferrosonic/ferrosonicd.log` (daemon). The queue is persisted to `~/.config/ferrosonic/queue.json` so it survives daemon restarts.
 
@@ -155,8 +164,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 
 | Key | Action |
 |---|---|
-| `/` | Search (typing fires a server-side `search3`) |
-| `//` / `///` | Cycle scope: artists → albums → songs (press `/` again on empty filter) |
+| `/` | Unified search: typing fires one server-side `search3` across artists, albums, and songs |
 | `Enter` | Lock the filter in (keeps results, exits input mode) |
 | `Esc` | Clear filter and search results |
 | `Up` / `k` | Move selection up |
@@ -181,6 +189,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 | `K` (Shift+K) | Move selected song up |
 | `t` | Shuffle queue (current song stays in place) |
 | `c` | Clear played history (remove songs before current) |
+| `s` | Save the current queue as a server-side playlist |
 | `m` | Star/unstar highlighted song |
 
 ### Quick Play Page (F3)
@@ -227,7 +236,7 @@ F-keys still switch pages from the Server page; any unsaved edits are discarded 
 | `Left` | Previous option |
 | `Right` / `Enter` | Next option |
 
-Settings include theme selection, cava visualizer toggle + size, and the daemon-mode preference. Changes are saved automatically. The daemon-mode toggle takes effect on the next launch.
+Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, scrobbling, desktop notifications, and the daemon-mode preference. Changes are saved automatically. The daemon-mode toggle takes effect on the next launch.
 
 ## Mouse Support
 
