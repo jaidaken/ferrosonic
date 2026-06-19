@@ -157,6 +157,68 @@ async fn modern_reports_stopped_when_playback_ends() {
 
 #[tokio::test]
 #[serial]
+async fn the_real_tick_finalizes_a_stopped_track_on_the_skip_path() {
+    // Regression: update_playback_info must run the scrobble step even on the
+    // Skip/Stop path, or a stopped track never reports "stopped" (never counts).
+    let td = TestDaemon::new().await;
+    settle_capability(&td).await;
+    td.core.set_playback_report_for_test(true);
+    td.fake_subsonic.expect_report_playback().await;
+
+    set_now_playing(&td, "s1", PlaybackState::Playing, 120.0, 300.0).await;
+    td.core.scrobble_tick().await; // establish the tracked play
+    {
+        let mut s = td.state.write().await;
+        s.now_playing.song = None;
+        s.now_playing.state = PlaybackState::Stopped;
+        s.now_playing.position = 0.0;
+    }
+    td.core.update_playback_info().await; // the REAL tick, Skip path
+
+    assert!(
+        wait_for(&td, "/rest/reportPlayback").await,
+        "the real tick finalizes a stopped track"
+    );
+    let qs = query(&td, "/rest/reportPlayback").await;
+    assert!(
+        qs.iter()
+            .any(|q| q.contains("mediaId=s1") && q.contains("state=stopped")),
+        "stopping reports state=stopped through update_playback_info; saw {qs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn modern_reports_paused_then_playing_on_resume() {
+    let td = TestDaemon::new().await;
+    settle_capability(&td).await;
+    td.core.set_playback_report_for_test(true);
+    td.fake_subsonic.expect_report_playback().await;
+
+    set_now_playing(&td, "s1", PlaybackState::Playing, 10.0, 300.0).await;
+    td.core.scrobble_tick().await; // start -> playing
+    set_now_playing(&td, "s1", PlaybackState::Paused, 30.0, 300.0).await;
+    td.core.scrobble_tick().await; // -> paused
+    set_now_playing(&td, "s1", PlaybackState::Playing, 30.0, 300.0).await;
+    td.core.scrobble_tick().await; // -> playing
+
+    assert!(
+        wait_for(&td, "/rest/reportPlayback").await,
+        "reportPlayback sent"
+    );
+    let qs = query(&td, "/rest/reportPlayback").await;
+    assert!(
+        qs.iter().any(|q| q.contains("state=paused")),
+        "pausing reports state=paused; saw {qs:?}"
+    );
+    assert!(
+        qs.iter().filter(|q| q.contains("state=playing")).count() >= 2,
+        "start and resume both report state=playing; saw {qs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn classic_does_not_resubmit_a_track_first_seen_past_threshold() {
     let td = TestDaemon::new().await;
     settle_capability(&td).await;
