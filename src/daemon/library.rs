@@ -32,6 +32,11 @@ impl<V: Clone> LruCache<V> {
             order: VecDeque::new(),
         }
     }
+    /// Drop every entry.
+    pub fn clear(&mut self) {
+        self.map.clear();
+        self.order.clear();
+    }
     /// Look up `key`. Returns `None` on miss; on hit, promotes the entry to MRU end before returning a borrow.
     ///
     /// ```

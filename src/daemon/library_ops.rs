@@ -72,6 +72,9 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
         };
+        // Drop cached cover art so a refresh (or startup) re-pulls art that
+        // changed on the server.
+        self.clear_cover_cache().await;
         let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_artists().await {
             Ok(artists) => {

@@ -147,4 +147,11 @@ impl DaemonCore {
             }
         }
     }
+
+    /// Drop all cached cover art so the next fetch re-pulls from the server,
+    /// picking up artwork changed there. Called on a library refresh (which the
+    /// TUI runs at startup) and whenever the queue is replaced.
+    pub(super) async fn clear_cover_cache(&self) {
+        self.cover_art_cache.write().await.clear();
+    }
 }
