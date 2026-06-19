@@ -65,6 +65,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     }
     .to_string();
     let auto_val = if s.auto_continue { "On" } else { "Off" }.to_string();
+    let scrobble_val = if s.scrobble { "On" } else { "Off" }.to_string();
     let daemon_val = if s.daemon_enabled { "On" } else { "Off" }.to_string();
 
     let x = inner.x;
@@ -113,12 +114,17 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
             value: auto_val,
             idx: 6,
         },
+        Item::Row {
+            label: "Scrobble",
+            value: scrobble_val,
+            idx: 7,
+        },
         Item::Gap,
         Item::Heading("System"),
         Item::Row {
             label: "Daemon",
             value: daemon_val,
-            idx: 7,
+            idx: 8,
         },
     ];
 

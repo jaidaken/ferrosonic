@@ -79,7 +79,7 @@ fn settings_clips_rows_that_do_not_fit_instead_of_overflowing() {
 #[test]
 fn settings_scrolls_to_keep_the_selected_row_visible() {
     let (daemon, mut client) = state(Page::Settings);
-    client.settings_state.selected_field = 7; // Daemon, the last row
+    client.settings_state.selected_field = 8; // Daemon, the last row
     let frame = render(80, 14, &daemon, &mut client);
     assert!(
         frame.contains("Daemon"),

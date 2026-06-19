@@ -269,6 +269,10 @@ impl DaemonClient for InProcessClient {
                 self.core.set_auto_continue(on).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::SetScrobble(on) => {
+                self.core.set_scrobble(on).await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
             DaemonRequest::SetRepeatMode(mode) => {
                 self.core.set_repeat_mode(mode).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)

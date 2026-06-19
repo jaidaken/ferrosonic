@@ -49,7 +49,19 @@ impl DaemonCore {
         self.refresh_starred().await;
         self.refresh_artists().await;
         self.refresh_playlists().await;
+        self.spawn_refresh_scrobble_capability();
 
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the scrobble toggle and broadcast the config change.
+    pub async fn set_scrobble(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.config.scrobble = on;
+            state.config.save_default().map_err(Error::Config)?;
+        }
         self.emit_config_changed().await;
         Ok(())
     }

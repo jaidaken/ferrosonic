@@ -21,6 +21,7 @@ call site.
 | 8 | `last_loadfile` | `std::sync::Mutex<Option<Instant>>` | timestamp of the most recent `loadfile` |
 | 9 | `last_preload_attempt` | `std::sync::Mutex<Option<Instant>>` | retry-throttle for failed gapless preloads |
 | 10 | `cover_art_cache` | `RwLock<LruCache<Vec<u8>>>` | bounded LRU of cover-art bytes |
+| 11 | `scrobble_state` | `Mutex<ScrobbleState>` | per-play scrobble tracking; never held with any other lock |
 
 ## Standard idioms
 
@@ -36,6 +37,10 @@ call site.
 - `dispatch_play(PlayMode::Buffered)` consolidates the prebuffer-cancel
   swap into one critical section; the new cancel slot and loading
   flag are installed before any mpv call.
+- `scrobble_tick` reads `state` and releases it, then takes
+  `scrobble_state` alone to decide, then releases it before spawning
+  the report task (which reads `subsonic`). It never holds two locks
+  at once, so lock 11 cannot invert with any other.
 
 ## What this fixes
 

@@ -13,10 +13,11 @@ enum SettingChange {
     CoverArtSize,
     Repeat,
     AutoContinue,
+    Scrobble,
     Daemon,
 }
 
-const SETTINGS_FIELD_COUNT: usize = 8;
+const SETTINGS_FIELD_COUNT: usize = 9;
 
 impl App {
     pub(super) async fn handle_settings_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
@@ -65,6 +66,7 @@ impl App {
             cover_art_size,
             repeat_mode,
             auto_continue,
+            scrobble,
             daemon_enabled,
             gradient,
             h_gradient,
@@ -84,6 +86,7 @@ impl App {
                 s.cover_art_size,
                 s.repeat_mode,
                 s.auto_continue,
+                s.scrobble,
                 s.daemon_enabled,
                 s.current_theme().cava_gradient.clone(),
                 s.current_theme().cava_horizontal_gradient.clone(),
@@ -97,6 +100,7 @@ impl App {
             SettingChange::CoverArtSize => DaemonRequest::SetCoverArtSize(cover_art_size),
             SettingChange::Repeat => DaemonRequest::SetRepeatMode(repeat_mode),
             SettingChange::AutoContinue => DaemonRequest::SetAutoContinue(auto_continue),
+            SettingChange::Scrobble => DaemonRequest::SetScrobble(scrobble),
             SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
         };
         if let Err(e) = self.client.request(req).await {
@@ -137,6 +141,7 @@ impl App {
             | SettingChange::CoverArtSize
             | SettingChange::Repeat
             | SettingChange::AutoContinue
+            | SettingChange::Scrobble
             | SettingChange::Daemon => {}
         }
 
@@ -209,6 +214,10 @@ fn adjust_setting(
             Some(SettingChange::AutoContinue)
         }
         7 => {
+            s.scrobble = !s.scrobble;
+            Some(SettingChange::Scrobble)
+        }
+        8 => {
             s.daemon_enabled = !s.daemon_enabled;
             Some(SettingChange::Daemon)
         }
@@ -225,6 +234,7 @@ fn change_message(s: &crate::app::state::SettingsState, change: SettingChange) -
         SettingChange::CoverArtSize => format!("Cover Art Size: {} rows", s.cover_art_size),
         SettingChange::Repeat => format!("Repeat: {}", s.repeat_mode.label()),
         SettingChange::AutoContinue => format!("Auto-continue: {}", on_off(s.auto_continue)),
+        SettingChange::Scrobble => format!("Scrobble: {}", on_off(s.scrobble)),
         SettingChange::Daemon => format!("Daemon: {} (restart to apply)", on_off(s.daemon_enabled)),
     }
 }

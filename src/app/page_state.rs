@@ -183,6 +183,8 @@ pub struct SettingsState {
     pub cover_art: bool,
     /// Total now-playing height (rows) when art is visible.
     pub cover_art_size: u8,
+    /// Report plays to the server (scrobble / playbackReport).
+    pub scrobble: bool,
 }
 
 impl Default for SettingsState {
@@ -198,6 +200,7 @@ impl Default for SettingsState {
             repeat_mode: crate::config::RepeatMode::Off,
             cover_art: false,
             cover_art_size: 16,
+            scrobble: true,
         }
     }
 }

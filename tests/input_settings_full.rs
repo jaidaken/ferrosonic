@@ -65,7 +65,7 @@ async fn down_stops_at_max_field() {
             .await
             .settings_state
             .selected_field,
-        7
+        8
     );
 }
 
@@ -285,11 +285,11 @@ async fn auto_continue_field_six_toggles() {
 
 #[tokio::test]
 #[serial]
-async fn daemon_enabled_field_seven_toggles() {
+async fn daemon_enabled_field_eight_toggles() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 7;
+        cs.settings_state.selected_field = 8;
         cs.settings_state.daemon_enabled = false;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
@@ -301,6 +301,19 @@ async fn daemon_enabled_field_seven_toggles() {
             .settings_state
             .daemon_enabled
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn scrobble_field_seven_toggles() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 7;
+        cs.settings_state.scrobble = false;
+    }
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert!(fx.app.client_state.read().await.settings_state.scrobble);
 }
 
 #[tokio::test]

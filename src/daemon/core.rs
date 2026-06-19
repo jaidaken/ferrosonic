@@ -178,6 +178,10 @@ pub struct DaemonCore {
     /// Count of connected IPC clients; the idle-exit monitor shuts the daemon
     /// down once this is 0 and playback is Stopped, so a daemon never orphans.
     pub(super) active_clients: std::sync::atomic::AtomicUsize,
+    /// Per-play scrobble tracking; mutated only by the scrobble tick.
+    pub(super) scrobble_state: Mutex<crate::daemon::scrobble::ScrobbleState>,
+    /// True when the server advertises the `playbackReport` extension.
+    pub(super) playback_report_supported: AtomicBool,
 }
 
 impl DaemonCore {
@@ -235,9 +239,12 @@ impl DaemonCore {
             library_version: std::sync::atomic::AtomicU64::new(0),
             last_preload_attempt: std::sync::Mutex::new(None),
             active_clients: std::sync::atomic::AtomicUsize::new(0),
+            scrobble_state: Mutex::new(crate::daemon::scrobble::ScrobbleState::default()),
+            playback_report_supported: AtomicBool::new(false),
         });
 
         core.clone().spawn_queue_persistence(queue_save_rx);
+        core.spawn_refresh_scrobble_capability();
         Self::sweep_orphan_prebuffer_files();
         core
     }

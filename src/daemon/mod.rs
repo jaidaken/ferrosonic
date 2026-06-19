@@ -10,6 +10,7 @@ pub mod playback_tick;
 pub mod polling;
 pub mod queue_ops;
 pub mod run;
+pub mod scrobble;
 pub mod settings_ops;
 pub mod state;
 

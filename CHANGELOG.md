@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Scrobbling.** Plays are reported to the server so play counts, last-played,
+  and Last.fm/ListenBrainz (if you've linked them in Navidrome) all update. On
+  servers with the OpenSubsonic `playbackReport` extension (Navidrome 0.62+) it
+  reports playback state and the server decides; otherwise it uses classic
+  `scrobble`, marking a play once you've heard half the track or four minutes.
+  On by default; toggle under Settings -> Scrobble.
 - **Save the queue as a playlist.** Press `s` on the Queue page, type a
   name, and Enter creates a server-side playlist from the queue in order.
   Esc cancels.

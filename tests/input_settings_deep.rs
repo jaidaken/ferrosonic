@@ -32,15 +32,15 @@ async fn build_app() -> AppFixture {
 
 #[tokio::test]
 #[serial]
-async fn down_advances_through_eight_fields_then_caps() {
+async fn down_advances_through_nine_fields_then_caps() {
     let mut fx = build_app().await;
     for _ in 0..20 {
         fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
     }
     let cs = fx.app.client_state.read().await;
     assert_eq!(
-        cs.settings_state.selected_field, 7,
-        "field index should cap at SETTINGS_FIELD_COUNT - 1 = 7"
+        cs.settings_state.selected_field, 8,
+        "field index should cap at SETTINGS_FIELD_COUNT - 1 = 8"
     );
 }
 

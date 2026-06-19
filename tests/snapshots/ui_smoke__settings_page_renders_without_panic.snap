@@ -16,10 +16,10 @@ expression: frame
 │Playback                                                                      │
 │  Repeat            Off                                                       │
 │  Auto-continue     Off                                                       │
+│  Scrobble          On                                                        │
 │                                                                              │
 │System                                                                        │
 │  Daemon            On                                                        │
-│                                                                              │
 │                                                                              │
 │← → or Enter to change theme (auto-saves)                                     │
 └──────────────────────────────────────────────────────────────────────────────┘

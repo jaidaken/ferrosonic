@@ -325,6 +325,7 @@ impl DaemonCore {
         self.tick_emit_position().await;
         self.tick_backfill_duration().await;
         self.tick_fetch_audio_properties_if_needed().await;
+        self.scrobble_tick().await;
     }
 }
 
