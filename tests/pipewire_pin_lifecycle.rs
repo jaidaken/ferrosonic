@@ -32,7 +32,7 @@ async fn wait_for_force_rate(pw: &RecordingPwRunner, want: &str) -> bool {
 
 #[tokio::test]
 #[serial]
-async fn pause_releases_force_rate_pin() {
+async fn pause_keeps_force_rate_pin() {
     let (td, pw) = TestDaemon::new_with_pw_recorder().await;
     {
         let mut s = td.state.write().await;
@@ -47,10 +47,9 @@ async fn pause_releases_force_rate_pin() {
         .expect("pause did not hang")
         .unwrap();
 
-    assert_eq!(
-        pw.force_rate_values(),
-        vec!["0".to_string()],
-        "pause must clear the PipeWire force-rate to 0"
+    assert!(
+        pw.force_rate_values().is_empty(),
+        "pause must keep the pin (issue no force-rate change) so resume is gapless"
     );
 }
 
@@ -80,7 +79,7 @@ async fn stop_releases_force_rate_pin() {
 
 #[tokio::test]
 #[serial]
-async fn play_pins_rate_then_pause_clears_it() {
+async fn play_pins_rate_then_pause_keeps_it() {
     let (td, pw) = TestDaemon::new_with_pw_recorder().await;
     td.fake_mpv
         .set_property("audio-params/samplerate", json!(44_100))
@@ -107,7 +106,7 @@ async fn play_pins_rate_then_pause_clears_it() {
 
     assert_eq!(
         pw.force_rate_values().last().map(String::as_str),
-        Some("0"),
-        "pause after play must clear the pin back to 0"
+        Some("44100"),
+        "pause keeps the pin at the track rate (released only on stop)"
     );
 }

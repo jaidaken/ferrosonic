@@ -699,12 +699,10 @@ impl DaemonCore {
         self.state.read().await.now_playing.state == PlaybackState::Stopped
     }
 
-    /// Smooth track swap: stream the new URL to a local temp file
-    /// while the currently-playing mpv source keeps going. When the
-    /// pre-buffer threshold is met (or the download finishes for a
-    /// small file), point mpv at the local file via `loadfile`. Old
-    /// audio stays continuous up to the loadfile moment; mpv reads
-    /// from disk and starts decoding immediately.
+    /// Download the new URL to a local temp file in full, then load it paused
+    /// and run the rate-switch pre-roll. The whole file is fetched first so mpv
+    /// reads the true track length; loading a still-growing file paused makes
+    /// mpv treat the partial-file EOF as the track end and advance early.
     async fn prebuffer_and_load(
         self: &Arc<Self>,
         url: String,
@@ -752,8 +750,6 @@ impl DaemonCore {
             use futures::StreamExt;
             use std::io::Write;
 
-            const PREBUFFER_THRESHOLD: usize = 512 * 1024;
-
             // RAII clears on every return: loading flag + cancel slot.
             let gate = PrebufferGate::new(loading);
             let slot_cleaner = CancelSlotCleaner::new(core.clone(), cancel_task.clone());
@@ -790,7 +786,6 @@ impl DaemonCore {
             };
 
             let mut bytes_written: usize = 0;
-            let mut triggered = false;
             let mut stream = resp.bytes_stream();
 
             loop {
@@ -810,11 +805,9 @@ impl DaemonCore {
                     Ok(c) => c,
                     Err(_) => {
                         error!("Pre-buffer stream timeout (15s); aborting");
-                        if !triggered {
-                            let mut mpv = core.mpv.lock().await;
-                            let _ = mpv.loadfile(&url).await;
-                            core.stamp_loadfile();
-                        }
+                        let mut mpv = core.mpv.lock().await;
+                        let _ = mpv.loadfile(&url).await;
+                        core.stamp_loadfile();
                         return;
                     }
                 };
@@ -823,11 +816,9 @@ impl DaemonCore {
                     Ok(c) => c,
                     Err(e) => {
                         error!("Pre-buffer stream error: {}", e);
-                        if !triggered {
-                            let mut mpv = core.mpv.lock().await;
-                            let _ = mpv.loadfile(&url).await;
-                            core.stamp_loadfile();
-                        }
+                        let mut mpv = core.mpv.lock().await;
+                        let _ = mpv.loadfile(&url).await;
+                        core.stamp_loadfile();
                         return;
                     }
                 };
@@ -836,77 +827,35 @@ impl DaemonCore {
                     return;
                 }
                 bytes_written += chunk.len();
-
-                if !triggered && bytes_written >= PREBUFFER_THRESHOLD {
-                    triggered = true;
-                    let _ = file.flush();
-                    info!(
-                        "Pre-buffer threshold reached ({} KB in {:?}); loading {}",
-                        bytes_written / 1024,
-                        start.elapsed(),
-                        path_str
-                    );
-                    let gen = {
-                        let mut mpv = core.mpv.lock().await;
-                        // Re-check cancel with the mpv lock held; a newer
-                        // switch may have set it between the loop check
-                        // and now.
-                        if cancel_task.load(Ordering::Relaxed) {
-                            debug!("Pre-buffer cancelled before loadfile");
-                            gate.disarm();
-                            slot_cleaner.disarm();
-                            return;
-                        }
-                        if let Err(e) = mpv.loadfile_paused(&path_str).await {
-                            error!("Pre-buffer loadfile failed: {}", e);
-                            return;
-                        }
-                        core.stamp_loadfile()
-                    };
-                    if cancel_task.load(Ordering::Relaxed) {
-                        gate.disarm();
-                        slot_cleaner.disarm();
-                        return;
-                    }
-                    core.settle_rate_then_unpause(gen).await;
-                    core.preload_next_track(preload_pos).await;
-                }
             }
 
             let _ = file.flush();
-            if !triggered {
-                info!(
-                    "Pre-buffer download complete without hitting threshold ({} KB); loading",
-                    bytes_written / 1024
-                );
-                let gen = {
-                    let mut mpv = core.mpv.lock().await;
-                    if cancel_task.load(Ordering::Relaxed) {
-                        debug!("Pre-buffer cancelled before final loadfile");
-                        gate.disarm();
-                        slot_cleaner.disarm();
-                        return;
-                    }
-                    if let Err(e) = mpv.loadfile_paused(&path_str).await {
-                        error!("Pre-buffer loadfile failed: {}", e);
-                        return;
-                    }
-                    core.stamp_loadfile()
-                };
+            info!(
+                "Pre-buffer download complete ({} KB in {:?}); loading",
+                bytes_written / 1024,
+                start.elapsed()
+            );
+            let gen = {
+                let mut mpv = core.mpv.lock().await;
                 if cancel_task.load(Ordering::Relaxed) {
+                    debug!("Pre-buffer cancelled before loadfile");
                     gate.disarm();
                     slot_cleaner.disarm();
                     return;
                 }
-                core.settle_rate_then_unpause(gen).await;
-                core.preload_next_track(preload_pos).await;
-            } else {
-                info!(
-                    "Pre-buffer download finished: {} KB total in {:?}",
-                    bytes_written / 1024,
-                    start.elapsed()
-                );
+                if let Err(e) = mpv.loadfile_paused(&path_str).await {
+                    error!("Pre-buffer loadfile failed: {}", e);
+                    return;
+                }
+                core.stamp_loadfile()
+            };
+            if cancel_task.load(Ordering::Relaxed) {
+                gate.disarm();
+                slot_cleaner.disarm();
+                return;
             }
+            core.settle_rate_then_unpause(gen).await;
+            core.preload_next_track(preload_pos).await;
             let _ = &slot_cleaner;
         });
     }

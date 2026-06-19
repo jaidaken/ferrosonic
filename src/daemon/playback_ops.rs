@@ -25,7 +25,12 @@ impl DaemonCore {
         }
     }
 
-    /// Pause playback. Stops mpv so it disconnects its PipeWire stream and the audio device can re-rate to other apps; the playhead is kept in `now_playing.position` and resume reloads + seeks back. Commits `Paused` before the stop so the idle tick (gated on `is_playing`) cannot read the stop as a track-end and auto-advance.
+    /// Pause playback. Stops mpv so it disconnects its PipeWire stream; the
+    /// playhead is kept in `now_playing.position` and resume reloads + seeks
+    /// back. The force-rate pin is deliberately kept (released only on stop)
+    /// so resuming the same track needs no device re-clock and stays gapless.
+    /// Commits `Paused` before the stop so the idle tick (gated on `is_playing`)
+    /// cannot read the stop as a track-end and auto-advance.
     pub async fn pause_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         let was_playing = {
@@ -47,7 +52,6 @@ impl DaemonCore {
             }
         }
         self.emit_now_playing().await;
-        self.release_pipewire_rate().await;
         Ok(())
     }
 
