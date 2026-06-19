@@ -183,16 +183,40 @@ impl DaemonCore {
     }
 
     async fn try_gapless_advance(self: &Arc<Self>) -> GaplessOutcome {
-        let next_pos = {
+        // DIAG (temporary): mpv state at the gapless trigger; a wrong-track
+        // advance shows as mpv dur not matching the expected next-song dur.
+        let (mpos, mcount, mdur, mtime) = {
+            let mut mpv = self.mpv.lock().await;
+            (
+                mpv.get_playlist_pos().await.ok().flatten(),
+                mpv.get_playlist_count().await.ok(),
+                mpv.get_duration().await.unwrap_or(0.0),
+                mpv.get_time_pos().await.unwrap_or(0.0),
+            )
+        };
+        let (next_pos, diag) = {
             let mut state = self.state.write().await;
             let queue_len = state.queue.len();
             let repeat = state.config.repeat_mode;
-            let resolved = state.queue_position.and_then(|cur| {
+            let cur = state.queue_position;
+            let now_title = state
+                .now_playing
+                .song
+                .as_ref()
+                .map(|x| x.title.clone())
+                .unwrap_or_default();
+            let resolved = cur.and_then(|c| {
                 repeat
-                    .next_auto(cur, queue_len)
+                    .next_auto(c, queue_len)
                     .and_then(|n| state.queue.get(n).map(|s| (n, s.clone())))
             });
             if let Some((next_pos, song)) = resolved {
+                let diag = (
+                    cur,
+                    now_title,
+                    song.title.clone(),
+                    song.duration.unwrap_or(0),
+                );
                 state.queue_position = Some(next_pos);
                 state.now_playing.song = Some(song.clone());
                 state.now_playing.position = 0.0;
@@ -201,11 +225,17 @@ impl DaemonCore {
                 // sample rates must not stay pinned to the previous track's rate.
                 state.now_playing.sample_rate = None;
                 state.now_playing.bit_depth = None;
-                Some(next_pos)
+                (Some(next_pos), Some(diag))
             } else {
-                None
+                (None, None)
             }
         };
+        if let Some((cur, now, next_title, next_dur)) = &diag {
+            info!(
+                "GAPLESS-DIAG mpv[pos={:?} count={:?} dur={:.0}s time={:.0}s] queue[pos={:?} now='{}' next='{}' next_dur={}s]",
+                mpos, mcount, mdur, mtime, cur, now, next_title, next_dur
+            );
+        }
         let Some(next_pos) = next_pos else {
             return GaplessOutcome::QueueRanOut;
         };

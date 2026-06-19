@@ -259,6 +259,7 @@ impl DaemonCore {
 
     /// Repeat-aware: loads current for One, wraps for All, no-ops at the end for Off.
     pub async fn preload_next_track(self: &Arc<Self>, current_pos: usize) {
+        let gen = self.loadfile_gen.load(std::sync::atomic::Ordering::Acquire);
         let next_song = {
             let state = self.state.read().await;
             let queue_len = state.queue.len();
@@ -279,8 +280,17 @@ impl DaemonCore {
             }
         };
 
-        debug!("Pre-loading next track for gapless: {}", next_song.title);
+        info!(
+            "PRELOAD-DIAG: from pos {} -> '{}'",
+            current_pos, next_song.title
+        );
         let mut mpv = self.mpv.lock().await;
+        // A newer loadfile (concurrent play or a tick advance) superseded this
+        // preload's current track; skip so a stale next never lands in slot 1.
+        if self.loadfile_gen.load(std::sync::atomic::Ordering::Acquire) != gen {
+            debug!("preload superseded by a newer load; skipping append");
+            return;
+        }
         if let Err(e) = mpv.loadfile_append(&url).await {
             debug!("Failed to pre-load next track: {}", e);
         } else if let Ok(count) = mpv.get_playlist_count().await {
