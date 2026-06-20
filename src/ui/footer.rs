@@ -83,6 +83,7 @@ impl<'a> Footer<'a> {
                 s("/", "Search"),
                 s("←/→", "Focus"),
                 s("v", "Albums/Artists"),
+                s("f", "Library"),
                 s("s", "Sort"),
                 s("e", "Add"),
                 s("i", "Add next"),

@@ -325,7 +325,13 @@ impl SubsonicClient {
 
     /// Fetch the full artist index, flattened across index letters.
     pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
-        let data: ArtistsData = self.request(&self.with_folder("getArtists".into())).await?;
+        let data: ArtistsData = match self.request(&self.with_folder("getArtists".into())).await {
+            Ok(d) => d,
+            // Navidrome answers an empty (or scoped-empty) library with error 70
+            // instead of an empty index; treat it as no artists, not a failure.
+            Err(SubsonicError::Api { code: 70, .. }) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
 
         let artists: Vec<Artist> = data
             .artists

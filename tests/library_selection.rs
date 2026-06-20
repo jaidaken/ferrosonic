@@ -6,7 +6,7 @@ mod common;
 use common::TestDaemon;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ferrosonic::app::App;
-use ferrosonic::subsonic::models::MusicFolder;
+use ferrosonic::subsonic::models::{Artist, MusicFolder};
 use serial_test::serial;
 use wiremock::Request;
 
@@ -127,5 +127,32 @@ async fn f_on_library_page_cycles_to_the_next_folder() {
     assert!(
         q.contains("musicFolderId=1"),
         "f cycles All -> the first folder (id 1) and rescopes browse; query was {q}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn empty_library_clears_the_artist_tree_not_leaves_it_stale() {
+    let td = TestDaemon::new().await;
+    {
+        let mut st = td.state.write().await;
+        st.library.artists = vec![Artist {
+            id: "a1".into(),
+            name: "Old".into(),
+            album_count: None,
+            cover_art: None,
+        }];
+    }
+    // Navidrome answers a scoped-empty library with error 70, not an empty index.
+    td.fake_subsonic
+        .expect_error("getArtists", 70, "Library not found or empty")
+        .await;
+
+    td.core.refresh_artists().await;
+
+    let st = td.state.read().await;
+    assert!(
+        st.library.artists.is_empty(),
+        "an empty library (error 70) clears the tree instead of leaving stale artists"
     );
 }
