@@ -4,8 +4,17 @@
 mod common;
 
 use common::TestDaemon;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ferrosonic::app::App;
+use ferrosonic::subsonic::models::MusicFolder;
 use serial_test::serial;
 use wiremock::Request;
+
+fn key(code: KeyCode) -> KeyEvent {
+    let mut k = KeyEvent::new(code, KeyModifiers::NONE);
+    k.kind = KeyEventKind::Press;
+    k
+}
 
 fn find<'a>(reqs: &'a [Request], path: &str) -> &'a Request {
     match reqs.iter().find(|r| r.url.path() == path) {
@@ -78,5 +87,45 @@ async fn no_folder_selected_omits_music_folder_id() {
     assert!(
         !q.contains("musicFolderId"),
         "with no folder selected, getArtists must browse all libraries; query was {q}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn f_on_library_page_cycles_to_the_next_folder() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_artists(&["A"]).await;
+    td.fake_subsonic.expect_random_songs(&["s"]).await;
+    let cfg = td.state.read().await.config.clone();
+    let mut app = App::with_remote_client(
+        std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone())),
+        cfg,
+    );
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.library.music_folders = vec![
+            MusicFolder {
+                id: 1,
+                name: "Music".into(),
+            },
+            MusicFolder {
+                id: 2,
+                name: "Test".into(),
+            },
+        ];
+        ds.config.music_folder_id = None;
+    }
+
+    app.handle_key(key(KeyCode::F(1))).await.unwrap();
+    app.handle_key(key(KeyCode::Char('f'))).await.unwrap();
+
+    let reqs = td.fake_subsonic.received_requests().await;
+    let q = find(&reqs, "/rest/getArtists")
+        .url
+        .query()
+        .unwrap_or_default();
+    assert!(
+        q.contains("musicFolderId=1"),
+        "f cycles All -> the first folder (id 1) and rescopes browse; query was {q}"
     );
 }

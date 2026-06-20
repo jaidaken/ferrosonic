@@ -28,7 +28,7 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Custom themes** - Create your own themes as TOML files in `~/.config/ferrosonic/themes/`
 - **Mouse support** - Clickable buttons, tabs, lists, and progress bar seeking
 - **Library search** - `/` runs a single unified server-side `search3` across artists, albums, and songs at once, results shown together in the tree
-- **Library selection** - On multi-library servers, scope browsing and playback to one music folder (or all) from the Settings page
+- **Library selection** - On multi-library servers, press `f` on the Library page to cycle which music folder (or all) the artist tree, album list, random songs, and search are scoped to; the active library is labelled in the pane title and remembered across restarts
 - **Multi-disc album support** - Proper disc and track number display
 - **Keyboard-driven** - Vim-style navigation (j/k) alongside arrow keys
 
@@ -178,6 +178,8 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 | `i` | Add selected item as next in queue |
 | `t` | Shuffle play all songs by the selected artist or album |
 | `m` | Star/unstar highlighted song (songs pane focus only) |
+| `v` | Toggle the left pane between the artist tree and the flat album list |
+| `f` | Cycle the active library / music folder (All, then each folder); shown in the pane title |
 
 ### Queue Page (F2)
 
@@ -247,7 +249,7 @@ F-keys still switch pages from the Server page; any unsaved edits are discarded 
 | `Left` | Previous option |
 | `Right` / `Enter` | Next option |
 
-Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, scrobbling, desktop notifications, the library selector, and the daemon-mode preference. Changes are saved automatically. The daemon-mode toggle takes effect on the next launch. The library selector cycles "All" and each music folder the server reports; picking one scopes the artist tree, album list, random songs, and search to that library.
+Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, scrobbling, desktop notifications, and the daemon-mode preference. Changes are saved automatically. The daemon-mode toggle takes effect on the next launch.
 
 ## Mouse Support
 

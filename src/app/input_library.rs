@@ -136,6 +136,40 @@ impl App {
             return Ok(());
         }
 
+        // 'f' cycles the active library (music folder): All, then each folder.
+        if let KeyCode::Char('f') = key.code {
+            let folders = &state.daemon.library.music_folders;
+            if folders.is_empty() {
+                drop(state);
+                drop(cs);
+                drop(ds);
+                return Ok(());
+            }
+            let options: Vec<Option<i64>> = std::iter::once(None)
+                .chain(folders.iter().map(|f| Some(f.id)))
+                .collect();
+            let cur = state.daemon.config.music_folder_id;
+            let idx = options.iter().position(|o| *o == cur).unwrap_or(0);
+            let next = options[(idx + 1) % options.len()];
+            let label = match next {
+                None => "All".to_string(),
+                Some(id) => folders
+                    .iter()
+                    .find(|f| f.id == id)
+                    .map(|f| f.name.clone())
+                    .unwrap_or_default(),
+            };
+            state.client.notify(format!("Library: {label}"));
+            drop(state);
+            drop(cs);
+            drop(ds);
+            let _ = self
+                .client
+                .request(DaemonRequest::SetMusicFolder(next))
+                .await;
+            return Ok(());
+        }
+
         // Album-list view, left pane: dedicated album navigation. Right-pane
         // (focus == 1) song keys fall through to the shared match below.
         if state.client.artists.view == LibraryView::AlbumList && state.client.artists.focus == 0 {

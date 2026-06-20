@@ -204,8 +204,6 @@ pub struct SettingsState {
     pub scrobble: bool,
     /// Show a desktop notification on track change.
     pub notifications: bool,
-    /// Selected library (`musicFolderId`); `None` = all libraries.
-    pub music_folder_id: Option<i64>,
 }
 
 impl Default for SettingsState {
@@ -223,7 +221,6 @@ impl Default for SettingsState {
             cover_art_size: 16,
             scrobble: true,
             notifications: true,
-            music_folder_id: None,
         }
     }
 }

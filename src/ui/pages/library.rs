@@ -460,6 +460,18 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     render_songs(frame, chunks[1], state, &colors);
 }
 
+/// Library-pane label for the active music folder: the folder name, or "All".
+fn library_label(id: Option<i64>, folders: &[crate::subsonic::models::MusicFolder]) -> String {
+    match id {
+        None => "Library: All".to_string(),
+        Some(id) => folders
+            .iter()
+            .find(|f| f.id == id)
+            .map(|f| format!("Library: {}", f.name))
+            .unwrap_or_else(|| format!("Library: #{id}")),
+    }
+}
+
 fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let artists = &state.client.artists;
 
@@ -480,11 +492,19 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
 
     let album_view = artists.view == crate::app::page_state::LibraryView::AlbumList;
 
+    let lib_label = library_label(
+        state.daemon.config.music_folder_id,
+        &state.daemon.library.music_folders,
+    );
+
     let base_block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style);
     let block = if searching {
-        base_block.title(format!(" Search ({}) ", artists.filter))
+        base_block.title(format!(
+            " Search ({})  \u{00b7}  {lib_label} ",
+            artists.filter
+        ))
     } else {
         // Toggle hint: Artists <-> Albums. The active mode shows in its accent
         // colour, the other label and the arrow are muted; they flip on 'v'.
@@ -506,10 +526,12 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
         ];
         if album_view {
             let label = artists.album_sort.label();
-            spans.push(Span::styled(format!(" \u{00b7} {label} "), muted));
-        } else {
-            spans.push(Span::raw(" "));
+            spans.push(Span::styled(format!(" \u{00b7} {label}"), muted));
         }
+        spans.push(Span::styled(
+            format!(" \u{00b7} {lib_label} "),
+            Style::default().fg(colors.accent),
+        ));
         base_block.title(Line::from(spans))
     };
 

@@ -224,7 +224,6 @@ pub async fn apply_event(
             let auto_continue = cfg.auto_continue;
             let scrobble = cfg.scrobble;
             let notifications = cfg.notifications;
-            let music_folder_id = cfg.music_folder_id;
             {
                 let mut ds = daemon_state.write().await;
                 ds.config = cfg;
@@ -237,7 +236,6 @@ pub async fn apply_event(
                 cs.settings_state.auto_continue = auto_continue;
                 cs.settings_state.scrobble = scrobble;
                 cs.settings_state.notifications = notifications;
-                cs.settings_state.music_folder_id = music_folder_id;
             }
 
             if cover_art_enabled {

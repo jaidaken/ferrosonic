@@ -3,7 +3,7 @@ source: tests/ui_smoke.rs
 expression: frame
 ---
  F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
-┌ Artists → Albums ────────────┐┌ Songs ───────────────────────────────────────┐
+┌ Artists → Albums · Library: A┐┌ Songs ───────────────────────────────────────┐
 │                              ││Select an album to view songs                 │
 │                              ││                                              │
 │                              ││                                              │

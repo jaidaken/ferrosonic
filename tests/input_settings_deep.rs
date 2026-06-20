@@ -39,8 +39,8 @@ async fn down_advances_through_all_fields_then_caps() {
     }
     let cs = fx.app.client_state.read().await;
     assert_eq!(
-        cs.settings_state.selected_field, 10,
-        "field index should cap at SETTINGS_FIELD_COUNT - 1 = 10"
+        cs.settings_state.selected_field, 9,
+        "field index should cap at SETTINGS_FIELD_COUNT - 1 = 9"
     );
 }
 
