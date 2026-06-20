@@ -9,6 +9,12 @@
   daemon so it shows whether or not the TUI is open. On by default; toggle
   under Settings, Notifications. Cover fetched at 512px for sharp icons.
 
+- **Library selection.** On servers with more than one music folder, the
+  Settings page gains a Library selector that cycles "All" and each folder the
+  server reports (`getMusicFolders`). Picking one scopes the artist tree, album
+  list, random songs, and search to that library via `musicFolderId`. Persisted
+  across restarts.
+
 - **Playlist editing.** Rename, delete, add songs, remove songs, and reorder
   server playlists from the Playlists page (`R` rename, `D` delete with a
   confirm, `d` remove a song, `J`/`K` reorder). Press `a` on any highlighted

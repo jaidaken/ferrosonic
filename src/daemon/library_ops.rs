@@ -126,6 +126,48 @@ impl DaemonCore {
         }
     }
 
+    /// Re-fetch the server's music folders and broadcast the new list.
+    pub async fn refresh_music_folders(self: &Arc<Self>) {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
+        match client.get_music_folders().await {
+            Ok(folders) => {
+                {
+                    let mut state = self.state.write().await;
+                    state.library.music_folders = folders.clone();
+                }
+                self.emit(DaemonEvent::MusicFoldersChanged(folders));
+            }
+            Err(e) => error!("Failed to load music folders: {}", e),
+        }
+    }
+
+    /// Select the library to browse (`None` = all); persist, re-scope the live
+    /// client, and refetch the library so the UI reflects the new folder.
+    pub async fn set_music_folder(self: &Arc<Self>, id: Option<i64>) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.config.music_folder_id = id;
+            state.config.save_default().map_err(Error::Config)?;
+            state.library.all_albums.clear();
+        }
+        {
+            // Bump gen under the subsonic lock so any refresh in flight with the
+            // previous folder is discarded by its config_gen_changed guard.
+            let mut slot = self.subsonic.write().await;
+            self.config_gen
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            if let Some(client) = slot.as_mut() {
+                client.set_music_folder(id);
+            }
+        }
+        self.emit_config_changed().await;
+        self.refresh_artists().await;
+        self.refresh_random().await;
+        Ok(())
+    }
+
     /// Create playlist `name` from `song_ids`, then refresh so the new playlist
     /// lands in `state.library.playlists` and a `PlaylistsChanged` event fires.
     pub async fn create_playlist(

@@ -216,7 +216,10 @@ impl DaemonCore {
     ) -> Arc<Self> {
         let subsonic = if config.is_configured() {
             match SubsonicClient::new(&config.base_url, &config.username, &config.password) {
-                Ok(client) => Some(client),
+                Ok(mut client) => {
+                    client.set_music_folder(config.music_folder_id);
+                    Some(client)
+                }
                 Err(e) => {
                     warn!("Failed to create Subsonic client: {}", e);
                     None

@@ -174,6 +174,11 @@ impl DaemonClient for InProcessClient {
             }
             DaemonRequest::RefreshArtists => {
                 self.core.refresh_artists().await;
+                self.core.refresh_music_folders().await;
+                Ok(DaemonResponse::Ok)
+            }
+            DaemonRequest::SetMusicFolder(id) => {
+                self.core.set_music_folder(id).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::RefreshPlaylists => {

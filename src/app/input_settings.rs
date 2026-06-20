@@ -16,16 +16,18 @@ enum SettingChange {
     Scrobble,
     Daemon,
     Notifications,
+    MusicFolder,
 }
 
-const SETTINGS_FIELD_COUNT: usize = 10;
+const SETTINGS_FIELD_COUNT: usize = 11;
 
 impl App {
     pub(super) async fn handle_settings_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let mut change: Option<SettingChange> = None;
 
         {
-            let _ds = self.daemon_state.read().await;
+            let ds = self.daemon_state.read().await;
+            let folders = ds.library.music_folders.clone();
             let mut cs = self.client_state.write().await;
             let field = cs.settings_state.selected_field;
             let cava_ok = cs.cava_available;
@@ -38,16 +40,16 @@ impl App {
                     cs.settings_state.selected_field = field + 1;
                 }
                 KeyCode::Left | KeyCode::Char('h') => {
-                    change = adjust_setting(&mut cs.settings_state, field, -1, cava_ok);
+                    change = adjust_setting(&mut cs.settings_state, field, -1, cava_ok, &folders);
                     if let Some(c) = change {
-                        let msg = change_message(&cs.settings_state, c);
+                        let msg = change_message(&cs.settings_state, c, &folders);
                         cs.notify(msg);
                     }
                 }
                 KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Char(' ') => {
-                    change = adjust_setting(&mut cs.settings_state, field, 1, cava_ok);
+                    change = adjust_setting(&mut cs.settings_state, field, 1, cava_ok, &folders);
                     if let Some(c) = change {
-                        let msg = change_message(&cs.settings_state, c);
+                        let msg = change_message(&cs.settings_state, c, &folders);
                         cs.notify(msg);
                     }
                 }
@@ -70,6 +72,7 @@ impl App {
             scrobble,
             daemon_enabled,
             notifications,
+            music_folder_id,
             gradient,
             h_gradient,
         ) = {
@@ -91,6 +94,7 @@ impl App {
                 s.scrobble,
                 s.daemon_enabled,
                 s.notifications,
+                s.music_folder_id,
                 s.current_theme().cava_gradient.clone(),
                 s.current_theme().cava_horizontal_gradient.clone(),
             )
@@ -106,6 +110,7 @@ impl App {
             SettingChange::Scrobble => DaemonRequest::SetScrobble(scrobble),
             SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
             SettingChange::Notifications => DaemonRequest::SetNotifications(notifications),
+            SettingChange::MusicFolder => DaemonRequest::SetMusicFolder(music_folder_id),
         };
         if let Err(e) = self.client.request(req).await {
             let ds = self.daemon_state.read().await;
@@ -147,7 +152,8 @@ impl App {
             | SettingChange::AutoContinue
             | SettingChange::Scrobble
             | SettingChange::Daemon
-            | SettingChange::Notifications => {}
+            | SettingChange::Notifications
+            | SettingChange::MusicFolder => {}
         }
 
         Ok(())
@@ -162,6 +168,7 @@ fn adjust_setting(
     field: usize,
     step: i32,
     cava_ok: bool,
+    folders: &[crate::subsonic::models::MusicFolder],
 ) -> Option<SettingChange> {
     use crate::config::RepeatMode;
     match field {
@@ -230,11 +237,34 @@ fn adjust_setting(
             s.notifications = !s.notifications;
             Some(SettingChange::Notifications)
         }
+        10 => {
+            // Cycle None (All) then each folder id; step wraps both directions.
+            let options: Vec<Option<i64>> = std::iter::once(None)
+                .chain(folders.iter().map(|f| Some(f.id)))
+                .collect();
+            let n = options.len() as i32;
+            let cur = options
+                .iter()
+                .position(|o| *o == s.music_folder_id)
+                .unwrap_or(0) as i32;
+            let next = (((cur + step) % n) + n) % n;
+            let chosen = options[next as usize];
+            if chosen == s.music_folder_id {
+                None
+            } else {
+                s.music_folder_id = chosen;
+                Some(SettingChange::MusicFolder)
+            }
+        }
         _ => None,
     }
 }
 
-fn change_message(s: &crate::app::state::SettingsState, change: SettingChange) -> String {
+fn change_message(
+    s: &crate::app::state::SettingsState,
+    change: SettingChange,
+    folders: &[crate::subsonic::models::MusicFolder],
+) -> String {
     match change {
         SettingChange::Theme => format!("Theme: {}", s.theme_name()),
         SettingChange::Cava => format!("Cava: {}", on_off(s.cava_enabled)),
@@ -246,6 +276,24 @@ fn change_message(s: &crate::app::state::SettingsState, change: SettingChange) -
         SettingChange::Scrobble => format!("Scrobble: {}", on_off(s.scrobble)),
         SettingChange::Daemon => format!("Daemon: {} (restart to apply)", on_off(s.daemon_enabled)),
         SettingChange::Notifications => format!("Notifications: {}", on_off(s.notifications)),
+        SettingChange::MusicFolder => {
+            format!(
+                "Library: {}",
+                music_folder_label(s.music_folder_id, folders)
+            )
+        }
+    }
+}
+
+/// Display label for the selected library: the folder name, or "All".
+fn music_folder_label(id: Option<i64>, folders: &[crate::subsonic::models::MusicFolder]) -> String {
+    match id {
+        None => "All".to_string(),
+        Some(id) => folders
+            .iter()
+            .find(|f| f.id == id)
+            .map(|f| f.name.clone())
+            .unwrap_or_else(|| format!("#{id}")),
     }
 }
 

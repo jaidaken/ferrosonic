@@ -68,6 +68,17 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let scrobble_val = if s.scrobble { "On" } else { "Off" }.to_string();
     let daemon_val = if s.daemon_enabled { "On" } else { "Off" }.to_string();
     let notifications_val = if s.notifications { "On" } else { "Off" }.to_string();
+    let library_val = match s.music_folder_id {
+        None => "All".to_string(),
+        Some(id) => state
+            .daemon
+            .library
+            .music_folders
+            .iter()
+            .find(|f| f.id == id)
+            .map(|f| f.name.clone())
+            .unwrap_or_else(|| format!("#{id}")),
+    };
 
     let x = inner.x;
     let w = inner.width;
@@ -132,6 +143,13 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
             value: notifications_val,
             idx: 9,
         },
+        Item::Gap,
+        Item::Heading("Library"),
+        Item::Row {
+            label: "Library",
+            value: library_val,
+            idx: 10,
+        },
     ];
 
     {
@@ -192,6 +210,7 @@ fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
         7 => "← → or Enter to toggle scrobbling (report plays to the server)",
         8 => "← → or Enter to toggle background daemon (takes effect on next launch)",
         9 => "← → or Enter to toggle desktop notifications on track change",
+        10 => "← → or Enter to select which library to browse (All or one folder)",
         _ => "",
     }
 }
@@ -272,11 +291,11 @@ mod tests {
             settings_help_text(9, true).contains("notifications"),
             "idx 9 is Desktop Notifications"
         );
-        assert_eq!(
-            settings_help_text(10, true),
-            "",
-            "no field beyond Notifications"
+        assert!(
+            settings_help_text(10, true).contains("library"),
+            "idx 10 is Library selection"
         );
+        assert_eq!(settings_help_text(11, true), "", "no field beyond Library");
     }
 
     #[test]

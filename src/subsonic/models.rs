@@ -358,6 +358,31 @@ impl Child {
     }
 }
 
+/// Payload of `getMusicFolders`.
+#[derive(Debug, Deserialize)]
+pub struct MusicFoldersData {
+    /// The music-folders wrapper object.
+    #[serde(rename = "musicFolders")]
+    pub music_folders: MusicFoldersInner,
+}
+
+/// Music-folder list inside `getMusicFolders`.
+#[derive(Debug, Deserialize)]
+pub struct MusicFoldersInner {
+    /// Configured libraries; empty on a server with none.
+    #[serde(default, rename = "musicFolder")]
+    pub music_folder: Vec<MusicFolder>,
+}
+
+/// One Subsonic music folder (a server library).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MusicFolder {
+    /// Numeric library ID used as `musicFolderId` in library calls.
+    pub id: i64,
+    /// Display name of the library.
+    pub name: String,
+}
+
 /// Payload of `getPlaylists`.
 #[derive(Debug, Deserialize)]
 pub struct PlaylistsData {

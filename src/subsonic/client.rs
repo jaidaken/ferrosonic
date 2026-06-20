@@ -22,6 +22,8 @@ pub struct SubsonicClient {
     /// Arc shares the secret across clones without duplicating the heap bytes.
     password: Arc<Secret>,
     http: Client,
+    /// Library to scope browse calls to; `None` means all libraries.
+    music_folder_id: Option<i64>,
 }
 
 impl SubsonicClient {
@@ -43,7 +45,25 @@ impl SubsonicClient {
             username: username.to_string(),
             password: Arc::new(password.clone()),
             http,
+            music_folder_id: None,
         })
+    }
+
+    /// Scope subsequent browse calls to one library, or all when `None`.
+    pub fn set_music_folder(&mut self, id: Option<i64>) {
+        self.music_folder_id = id;
+    }
+
+    /// Append `musicFolderId` to `endpoint` when a library is selected,
+    /// choosing `?` or `&` by whether the endpoint already has a query.
+    fn with_folder(&self, endpoint: String) -> String {
+        match self.music_folder_id {
+            Some(id) => {
+                let sep = if endpoint.contains('?') { '&' } else { '?' };
+                format!("{endpoint}{sep}musicFolderId={id}")
+            }
+            None => endpoint,
+        }
     }
 
     #[doc(hidden)]
@@ -99,7 +119,7 @@ impl SubsonicClient {
             album_count,
             song_count,
         );
-        let data: Search3Data = self.request(&endpoint).await?;
+        let data: Search3Data = self.request(&self.with_folder(endpoint)).await?;
         Ok(data.result)
     }
 
@@ -286,9 +306,17 @@ impl SubsonicClient {
         Ok(songs)
     }
 
+    /// List the server's configured music folders (libraries).
+    pub async fn get_music_folders(&self) -> Result<Vec<MusicFolder>, SubsonicError> {
+        let data: MusicFoldersData = self.request("getMusicFolders").await?;
+        Ok(data.music_folders.music_folder)
+    }
+
     /// Fetch a batch of 500 random songs.
     pub async fn get_random_songs(&self) -> Result<Vec<Child>, SubsonicError> {
-        let data: RandomSongsData = self.request("getRandomSongs?size=500").await?;
+        let data: RandomSongsData = self
+            .request(&self.with_folder("getRandomSongs?size=500".into()))
+            .await?;
         let songs = data.random_songs.song;
 
         debug!("Fetched {} songs", songs.len());
@@ -297,7 +325,7 @@ impl SubsonicClient {
 
     /// Fetch the full artist index, flattened across index letters.
     pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
-        let data: ArtistsData = self.request("getArtists").await?;
+        let data: ArtistsData = self.request(&self.with_folder("getArtists".into())).await?;
 
         let artists: Vec<Artist> = data
             .artists
@@ -322,9 +350,9 @@ impl SubsonicClient {
         offset: u32,
     ) -> Result<Vec<Album>, SubsonicError> {
         let data: AlbumList2Data = self
-            .request(&format!(
+            .request(&self.with_folder(format!(
                 "getAlbumList2?type={sort_type}&size={size}&offset={offset}"
-            ))
+            )))
             .await?;
         Ok(data.album_list2.album)
     }

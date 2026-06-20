@@ -163,6 +163,9 @@ pub struct LibraryCache {
     pub album_songs_cache_order: VecDeque<String>,
     /// All playlists visible to the account.
     pub playlists: Vec<Playlist>,
+    /// Server libraries (music folders) for the library selector.
+    #[serde(default)]
+    pub music_folders: Vec<crate::subsonic::models::MusicFolder>,
     /// Song lists keyed by playlist ID.
     pub playlist_songs_cache: HashMap<String, Vec<Child>>,
     /// LRU order for `playlist_songs_cache`, least-recent first.

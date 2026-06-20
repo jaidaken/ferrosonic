@@ -107,6 +107,20 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_music_folders(&self, folders: &[(i64, &str)]) {
+        let list: Vec<Value> = folders
+            .iter()
+            .map(|(id, name)| json!({ "id": id, "name": name }))
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getMusicFolders"))
+            .respond_with(ok_body(json!({
+                "musicFolders": { "musicFolder": list }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_playlists(&self) {
         Mock::given(method("GET"))
             .and(path("/rest/getPlaylists"))

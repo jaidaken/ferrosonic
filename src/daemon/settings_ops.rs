@@ -17,10 +17,12 @@ impl DaemonCore {
         username: &str,
         password: &crate::secret::Secret,
     ) -> Result<(), Error> {
+        let music_folder_id;
         {
             let mut state = self.state.write().await;
             state.config.base_url = base_url.to_string();
             state.config.username = username.to_string();
+            music_folder_id = state.config.music_folder_id;
             let pf_opt = state.config.password_file.clone().filter(|s| !s.is_empty());
             if let Some(pf) = pf_opt.as_deref() {
                 if let Err(e) = crate::config::write_password_file_atomic(pf, password) {
@@ -36,8 +38,9 @@ impl DaemonCore {
             }
         }
 
-        let new_client =
+        let mut new_client =
             SubsonicClient::new(base_url, username, password).map_err(Error::Subsonic)?;
+        new_client.set_music_folder(music_folder_id);
         {
             // R4: bump gen before installing client, both under subsonic write so refreshes serialize.
             let mut slot = self.subsonic.write().await;
@@ -49,6 +52,7 @@ impl DaemonCore {
         self.refresh_starred().await;
         self.refresh_artists().await;
         self.refresh_playlists().await;
+        self.refresh_music_folders().await;
         self.spawn_refresh_scrobble_capability();
 
         self.emit_config_changed().await;

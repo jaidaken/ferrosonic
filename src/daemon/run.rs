@@ -49,6 +49,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             bg.refresh_starred().await;
             bg.refresh_artists().await;
             bg.refresh_playlists().await;
+            bg.refresh_music_folders().await;
         });
     }
 

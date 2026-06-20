@@ -103,6 +103,10 @@ pub struct Config {
         default = "Config::default_rate_switch_delay_ms"
     )]
     pub rate_switch_delay_ms: u32,
+
+    /// Library to browse and play from (`musicFolderId`); `None` = all.
+    #[serde(rename = "MusicFolderId", default)]
+    pub music_folder_id: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -141,6 +145,8 @@ struct ConfigOnDisk<'a> {
     notifications: bool,
     #[serde(rename = "RateSwitchDelayMs")]
     rate_switch_delay_ms: u32,
+    #[serde(rename = "MusicFolderId", skip_serializing_if = "Option::is_none")]
+    music_folder_id: Option<i64>,
 }
 
 fn serialize_revealed_opt<S: serde::Serializer>(
@@ -176,6 +182,7 @@ impl Config {
             scrobble: self.scrobble,
             notifications: self.notifications,
             rate_switch_delay_ms: self.rate_switch_delay_ms,
+            music_folder_id: self.music_folder_id,
         }
     }
 }
@@ -300,6 +307,7 @@ impl Default for Config {
             scrobble: Self::default_scrobble(),
             notifications: Self::default_notifications(),
             rate_switch_delay_ms: Self::default_rate_switch_delay_ms(),
+            music_folder_id: None,
         }
     }
 }

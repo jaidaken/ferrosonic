@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::{Config, RepeatMode};
 use crate::daemon::state::{DaemonState, NowPlaying};
 use crate::secret::{deserialize_secret, serialize_revealed, Secret};
-use crate::subsonic::models::{Album, Artist, Child, Playlist, SearchResult3};
+use crate::subsonic::models::{Album, Artist, Child, MusicFolder, Playlist, SearchResult3};
 
 /// Client-to-daemon command sent over the IPC socket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,6 +166,8 @@ pub enum DaemonRequest {
     SetScrobble(bool),
     /// Enable or disable desktop notifications on track change.
     SetNotifications(bool),
+    /// Select the library to browse (`None` = all libraries).
+    SetMusicFolder(Option<i64>),
     /// Set the repeat mode and persist the choice.
     SetRepeatMode(RepeatMode),
     /// Enable or disable cover art rendering.
@@ -283,6 +285,8 @@ pub enum DaemonEvent {
     },
     /// New playlist list.
     PlaylistsChanged(Vec<Playlist>),
+    /// New music-folder (library) list.
+    MusicFoldersChanged(Vec<MusicFolder>),
     /// Song list of one playlist changed.
     PlaylistSongsChanged {
         /// ID of the affected playlist.
