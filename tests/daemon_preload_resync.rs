@@ -17,6 +17,9 @@ async fn playing_td(n: usize, pos: usize) -> TestDaemon {
         s.queue_position = Some(pos);
         s.now_playing.state = PlaybackState::Playing;
     }
+    // A Playing track means mpv has it loaded: seed the current entry so the
+    // preload count gate sees count==1 (the production precondition).
+    td.fake_mpv.set_playlist(vec!["current".into()]).await;
     td
 }
 

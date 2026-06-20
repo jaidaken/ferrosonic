@@ -16,6 +16,7 @@ async fn preload_appends_next_song_to_mpv_playlist() {
         s.queue = songs("t", 3);
         s.queue_position = Some(0);
     }
+    td.fake_mpv.set_playlist(vec!["current".into()]).await;
 
     td.core.preload_next_track(0).await;
 
@@ -26,6 +27,38 @@ async fn preload_appends_next_song_to_mpv_playlist() {
     assert!(
         saw_append,
         "preload_next_track must loadfile with append mode"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn concurrent_preloads_append_next_only_once() {
+    let td = TestDaemon::new().await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = songs("t", 3);
+        s.queue_position = Some(0);
+    }
+    td.fake_mpv.set_playlist(vec!["current".into()]).await;
+
+    // Race at track-start: without the count gate both callers see count==1 and double-append (count 3), desyncing the gapless advance.
+    let c1 = td.core.clone();
+    let c2 = td.core.clone();
+    tokio::join!(c1.preload_next_track(0), c2.preload_next_track(0));
+
+    let appends = td
+        .fake_mpv
+        .commands()
+        .await
+        .iter()
+        .filter(|c| {
+            c.first().and_then(Value::as_str) == Some("loadfile")
+                && c.get(2).and_then(Value::as_str) == Some("append")
+        })
+        .count();
+    assert_eq!(
+        appends, 1,
+        "concurrent preloads must append the next track exactly once"
     );
 }
 
@@ -62,6 +95,7 @@ async fn preload_at_end_under_repeat_all_loads_first_track() {
         s.queue_position = Some(2);
         s.config.repeat_mode = RepeatMode::All;
     }
+    td.fake_mpv.set_playlist(vec!["current".into()]).await;
 
     td.core.preload_next_track(2).await;
 
@@ -95,6 +129,7 @@ async fn preload_under_repeat_one_preloads_same_track() {
         s.queue_position = Some(1);
         s.config.repeat_mode = RepeatMode::One;
     }
+    td.fake_mpv.set_playlist(vec!["current".into()]).await;
 
     td.core.preload_next_track(1).await;
 

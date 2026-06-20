@@ -280,10 +280,6 @@ impl DaemonCore {
             }
         };
 
-        info!(
-            "PRELOAD-DIAG: from pos {} -> '{}'",
-            current_pos, next_song.title
-        );
         let mut mpv = self.mpv.lock().await;
         // A newer loadfile (concurrent play or a tick advance) superseded this
         // preload's current track; skip so a stale next never lands in slot 1.
@@ -291,17 +287,22 @@ impl DaemonCore {
             debug!("preload superseded by a newer load; skipping append");
             return;
         }
+        // Single-flight: append a next track only when the current track is the lone playlist entry; the mpv lock serializes racing preloads so a double-append (count 3) cannot desync the gapless advance.
+        match mpv.get_playlist_count().await {
+            Ok(1) => {}
+            Ok(c) => {
+                debug!("preload skip: playlist count {c} != 1 (next already loaded or idle)");
+                return;
+            }
+            Err(e) => {
+                debug!("preload skip: playlist count query failed: {e}");
+                return;
+            }
+        }
         if let Err(e) = mpv.loadfile_append(&url).await {
             debug!("Failed to pre-load next track: {}", e);
-        } else if let Ok(count) = mpv.get_playlist_count().await {
-            if count < 2 {
-                warn!(
-                    "Preload may have failed: playlist count is {} (expected 2)",
-                    count
-                );
-            } else {
-                debug!("Preload confirmed: playlist count is {}", count);
-            }
+        } else {
+            debug!("Preload appended next track; playlist count now 2");
         }
     }
 

@@ -13,10 +13,15 @@ use serde_json::Value;
 use serial_test::serial;
 
 async fn set_playing(td: &TestDaemon, queue: Vec<Child>, pos: usize) {
-    let mut s = td.state.write().await;
-    s.queue = queue;
-    s.queue_position = Some(pos);
-    s.now_playing.state = PlaybackState::Playing;
+    {
+        let mut s = td.state.write().await;
+        s.queue = queue;
+        s.queue_position = Some(pos);
+        s.now_playing.state = PlaybackState::Playing;
+    }
+    // A Playing track means mpv has it loaded: seed the current entry so the
+    // preload count gate sees count==1 (the production precondition).
+    td.fake_mpv.set_playlist(vec!["current".into()]).await;
 }
 
 /// Whether mpv was told to preload (append) a track whose URL carries `id`.
