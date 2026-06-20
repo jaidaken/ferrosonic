@@ -10,10 +10,10 @@
   under Settings, Notifications. Cover fetched at 512px for sharp icons.
 
 - **Library selection.** On servers with more than one music folder, press `f`
-  on the Library page to cycle "All" and each folder the server reports
-  (`getMusicFolders`). The choice scopes the artist tree, album list, random
-  songs, and search via `musicFolderId`, shows in the pane title, and is
-  remembered across restarts.
+  on the Library page to cycle the server's libraries and "All" (`getMusicFolders`).
+  Defaults to the server's first (default) library rather than all; the choice
+  scopes the artist tree, album list, random songs, and search via
+  `musicFolderId`, shows in the pane title, and is remembered across restarts.
 
 - **Playlist editing.** Rename, delete, add songs, remove songs, and reorder
   server playlists from the Playlists page (`R` rename, `D` delete with a

@@ -156,3 +156,46 @@ async fn empty_library_clears_the_artist_tree_not_leaves_it_stale() {
         "an empty library (error 70) clears the tree instead of leaving stale artists"
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn first_run_defaults_to_the_servers_first_library_not_all() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_music_folders(&[(1, "Music Library"), (2, "test")])
+        .await;
+    td.fake_subsonic.expect_artists(&["A"]).await;
+    td.fake_subsonic.expect_random_songs(&["s"]).await;
+
+    // Fresh config: nothing chosen yet.
+    td.core.refresh_music_folders().await;
+
+    let st = td.state.read().await;
+    assert_eq!(
+        st.config.music_folder_id,
+        Some(1),
+        "with no prior choice, default to the first (default) library, not All"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn an_explicit_all_choice_is_not_overridden_by_the_default() {
+    let td = TestDaemon::new().await;
+    {
+        let mut st = td.state.write().await;
+        st.config.music_folder_id = None;
+        st.config.music_folder_chosen = true; // user explicitly picked All
+    }
+    td.fake_subsonic
+        .expect_music_folders(&[(1, "Music Library"), (2, "test")])
+        .await;
+
+    td.core.refresh_music_folders().await;
+
+    let st = td.state.read().await;
+    assert_eq!(
+        st.config.music_folder_id, None,
+        "an explicit All choice survives folder refreshes"
+    );
+}

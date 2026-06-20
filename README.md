@@ -28,7 +28,7 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Custom themes** - Create your own themes as TOML files in `~/.config/ferrosonic/themes/`
 - **Mouse support** - Clickable buttons, tabs, lists, and progress bar seeking
 - **Library search** - `/` runs a single unified server-side `search3` across artists, albums, and songs at once, results shown together in the tree
-- **Library selection** - On multi-library servers, press `f` on the Library page to cycle which music folder (or all) the artist tree, album list, random songs, and search are scoped to; the active library is labelled in the pane title and remembered across restarts
+- **Library selection** - On multi-library servers, press `f` on the Library page to cycle which music folder (or all) the artist tree, album list, random songs, and search are scoped to; defaults to the server's main library, labels the active one in the pane title, and is remembered across restarts
 - **Multi-disc album support** - Proper disc and track number display
 - **Keyboard-driven** - Vim-style navigation (j/k) alongside arrow keys
 

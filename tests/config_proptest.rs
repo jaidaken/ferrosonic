@@ -29,6 +29,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
             any::<bool>(),
             any::<u32>(),
             any::<Option<i64>>(),
+            any::<bool>(),
         ),
     )
         .prop_map(
@@ -44,7 +45,13 @@ fn arb_config() -> impl Strategy<Value = Config> {
                 repeat_mode,
                 cover_art,
                 cover_art_size,
-                (scrobble, notifications, rate_switch_delay_ms, music_folder_id),
+                (
+                    scrobble,
+                    notifications,
+                    rate_switch_delay_ms,
+                    music_folder_id,
+                    music_folder_chosen,
+                ),
             )| Config {
                 base_url,
                 username,
@@ -62,6 +69,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
                 notifications,
                 rate_switch_delay_ms,
                 music_folder_id,
+                music_folder_chosen,
             },
         )
 }

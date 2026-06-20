@@ -27,6 +27,11 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "RepeatMode",
     "CoverArt",
     "CoverArtSize",
+    "Scrobble",
+    "Notifications",
+    "RateSwitchDelayMs",
+    "MusicFolderId",
+    "MusicFolderChosen",
 ];
 
 /// User configuration, persisted as TOML at the path from [`paths::config_file`].
@@ -107,6 +112,11 @@ pub struct Config {
     /// Library to browse and play from (`musicFolderId`); `None` = all.
     #[serde(rename = "MusicFolderId", default)]
     pub music_folder_id: Option<i64>,
+
+    /// True once the user has picked a library; until then the daemon defaults
+    /// to the server's first (default) library rather than all libraries.
+    #[serde(rename = "MusicFolderChosen", default)]
+    pub music_folder_chosen: bool,
 }
 
 #[derive(Serialize)]
@@ -147,6 +157,11 @@ struct ConfigOnDisk<'a> {
     rate_switch_delay_ms: u32,
     #[serde(rename = "MusicFolderId", skip_serializing_if = "Option::is_none")]
     music_folder_id: Option<i64>,
+    #[serde(
+        rename = "MusicFolderChosen",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    music_folder_chosen: bool,
 }
 
 fn serialize_revealed_opt<S: serde::Serializer>(
@@ -183,6 +198,7 @@ impl Config {
             notifications: self.notifications,
             rate_switch_delay_ms: self.rate_switch_delay_ms,
             music_folder_id: self.music_folder_id,
+            music_folder_chosen: self.music_folder_chosen,
         }
     }
 }
@@ -308,6 +324,7 @@ impl Default for Config {
             notifications: Self::default_notifications(),
             rate_switch_delay_ms: Self::default_rate_switch_delay_ms(),
             music_folder_id: None,
+            music_folder_chosen: false,
         }
     }
 }
@@ -559,6 +576,27 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn every_serialized_config_key_is_known() {
+        let mut c = Config::default();
+        c.base_url = "https://x".into();
+        c.username = "u".into();
+        c.password = "p".into();
+        let toml = toml::to_string(&c.as_on_disk()).expect("serialize config");
+        for line in toml.lines() {
+            if let Some(key) = line.split('=').next().map(str::trim) {
+                if key.is_empty() {
+                    continue;
+                }
+                assert!(
+                    KNOWN_CONFIG_KEYS.contains(&key),
+                    "config key {key:?} is serialized but missing from KNOWN_CONFIG_KEYS; \
+                     add it or it warns as unknown on load"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_config_parse() {

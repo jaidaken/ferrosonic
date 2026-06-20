@@ -126,29 +126,58 @@ impl DaemonCore {
         }
     }
 
-    /// Re-fetch the server's music folders and broadcast the new list.
+    /// Re-fetch the server's music folders and broadcast the new list. On first
+    /// run (the user has not chosen a library), default to the server's first
+    /// (default) library rather than browsing all libraries.
     pub async fn refresh_music_folders(self: &Arc<Self>) {
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
         };
-        match client.get_music_folders().await {
-            Ok(folders) => {
-                {
-                    let mut state = self.state.write().await;
-                    state.library.music_folders = folders.clone();
-                }
-                self.emit(DaemonEvent::MusicFoldersChanged(folders));
+        let folders = match client.get_music_folders().await {
+            Ok(folders) => folders,
+            Err(e) => {
+                error!("Failed to load music folders: {}", e);
+                return;
             }
-            Err(e) => error!("Failed to load music folders: {}", e),
+        };
+        let default_to = {
+            let mut state = self.state.write().await;
+            state.library.music_folders = folders.clone();
+            if state.config.music_folder_chosen {
+                None
+            } else {
+                folders
+                    .first()
+                    .map(|f| f.id)
+                    .filter(|id| state.config.music_folder_id != Some(*id))
+            }
+        };
+        self.emit(DaemonEvent::MusicFoldersChanged(folders));
+        if let Some(id) = default_to {
+            let _ = self.apply_music_folder(Some(id), false).await;
         }
     }
 
     /// Select the library to browse (`None` = all); persist, re-scope the live
     /// client, and refetch the library so the UI reflects the new folder.
     pub async fn set_music_folder(self: &Arc<Self>, id: Option<i64>) -> Result<(), Error> {
+        self.apply_music_folder(id, true).await
+    }
+
+    /// Apply library `id` (`None` = all): persist, re-scope the live client, and
+    /// refetch the library. `user_chosen` records an explicit pick so the
+    /// first-run default no longer overrides it.
+    async fn apply_music_folder(
+        self: &Arc<Self>,
+        id: Option<i64>,
+        user_chosen: bool,
+    ) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
             state.config.music_folder_id = id;
+            if user_chosen {
+                state.config.music_folder_chosen = true;
+            }
             state.config.save_default().map_err(Error::Config)?;
             state.library.all_albums.clear();
         }
