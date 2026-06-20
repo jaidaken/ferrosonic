@@ -215,6 +215,17 @@ impl App {
                 }
                 return Ok(());
             }
+            KeyCode::Char('a') => {
+                let idx = state.client.queue_state.selected;
+                let song = idx.and_then(|i| state.daemon.queue.get(i).cloned());
+                if let Some(song) = song {
+                    if state.daemon.library.playlists.is_empty() {
+                        state.client.notify("No playlists to add to");
+                    } else {
+                        state.client.open_playlist_picker(song);
+                    }
+                }
+            }
             _ => {}
         }
 

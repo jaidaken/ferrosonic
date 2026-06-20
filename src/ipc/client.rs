@@ -187,6 +187,44 @@ impl DaemonClient for InProcessClient {
                     .map_err(err)?;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::RenamePlaylist { id, name } => {
+                self.core.rename_playlist(&id, &name).await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
+            DaemonRequest::DeletePlaylist { id } => {
+                self.core.delete_playlist(&id).await.map_err(err)?;
+                Ok(DaemonResponse::Ok)
+            }
+            DaemonRequest::AddSongToPlaylist {
+                playlist_id,
+                song_id,
+            } => {
+                let songs = self
+                    .core
+                    .playlist_add_song(&playlist_id, &song_id)
+                    .await
+                    .map_err(err)?;
+                Ok(DaemonResponse::PlaylistSongs(songs))
+            }
+            DaemonRequest::RemovePlaylistSong { playlist_id, index } => {
+                let songs = self
+                    .core
+                    .playlist_remove_song(&playlist_id, index)
+                    .await
+                    .map_err(err)?;
+                Ok(DaemonResponse::PlaylistSongs(songs))
+            }
+            DaemonRequest::ReorderPlaylist {
+                playlist_id,
+                song_ids,
+            } => {
+                let songs = self
+                    .core
+                    .playlist_reorder(&playlist_id, &song_ids)
+                    .await
+                    .map_err(err)?;
+                Ok(DaemonResponse::PlaylistSongs(songs))
+            }
             DaemonRequest::ToggleStarSong(id) => {
                 self.core.toggle_star_song(&id).await.map_err(err)?;
                 Ok(DaemonResponse::Ok)

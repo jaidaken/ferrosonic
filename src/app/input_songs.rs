@@ -119,6 +119,17 @@ impl App {
                 }
                 return Ok(());
             }
+            KeyCode::Char('a') => {
+                let idx = state.client.songs.selected_index;
+                let song = idx.and_then(|i| state.songs_list().get(i).cloned());
+                if let Some(song) = song {
+                    if state.daemon.library.playlists.is_empty() {
+                        state.client.notify("No playlists to add to");
+                    } else {
+                        state.client.open_playlist_picker(song);
+                    }
+                }
+            }
             _ => {}
         }
 

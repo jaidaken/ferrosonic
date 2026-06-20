@@ -9,6 +9,13 @@
   daemon so it shows whether or not the TUI is open. On by default; toggle
   under Settings, Notifications. Cover fetched at 512px for sharp icons.
 
+- **Playlist editing.** Rename, delete, add songs, remove songs, and reorder
+  server playlists from the Playlists page (`R` rename, `D` delete with a
+  confirm, `d` remove a song, `J`/`K` reorder). Press `a` on any highlighted
+  song (Library, Queue, Quick Play, or a playlist) to add it to a playlist via
+  a picker. Reordering rewrites the playlist in one request, since the Subsonic
+  API has no in-place move.
+
 ### Changed
 
 - **Resume re-clocks cleanly.** Pausing releases the audio-device rate pin so
@@ -30,6 +37,14 @@
 
 ### Fixed
 
+- **Albums show the current cover, not stale embedded art.** The now-playing
+  cover and the desktop notification now use the album cover rather than the
+  song's embedded image, which Navidrome keeps serving even after the album
+  cover is changed.
+- **Gapless no longer desyncs the queue.** A race let two preloads append the
+  same next track to mpv, leaving a duplicate that played once extra, so the
+  highlight and now-playing ran one song ahead of the audio. Preload is now
+  single-flight, guarded under the mpv lock.
 - **Streams are no longer transcoded by the server.** The stream request now
   asks for the original file (`format=raw`), so playback is bit-perfect from
   source instead of whatever format the server would transcode to by default.

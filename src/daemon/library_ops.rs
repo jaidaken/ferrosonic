@@ -147,6 +147,86 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// The configured Subsonic client, or a not-configured error.
+    async fn subsonic_client(&self) -> Result<crate::subsonic::SubsonicClient, Error> {
+        self.subsonic.read().await.clone().ok_or_else(|| {
+            Error::Subsonic(crate::error::SubsonicError::Api {
+                code: 0,
+                message: "Subsonic client not configured".to_string(),
+            })
+        })
+    }
+
+    /// Rename playlist `id` to `name`, then refresh so `PlaylistsChanged` fires.
+    pub async fn rename_playlist(self: &Arc<Self>, id: &str, name: &str) -> Result<(), Error> {
+        self.subsonic_client()
+            .await?
+            .rename_playlist(id, name)
+            .await
+            .map_err(Error::Subsonic)?;
+        self.refresh_playlists().await;
+        Ok(())
+    }
+
+    /// Delete playlist `id`, then refresh so `PlaylistsChanged` fires.
+    pub async fn delete_playlist(self: &Arc<Self>, id: &str) -> Result<(), Error> {
+        self.subsonic_client()
+            .await?
+            .delete_playlist(id)
+            .await
+            .map_err(Error::Subsonic)?;
+        self.refresh_playlists().await;
+        Ok(())
+    }
+
+    /// Append `song_id` to playlist `playlist_id`; returns the refreshed songs.
+    pub async fn playlist_add_song(
+        self: &Arc<Self>,
+        playlist_id: &str,
+        song_id: &str,
+    ) -> Result<Vec<crate::subsonic::models::Child>, Error> {
+        self.subsonic_client()
+            .await?
+            .playlist_add_song(playlist_id, song_id)
+            .await
+            .map_err(Error::Subsonic)?;
+        let songs = self.load_playlist_songs(playlist_id).await;
+        self.refresh_playlists().await;
+        Ok(songs)
+    }
+
+    /// Remove the song at `index` from playlist `playlist_id`; returns the refreshed songs.
+    pub async fn playlist_remove_song(
+        self: &Arc<Self>,
+        playlist_id: &str,
+        index: usize,
+    ) -> Result<Vec<crate::subsonic::models::Child>, Error> {
+        self.subsonic_client()
+            .await?
+            .playlist_remove_index(playlist_id, index)
+            .await
+            .map_err(Error::Subsonic)?;
+        let songs = self.load_playlist_songs(playlist_id).await;
+        self.refresh_playlists().await;
+        Ok(songs)
+    }
+
+    /// Replace playlist `playlist_id`'s songs with `song_ids`, in order; returns the refreshed songs.
+    pub async fn playlist_reorder(
+        self: &Arc<Self>,
+        playlist_id: &str,
+        song_ids: &[String],
+    ) -> Result<Vec<crate::subsonic::models::Child>, Error> {
+        self.subsonic_client()
+            .await?
+            .set_playlist_songs(playlist_id, song_ids)
+            .await
+            .map_err(Error::Subsonic)?;
+        let songs = self.load_playlist_songs(playlist_id).await;
+        self.refresh_playlists().await;
+        Ok(songs)
+    }
+
     /// Star or unstar `song_id`; returns the new starred state.
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
         let Some(client) = self.subsonic.read().await.clone() else {

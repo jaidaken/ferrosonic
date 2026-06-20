@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -20,6 +20,55 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
 
     render_playlists(frame, chunks[0], state, &colors);
     render_songs(frame, chunks[1], state, &colors);
+
+    if state.client.playlists.renaming {
+        let content = format!("{}\u{2588}", state.client.playlists.rename_buf);
+        render_edit_box(
+            frame,
+            chunks[0],
+            &content,
+            " Rename playlist  (Enter: save  Esc: cancel) ",
+            &colors,
+        );
+    } else if state.client.playlists.confirming_delete {
+        let name = state
+            .client
+            .playlists
+            .selected_playlist
+            .and_then(|i| state.daemon.library.playlists.get(i))
+            .map(|p| p.name.as_str())
+            .unwrap_or("");
+        let content = format!("Delete '{name}'?  (y: confirm  n: cancel)");
+        render_edit_box(frame, chunks[0], &content, " Delete playlist ", &colors);
+    }
+}
+
+/// Draw a single-line input/confirmation box over the bottom of `area`.
+fn render_edit_box(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    content: &str,
+    title: &str,
+    colors: &ThemeColors,
+) {
+    let height = 3;
+    let width = area.width.saturating_sub(4).max(10);
+    let box_area = Rect {
+        x: area.x + 2,
+        y: area.y + area.height.saturating_sub(height + 1),
+        width,
+        height,
+    };
+    let para = Paragraph::new(content.to_string())
+        .style(Style::default().fg(colors.primary))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title.to_string())
+                .border_style(Style::default().fg(colors.primary)),
+        );
+    frame.render_widget(Clear, box_area);
+    frame.render_widget(para, box_area);
 }
 
 fn render_playlists(

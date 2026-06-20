@@ -670,6 +670,17 @@ impl App {
                 }
                 return Ok(());
             }
+            KeyCode::Char('a') if state.client.artists.focus == 1 => {
+                let idx = state.client.artists.selected_song;
+                let song = idx.and_then(|i| state.client.artists.songs.get(i).cloned());
+                if let Some(song) = song {
+                    if state.daemon.library.playlists.is_empty() {
+                        state.client.notify("No playlists to add to");
+                    } else {
+                        state.client.open_playlist_picker(song);
+                    }
+                }
+            }
             KeyCode::Char('m')
                 if state.client.artists.focus == 0
                     && !state.client.artists.filter.is_empty()

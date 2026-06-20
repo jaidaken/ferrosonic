@@ -128,6 +128,56 @@ impl SubsonicClient {
         self.request_action(&endpoint).await
     }
 
+    /// Rename the playlist `id` to `name`.
+    pub async fn rename_playlist(&self, id: &str, name: &str) -> Result<(), SubsonicError> {
+        let endpoint = format!(
+            "updatePlaylist?playlistId={}&name={}",
+            urlencoding::encode(id),
+            urlencoding::encode(name)
+        );
+        self.request_action(&endpoint).await
+    }
+
+    /// Delete the playlist `id`.
+    pub async fn delete_playlist(&self, id: &str) -> Result<(), SubsonicError> {
+        let endpoint = format!("deletePlaylist?id={}", urlencoding::encode(id));
+        self.request_action(&endpoint).await
+    }
+
+    /// Append `song_id` to the end of playlist `id`.
+    pub async fn playlist_add_song(&self, id: &str, song_id: &str) -> Result<(), SubsonicError> {
+        let endpoint = format!(
+            "updatePlaylist?playlistId={}&songIdToAdd={}",
+            urlencoding::encode(id),
+            urlencoding::encode(song_id)
+        );
+        self.request_action(&endpoint).await
+    }
+
+    /// Remove the song at zero-based `index` from playlist `id`.
+    pub async fn playlist_remove_index(&self, id: &str, index: usize) -> Result<(), SubsonicError> {
+        let endpoint = format!(
+            "updatePlaylist?playlistId={}&songIndexToRemove={index}",
+            urlencoding::encode(id)
+        );
+        self.request_action(&endpoint).await
+    }
+
+    /// Replace the entire song list of playlist `id` with `song_ids`, in order.
+    /// `createPlaylist` with a `playlistId` overwrites the contents (verified
+    /// against Navidrome), so this is the primitive for reordering.
+    pub async fn set_playlist_songs(
+        &self,
+        id: &str,
+        song_ids: &[String],
+    ) -> Result<(), SubsonicError> {
+        let mut endpoint = format!("createPlaylist?playlistId={}", urlencoding::encode(id));
+        for sid in song_ids {
+            endpoint.push_str(&format!("&songId={}", urlencoding::encode(sid)));
+        }
+        self.request_action(&endpoint).await
+    }
+
     /// List the OpenSubsonic extensions the server advertises, by name.
     pub async fn get_open_subsonic_extensions(&self) -> Result<Vec<String>, SubsonicError> {
         let data: OpenSubsonicExtensionsData = self.request("getOpenSubsonicExtensions").await?;

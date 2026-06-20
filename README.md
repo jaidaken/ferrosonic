@@ -19,6 +19,7 @@ Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about
 - **Repeat modes** - Cycle Off / One / All with `r`; the gapless pre-loader re-preloads the same track on One and wraps on All
 - **Cover art** - Display album art in the now-playing section using kitty / iTerm2 / sixel image protocols; falls back to half-blocks on plainer terminals (chafa-enhanced when the `chafa` library is installed)
 - **Playlist support** - Browse and play server playlists with shuffle capability
+- **Playlist editing** - Rename, delete, add songs, remove songs, and reorder server playlists from the Playlists page; add any highlighted song to a playlist via a picker
 - **Play queue management** - Add, remove, reorder, shuffle, and clear queue history; queue persists across daemon restarts
 - **Save queue as playlist** - Press `s` on the Queue page to create a server-side playlist from the current queue
 - **Audio quality display** - Real-time display of sample rate, bit depth, codec format, and channel layout
@@ -217,6 +218,15 @@ The Quick Play page has two modes selectable from the options pane: **Starred** 
 | `i` | Add selected song as next in queue |
 | `t` | Shuffle play all songs in selected playlist |
 | `m` | Star/unstar highlighted song (songs pane focus only) |
+| `R` | Rename the selected playlist (playlists pane) |
+| `D` | Delete the selected playlist, with a confirmation prompt (playlists pane) |
+| `d` | Remove the highlighted song from the playlist (songs pane) |
+| `J` / `K` | Move the highlighted song down / up to reorder (songs pane) |
+| `a` | Add the highlighted song to another playlist via a picker (songs pane) |
+
+Reordering replaces the server playlist's contents in one request, since the
+Subsonic API has no in-place move. The `a` add-to-playlist picker is also
+available from the Library, Queue, and Quick Play song panes.
 
 ### Server Page (F5)
 

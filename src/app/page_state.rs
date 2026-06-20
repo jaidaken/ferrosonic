@@ -143,6 +143,23 @@ pub struct PlaylistsState {
     pub playlist_scroll_offset: usize,
     /// First visible row of the song pane.
     pub song_scroll_offset: usize,
+    /// True while the rename box is capturing input.
+    pub renaming: bool,
+    /// New playlist name being typed in the rename box.
+    pub rename_buf: String,
+    /// True while the delete-confirmation prompt is showing.
+    pub confirming_delete: bool,
+}
+
+/// Overlay state for adding a song to a playlist, opened from any song pane.
+#[derive(Debug, Clone, Default)]
+pub struct PlaylistPicker {
+    /// True while the picker overlay is capturing input.
+    pub active: bool,
+    /// Highlighted playlist index in the picker list.
+    pub selected: usize,
+    /// The song queued to be added once a playlist is chosen.
+    pub song: Option<Child>,
 }
 
 /// UI state of the Server (credentials) page.

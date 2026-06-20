@@ -146,4 +146,8 @@ pub fn draw(
     if state.client.quit_prompt {
         super::quit_prompt::render(frame, area, &colors);
     }
+
+    if state.client.playlist_picker.active {
+        super::playlist_picker::render(frame, area, state, &colors);
+    }
 }

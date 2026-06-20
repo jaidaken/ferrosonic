@@ -71,6 +71,39 @@ pub enum DaemonRequest {
         /// Song IDs in queue order.
         song_ids: Vec<String>,
     },
+    /// Rename a server-side playlist.
+    RenamePlaylist {
+        /// ID of the playlist to rename.
+        id: String,
+        /// New playlist name.
+        name: String,
+    },
+    /// Delete a server-side playlist.
+    DeletePlaylist {
+        /// ID of the playlist to delete.
+        id: String,
+    },
+    /// Append a song to the end of a server-side playlist.
+    AddSongToPlaylist {
+        /// ID of the target playlist.
+        playlist_id: String,
+        /// ID of the song to add.
+        song_id: String,
+    },
+    /// Remove the song at this index from a server-side playlist.
+    RemovePlaylistSong {
+        /// ID of the target playlist.
+        playlist_id: String,
+        /// Zero-based index of the song to remove.
+        index: usize,
+    },
+    /// Replace a playlist's songs with this exact ordered list (reorder).
+    ReorderPlaylist {
+        /// ID of the target playlist.
+        playlist_id: String,
+        /// Song IDs in the desired order.
+        song_ids: Vec<String>,
+    },
     /// Star or unstar the song with this ID.
     ToggleStarSong(String),
     /// Fetch the albums of the artist with this ID.

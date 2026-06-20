@@ -75,6 +75,14 @@ impl App {
             }
         }
 
+        // Add-to-playlist picker: while open, the overlay owns every key.
+        if state.client.playlist_picker.active {
+            drop(state);
+            drop(cs);
+            drop(ds);
+            return self.handle_playlist_picker_key(key).await;
+        }
+
         // F-keys switch pages while typing; unsaved edits revert.
         let is_function_key = matches!(key.code, KeyCode::F(_));
         if is_function_key {
@@ -92,6 +100,11 @@ impl App {
                 state.client.queue_state.naming_playlist = false;
                 state.client.queue_state.playlist_name.clear();
             }
+            if state.client.page == Page::Playlists {
+                state.client.playlists.renaming = false;
+                state.client.playlists.rename_buf.clear();
+                state.client.playlists.confirming_delete = false;
+            }
         } else {
             let is_server_text_field =
                 state.client.page == Page::Server && state.client.server_state.selected_field <= 2;
@@ -99,8 +112,10 @@ impl App {
                 state.client.page == Page::Library && state.client.artists.filter_active;
             let is_naming_playlist =
                 state.client.page == Page::Queue && state.client.queue_state.naming_playlist;
+            let is_editing_playlist = state.client.page == Page::Playlists
+                && (state.client.playlists.renaming || state.client.playlists.confirming_delete);
 
-            if is_server_text_field || is_filtering || is_naming_playlist {
+            if is_server_text_field || is_filtering || is_naming_playlist || is_editing_playlist {
                 let page = state.client.page;
                 drop(state);
                 drop(cs);
@@ -109,6 +124,7 @@ impl App {
                     Page::Server => self.handle_server_key(key).await,
                     Page::Library => self.handle_library_key(key).await,
                     Page::Queue => self.handle_queue_key(key).await,
+                    Page::Playlists => self.handle_playlists_key(key).await,
                     _ => Ok(()),
                 };
             }
