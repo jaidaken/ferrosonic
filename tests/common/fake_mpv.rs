@@ -21,6 +21,10 @@ pub struct FakeMpv {
 
 #[derive(Default)]
 struct FakeMpvState {
+    /// Reported by `get_property mpv-version`. When this parses below 0.38,
+    /// the 5-arg `loadfile` (with the insertion-index argument) is rejected,
+    /// modeling real mpv < 0.38 which has no index argument.
+    mpv_version: String,
     loaded_file: Option<String>,
     paused: bool,
     position: f64,
@@ -35,6 +39,12 @@ struct FakeMpvState {
 
 impl FakeMpv {
     pub async fn start() -> Self {
+        Self::start_with_version("0.41.0").await
+    }
+
+    /// Like [`start`](Self::start) but reports `version` via `mpv-version`,
+    /// so tests can exercise the mpv < 0.38 loadfile-compatibility path.
+    pub async fn start_with_version(version: &str) -> Self {
         let tempdir = super::tempdir();
         let socket_path = tempdir.path().join("fake-mpv.sock");
         let listener = UnixListener::bind(&socket_path).expect("bind fake mpv socket");
@@ -45,6 +55,7 @@ impl FakeMpv {
         properties.insert("audio-params/format".to_string(), json!("s16"));
         properties.insert("audio-params/channel-count".to_string(), json!(2));
         let state = Arc::new(Mutex::new(FakeMpvState {
+            mpv_version: version.to_string(),
             volume: 100.0,
             duration: 180.0,
             properties,
@@ -211,6 +222,15 @@ async fn handle_connection(
     }
 }
 
+/// Minor component of an `0.X.Y` mpv version string (mpv is always `0.x`).
+fn mpv_minor(version: &str) -> u32 {
+    version
+        .split('.')
+        .nth(1)
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(u32::MAX)
+}
+
 async fn process_command(
     state: &Arc<Mutex<FakeMpvState>>,
     cmd: &[Value],
@@ -222,6 +242,11 @@ async fn process_command(
         "loadfile" => {
             if s.fail_loadfile {
                 return ("loadfile injected failure".into(), None);
+            }
+            // mpv < 0.38 has no insertion-index arg; a 5-arg loadfile is
+            // rejected "invalid parameter", the failure behind issue #30.
+            if cmd.len() >= 5 && mpv_minor(&s.mpv_version) < 38 {
+                return ("invalid parameter".into(), None);
             }
             let path = cmd
                 .get(1)
@@ -287,6 +312,7 @@ async fn process_command(
                 "playlist-pos" => json!(s.playlist_pos),
                 "idle-active" => Value::Bool(s.loaded_file.is_none()),
                 "eof-reached" => Value::Bool(false),
+                "mpv-version" => json!(format!("mpv {}", s.mpv_version)),
                 other => s.properties.get(other).cloned().unwrap_or(Value::Null),
             };
             ("success".into(), Some(value))

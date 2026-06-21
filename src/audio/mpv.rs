@@ -79,6 +79,22 @@ pub struct MpvController {
     reader_handle: Option<tokio::task::JoinHandle<()>>,
     /// Broadcast of typed mpv events to daemon consumers.
     event_tx: tokio::sync::broadcast::Sender<MpvEventKind>,
+    /// `(major, minor)` from `mpv-version`, probed on connect. `None` until
+    /// probed or if the probe fails; gates the 0.38+ 5-arg loadfile form.
+    mpv_version: Option<(u16, u16)>,
+}
+
+/// Parse `(major, minor)` from an mpv version string such as `mpv 0.41.0`.
+fn parse_mpv_version(raw: &str) -> Option<(u16, u16)> {
+    let start = raw.find(|c: char| c.is_ascii_digit())?;
+    let digits: String = raw[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    let mut parts = digits.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
 }
 
 impl MpvController {
@@ -105,7 +121,22 @@ impl MpvController {
             pending: Arc::new(TokioMutex::new(HashMap::new())),
             reader_handle: None,
             event_tx,
+            mpv_version: None,
         }
+    }
+
+    /// `(major, minor)` of the connected mpv, or `None` if not yet probed.
+    #[must_use]
+    pub const fn mpv_version(&self) -> Option<(u16, u16)> {
+        self.mpv_version
+    }
+
+    /// Whether the connected mpv supports the 0.38+ 5-arg `loadfile` insertion
+    /// index (and thus the `start=` decode-from-offset form). Unknown version
+    /// is treated as capable, since modern mpv is the common case.
+    #[must_use]
+    pub fn supports_loadfile_index(&self) -> bool {
+        self.mpv_version.is_none_or(|v| v >= (0, 38))
     }
 
     /// Subscribe to the typed event stream. Multiple subscribers are supported; each gets every event from subscription onwards. Channel capacity is fixed at [`EVENT_CHANNEL_CAP`]; slow consumers see `RecvError::Lagged`.
@@ -215,8 +246,26 @@ impl MpvController {
         let handle = tokio::spawn(reader_loop(BufReader::new(read_half), pending, events));
         self.reader_handle = Some(handle);
 
-        debug!("Connected to MPV socket");
+        self.mpv_version = self.probe_mpv_version().await;
+        debug!("Connected to MPV socket (version {:?})", self.mpv_version);
         Ok(())
+    }
+
+    /// Read and parse `mpv-version`; `None` if the property is missing or
+    /// unparseable. A transport failure is logged (not silently dropped) and
+    /// also yields `None`, which `supports_loadfile_index` treats as capable.
+    async fn probe_mpv_version(&mut self) -> Option<(u16, u16)> {
+        let data = match self
+            .send_command(vec![json!("get_property"), json!("mpv-version")])
+            .await
+        {
+            Ok(data) => data?,
+            Err(e) => {
+                warn!("Could not probe mpv version ({e}); assuming a modern loadfile contract");
+                return None;
+            }
+        };
+        parse_mpv_version(data.as_str()?)
     }
 
     async fn tear_down_connection(&mut self) {
@@ -692,5 +741,44 @@ mod fuzz {
             let _ = serde_json::from_slice::<MpvResponse>(input);
             let _ = serde_json::from_slice::<MpvEvent>(input);
         });
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    #[test]
+    fn parses_standard_property_string() {
+        assert_eq!(parse_mpv_version("mpv 0.41.0"), Some((0, 41)));
+        assert_eq!(parse_mpv_version("mpv 0.35.1"), Some((0, 35)));
+    }
+
+    #[test]
+    fn parses_dashed_and_suffixed_forms() {
+        assert_eq!(parse_mpv_version("mpv-0.38.0-dirty"), Some((0, 38)));
+        assert_eq!(parse_mpv_version("0.37.0"), Some((0, 37)));
+    }
+
+    #[test]
+    fn unparseable_is_none() {
+        assert_eq!(parse_mpv_version(""), None);
+        assert_eq!(parse_mpv_version("mpv"), None);
+        assert_eq!(parse_mpv_version("v0"), None);
+    }
+
+    #[test]
+    fn supports_index_gates_at_0_38() {
+        let mut c = MpvController::with_socket_path(std::path::PathBuf::from("/tmp/x.sock"));
+        assert!(
+            c.supports_loadfile_index(),
+            "unknown version assumed capable"
+        );
+        c.mpv_version = Some((0, 37));
+        assert!(!c.supports_loadfile_index());
+        c.mpv_version = Some((0, 38));
+        assert!(c.supports_loadfile_index());
+        c.mpv_version = Some((0, 41));
+        assert!(c.supports_loadfile_index());
     }
 }

@@ -384,7 +384,13 @@ impl DaemonCore {
         };
         snap.config.password.clear();
         snap.config.password_file = None;
+        snap.mpv_version = self.mpv.lock().await.mpv_version();
         snap
+    }
+
+    /// `(major, minor)` of the connected mpv, or `None` if unknown.
+    pub async fn mpv_version(&self) -> Option<(u16, u16)> {
+        self.mpv.lock().await.mpv_version()
     }
 
     pub(super) async fn emit_config_changed(&self) {
@@ -558,12 +564,25 @@ impl DaemonCore {
     ) -> Result<(), Error> {
         match mode {
             PlayMode::Direct => {
-                let gen = {
+                // Reject non-finite/negative offsets so they can never reach
+                // `start=` formatting (start=NaN/inf = mpv invalid parameter).
+                let start_at = if start_at.is_finite() && start_at > 0.0 {
+                    start_at
+                } else {
+                    0.0
+                };
+                let (gen, seek_after) = {
                     let mut mpv = self.mpv.lock().await;
-                    let load = if start_at > 0.0 {
-                        mpv.loadfile_at_paused(&stream_url, start_at).await
+                    // mpv 0.38+ decodes from the offset via 5-arg loadfile start=;
+                    // older mpv lacks it, so load plain and seek post-probe.
+                    let (load, seek_after) = if start_at > 0.0 {
+                        if mpv.supports_loadfile_index() {
+                            (mpv.loadfile_at_paused(&stream_url, start_at).await, None)
+                        } else {
+                            (mpv.loadfile_paused(&stream_url).await, Some(start_at))
+                        }
                     } else {
-                        mpv.loadfile_paused(&stream_url).await
+                        (mpv.loadfile_paused(&stream_url).await, None)
                     };
                     if let Err(e) = load {
                         error!("Failed to play: {}", e);
@@ -574,12 +593,12 @@ impl DaemonCore {
                         });
                         return Ok(());
                     }
-                    self.stamp_loadfile()
+                    (self.stamp_loadfile(), seek_after)
                 };
                 // Spawn the probe/re-clock/unpause so the IPC caller is not
                 // blocked by the settle; the gen guard drops it if superseded.
                 let core = self.clone();
-                tokio::spawn(async move { core.settle_rate_then_unpause(gen).await });
+                tokio::spawn(async move { core.settle_rate_then_unpause(gen, seek_after).await });
                 self.preload_next_track(pos).await;
             }
             PlayMode::Buffered => {
@@ -857,7 +876,7 @@ impl DaemonCore {
                 slot_cleaner.disarm();
                 return;
             }
-            core.settle_rate_then_unpause(gen).await;
+            core.settle_rate_then_unpause(gen, None).await;
             core.preload_next_track(preload_pos).await;
             let _ = &slot_cleaner;
         });
@@ -909,7 +928,11 @@ impl DaemonCore {
     /// Invariant: the caller loaded the track paused; this fn starts it. Bails
     /// at each step if a newer load has superseded `gen`, so it never unpauses
     /// or re-clocks for a track that is no longer current.
-    pub(super) async fn settle_rate_then_unpause(self: &Arc<Self>, gen: u64) {
+    pub(super) async fn settle_rate_then_unpause(
+        self: &Arc<Self>,
+        gen: u64,
+        seek_after: Option<f64>,
+    ) {
         if self.settle_superseded(gen) {
             return;
         }
@@ -951,6 +974,13 @@ impl DaemonCore {
         }
         {
             let mut mpv = self.mpv.lock().await;
+            // Old-mpv resume offset: the probe confirmed load so this seek
+            // lands, and runs while paused so there is no audible jump.
+            if let Some(offset) = seek_after {
+                if let Err(e) = mpv.seek(offset).await {
+                    warn!("Failed to seek to resume offset: {}", e);
+                }
+            }
             if let Err(e) = mpv.resume().await {
                 warn!("Failed to unpause after rate settle: {}", e);
             }

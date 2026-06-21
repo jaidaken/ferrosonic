@@ -146,11 +146,15 @@ async fn poll_when_not_playing_returns_early() {
         s.now_playing.state = PlaybackState::Stopped;
     }
 
+    // Ignore the one-time connect-time `mpv-version` probe: assert the poll
+    // itself issues no further mpv commands when Stopped.
+    let before = td.fake_mpv.commands().await.len();
     td.core.update_playback_info().await;
     let cmds = td.fake_mpv.commands().await;
-    assert!(
-        cmds.is_empty(),
-        "Stopped state must not poll mpv; saw: {:?}",
-        cmds
+    assert_eq!(
+        cmds.len(),
+        before,
+        "Stopped state must not poll mpv; poll added: {:?}",
+        &cmds[before..]
     );
 }

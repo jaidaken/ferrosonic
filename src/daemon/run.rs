@@ -37,6 +37,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         warn!("Failed to start mpv: {} - audio playback won't work", e);
     } else {
         info!("mpv started");
+        if let Some((maj, min)) = core.mpv_version().await {
+            if (maj, min) < (0, 38) {
+                warn!("mpv {maj}.{min} is below 0.38; running the playback compatibility path, full behavior not guaranteed");
+            }
+        }
     }
 
     let _poll = core.spawn_polling_task();

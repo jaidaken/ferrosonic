@@ -44,7 +44,7 @@ Ferrosonic requires the following at runtime:
 
 | Dependency | Purpose | Required |
 |---|---|---|
-| **mpv** | Audio playback engine (via JSON IPC) | Yes |
+| **mpv** | Audio playback engine (via JSON IPC). 0.38+ recommended; older versions run a playback compatibility path (ferrosonic detects the version and warns). | Yes |
 | **PipeWire** | Automatic sample rate switching for bit-perfect audio | Recommended |
 | **WirePlumber** | PipeWire session manager | Recommended |
 | **D-Bus** | MPRIS2 desktop media controls | Recommended |

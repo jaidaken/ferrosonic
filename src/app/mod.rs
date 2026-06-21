@@ -356,7 +356,7 @@ impl App {
         };
 
         if let Some(snap) = snap {
-            let (queue, queue_position) = {
+            let (queue, queue_position, mpv_version) = {
                 let mut ds = self.daemon_state.write().await;
                 *ds = *snap;
                 info!(
@@ -366,8 +366,17 @@ impl App {
                     ds.library.artists.len(),
                     ds.library.playlists.len(),
                 );
-                (ds.queue.clone(), ds.queue_position)
+                (ds.queue.clone(), ds.queue_position, ds.mpv_version)
             };
+            // Advise once if the daemon's mpv predates the 0.38 loadfile
+            // contract; playback runs in a compatibility path below it.
+            if let Some((maj, min)) = mpv_version {
+                if (maj, min) < (0, 38) {
+                    self.client_state.write().await.notify(format!(
+                        "mpv {maj}.{min} detected. ferrosonic targets mpv 0.38+; older versions run in compatibility mode and full playback behavior is not guaranteed."
+                    ));
+                }
+            }
             // Reopening mid-playback: default the Library right pane to the
             // playing album instead of leaving it blank until an album hover.
             if queue_position.is_some() {

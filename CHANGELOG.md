@@ -66,6 +66,14 @@
 
 ### Fixed
 
+- **Resume works on mpv older than 0.38 (issue #30).** Resume-from-pause
+  reloads the track at the saved offset using mpv's 5-argument `loadfile`
+  (`start=`), which only exists in mpv 0.38+; on older mpv the command was
+  rejected (`invalid parameter`) and playback skipped to the next track. The
+  daemon now detects the mpv version and falls back to a load-then-seek path
+  below 0.38, while keeping the precise decode-from-offset form on 0.38+. A
+  non-finite saved position can no longer emit a malformed `start=`, and the
+  Server page and daemon log advise when mpv is below 0.38.
 - **Albums show the current cover, not stale embedded art.** The now-playing
   cover and the desktop notification now use the album cover rather than the
   song's embedded image, which Navidrome keeps serving even after the album

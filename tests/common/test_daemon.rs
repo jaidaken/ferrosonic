@@ -30,11 +30,18 @@ pub struct TestDaemon {
 impl TestDaemon {
     pub async fn new() -> Self {
         let config_dir = super::tempdir();
-        Self::build(config_dir, false, PipeWireController::new()).await
+        Self::build(config_dir, false, PipeWireController::new(), "0.41.0").await
     }
 
     pub async fn new_with_config_dir(config_dir: TempDir) -> Self {
-        Self::build(config_dir, true, PipeWireController::new()).await
+        Self::build(config_dir, true, PipeWireController::new(), "0.41.0").await
+    }
+
+    /// Build a daemon whose fake mpv reports `version`, for the mpv < 0.38
+    /// loadfile-compatibility path (GitHub issue #30).
+    pub async fn new_with_mpv_version(version: &str) -> Self {
+        let config_dir = super::tempdir();
+        Self::build(config_dir, false, PipeWireController::new(), version).await
     }
 
     /// Build a daemon whose `PipeWire` controller records every
@@ -44,11 +51,16 @@ impl TestDaemon {
         let recorder = RecordingPwRunner::new();
         let pipewire = PipeWireController::with_runner(Arc::new(recorder.clone()));
         let config_dir = super::tempdir();
-        let td = Self::build(config_dir, false, pipewire).await;
+        let td = Self::build(config_dir, false, pipewire, "0.41.0").await;
         (td, recorder)
     }
 
-    async fn build(config_dir: TempDir, restore_queue: bool, pipewire: PipeWireController) -> Self {
+    async fn build(
+        config_dir: TempDir,
+        restore_queue: bool,
+        pipewire: PipeWireController,
+        mpv_version: &str,
+    ) -> Self {
         std::env::set_var("FERROSONIC_CONFIG_DIR", config_dir.path());
         // Keep credential saves off the real OS keychain. Hermetic under
         // nextest's process-per-test; mark `#[serial]` for cargo test.
@@ -56,7 +68,7 @@ impl TestDaemon {
             ferrosonic::secret_store::InMemoryKeyStore::new(),
         ));
 
-        let fake_mpv = FakeMpv::start().await;
+        let fake_mpv = FakeMpv::start_with_version(mpv_version).await;
         let fake_subsonic = FakeSubsonic::start().await;
 
         let mut config = Config::new();

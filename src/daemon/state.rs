@@ -19,6 +19,9 @@ pub struct DaemonState {
     pub queue_position: Option<usize>,
     /// Cached library data fetched from the server.
     pub library: LibraryCache,
+    /// `(major, minor)` of the mpv driving playback; `None` until probed.
+    /// Set in [`crate::daemon::core::DaemonCore::snapshot`], not stored state.
+    pub mpv_version: Option<(u16, u16)>,
 }
 
 impl DaemonState {
