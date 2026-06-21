@@ -128,6 +128,7 @@ Notifications = true
 | `Username` | Your server username |
 | `Password` | Your server password |
 | `PasswordFile` | Optional path to a file containing the password (overrides `Password`) |
+| `PasswordEval` | Optional command whose output is the password, so no secret sits in the config. Overrides `Password` and `PasswordFile`; the `FERROSONIC_PASSWORD` env var still wins. See below. |
 | `Theme` | Color theme name (e.g. `Default`, `Catppuccin`, `Tokyo Night`) |
 | `Daemon` | `true` (default) auto-spawns the background daemon; `false` runs single-process |
 | `Cava` | Enable the cava visualizer pane |
@@ -140,6 +141,20 @@ Notifications = true
 | `Notifications` | Desktop track-change notifications with cover art, default `true` |
 
 Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/ferrosonic/ferrosonicd.log` (daemon). The queue is persisted to `~/.config/ferrosonic/queue.json` so it survives daemon restarts.
+
+### Keeping the password out of the config (`PasswordEval`)
+
+`PasswordEval` runs a command and uses its first line of output as the password, so no secret is stored in `config.toml`. It works with whatever secret tooling you already use (`pass`, `gpg`, `sops`, `secret-tool`, a keyring CLI, and so on). Two forms:
+
+```toml
+# String, run via the shell (env vars, ~, and pipes work):
+PasswordEval = "pass show navidrome"
+
+# Array, executed directly with no shell (env vars and ~ still expand):
+PasswordEval = ["sops", "-d", "~/secrets/navidrome.txt"]
+```
+
+It is resolved at startup. Because the background daemon has no terminal, **the command must be non-interactive**: use an agent-backed source (`gpg-agent` or `pass` with the key already unlocked, `sops`, `secret-tool`) rather than anything that pops a passphrase prompt. The command runs with stdin closed and is killed if it does not return within 30 seconds; on any failure ferrosonic clears the password and authentication fails cleanly rather than falling back to a stale credential. The password is never passed as a command argument or environment variable, so it cannot leak through the process table.
 
 ## Keyboard Shortcuts
 

@@ -19,6 +19,7 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "Username",
     "Password",
     "PasswordFile",
+    "PasswordEval",
     "Theme",
     "Cava",
     "CavaSize",
@@ -34,6 +35,16 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "MusicFolderChosen",
 ];
 
+/// A command run to obtain the password: a shell string or an argv array.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum PasswordEval {
+    /// Run via `sh -c`; the shell expands env vars, `~`, and pipes.
+    Shell(String),
+    /// Direct exec of `[program, args...]`; no shell involved.
+    Argv(Vec<String>),
+}
+
 /// User configuration, persisted as TOML at the path from [`paths::config_file`].
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Config {
@@ -45,7 +56,7 @@ pub struct Config {
     #[serde(rename = "Username", default)]
     pub username: String,
 
-    /// Resolved at load-time from env, PasswordFile, then this inline value. Secret masks Debug + Serialize so accidental log/wire paths emit "***"; save_to_file routes through ConfigOnDisk which writes the real value.
+    /// Resolved at load-time from env, PasswordEval, PasswordFile, then this inline value. Secret masks Debug + Serialize so accidental log/wire paths emit "***"; save_to_file routes through ConfigOnDisk which writes the real value.
     #[serde(rename = "Password", default)]
     pub password: Secret,
 
@@ -56,6 +67,16 @@ pub struct Config {
         skip_serializing_if = "Option::is_none"
     )]
     pub password_file: Option<String>,
+
+    /// Command whose stdout is the password; takes priority over `PasswordFile`
+    /// and the inline value, but not the `FERROSONIC_PASSWORD` env var. Must be
+    /// non-interactive: the daemon runs it without a terminal.
+    #[serde(
+        rename = "PasswordEval",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub password_eval: Option<PasswordEval>,
 
     /// Active theme name; empty selects the built-in default.
     #[serde(rename = "Theme", default)]
@@ -133,6 +154,8 @@ struct ConfigOnDisk<'a> {
     password: Option<&'a Secret>,
     #[serde(rename = "PasswordFile", skip_serializing_if = "Option::is_none")]
     password_file: Option<&'a str>,
+    #[serde(rename = "PasswordEval", skip_serializing_if = "Option::is_none")]
+    password_eval: Option<&'a PasswordEval>,
     #[serde(rename = "Theme")]
     theme: &'a str,
     #[serde(rename = "Cava")]
@@ -177,15 +200,19 @@ fn serialize_revealed_opt<S: serde::Serializer>(
 impl Config {
     fn as_on_disk(&self) -> ConfigOnDisk<'_> {
         let pw_file_set = self.password_file.as_ref().is_some_and(|s| !s.is_empty());
+        // The secret lives outside the file when a PasswordFile or PasswordEval
+        // is set; do not also write the resolved plaintext back inline.
+        let secret_external = pw_file_set || self.password_eval.is_some();
         ConfigOnDisk {
             base_url: &self.base_url,
             username: &self.username,
-            password: if pw_file_set || self.password.is_empty() {
+            password: if secret_external || self.password.is_empty() {
                 None
             } else {
                 Some(&self.password)
             },
             password_file: self.password_file.as_deref(),
+            password_eval: self.password_eval.as_ref(),
             theme: &self.theme,
             cava: self.cava,
             cava_size: self.cava_size,
@@ -325,6 +352,7 @@ impl Default for Config {
             rate_switch_delay_ms: Self::default_rate_switch_delay_ms(),
             music_folder_id: None,
             music_folder_chosen: false,
+            password_eval: None,
         }
     }
 }
@@ -373,7 +401,7 @@ impl Config {
         }
     }
 
-    /// Resolves the password in priority order: `FERROSONIC_PASSWORD` env > `PasswordFile` > inline.
+    /// Resolves the password in priority order: `FERROSONIC_PASSWORD` env > `PasswordEval` > `PasswordFile` > inline.
     ///
     /// ```
     /// use ferrosonic::config::Config;
@@ -436,17 +464,28 @@ impl Config {
                 return;
             }
         }
+        if let Some(eval) = self.password_eval.as_ref() {
+            match run_password_eval(eval) {
+                Ok(secret) => {
+                    debug!("Using password from PasswordEval");
+                    self.password = Secret::from_string(secret);
+                }
+                Err(e) => {
+                    warn!("{e}; clearing inline password to avoid a stale credential");
+                    self.password.clear();
+                }
+            }
+            return;
+        }
         if let Some(pf) = self.password_file.as_ref().filter(|s| !s.is_empty()) {
             let expanded = Self::expand_tilde(pf);
             match std::fs::read_to_string(&expanded) {
                 Ok(mut contents) => {
                     debug!("Using password from {}", expanded);
-                    let trimmed = contents
-                        .trim_end_matches(['\n', '\r', ' ', '\t'])
-                        .to_string();
+                    let secret = extract_secret_line(&contents);
                     use zeroize::Zeroize;
                     contents.zeroize();
-                    self.password = Secret::from_string(trimmed);
+                    self.password = Secret::from_string(secret);
                 }
                 Err(e) => {
                     warn!(
@@ -544,6 +583,159 @@ impl Config {
 }
 
 /// Atomic password-file writer: temp + rename + 0600 + parent dir fsync.
+/// The secret carried by a password source: the first line, minus a trailing
+/// `\r`. Tolerates `pass`/`secret-tool` style output that appends metadata or a
+/// newline; keeps the password verbatim otherwise (including trailing spaces).
+fn extract_secret_line(raw: &str) -> String {
+    raw.split('\n')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches('\r')
+        .to_string()
+}
+
+/// Expand a leading `~/` and `$VAR` / `${VAR}` references for an argv argument.
+/// The shell form does this itself; the argv form has no shell, so we do it.
+fn expand_env_tilde(arg: &str) -> String {
+    let expanded = Config::expand_tilde(arg);
+    let bytes = expanded.as_bytes();
+    let mut out = String::with_capacity(expanded.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$' && i + 1 < bytes.len() {
+            let (name, next) = if bytes[i + 1] == b'{' {
+                let end = expanded[i + 2..].find('}').map(|p| i + 2 + p);
+                match end {
+                    Some(e) => (&expanded[i + 2..e], e + 1),
+                    None => (&expanded[i + 1..i + 1], i + 1),
+                }
+            } else {
+                let mut e = i + 1;
+                while e < bytes.len() && (bytes[e].is_ascii_alphanumeric() || bytes[e] == b'_') {
+                    e += 1;
+                }
+                (&expanded[i + 1..e], e)
+            };
+            if name.is_empty() {
+                out.push('$');
+                i += 1;
+            } else {
+                out.push_str(&std::env::var(name).unwrap_or_default());
+                i = next;
+            }
+        } else {
+            out.push(expanded[i..].chars().next().unwrap_or('\0'));
+            i += expanded[i..].chars().next().map_or(1, char::len_utf8);
+        }
+    }
+    out
+}
+
+/// Run a `PasswordEval` command and return its secret. Headless-safe: no stdin,
+/// own session (`setsid`), a 30s timeout, and a process-group kill on timeout so
+/// a hung child (e.g. a `pinentry` with no terminal) cannot stall startup.
+fn run_password_eval(eval: &PasswordEval) -> Result<String, String> {
+    run_password_eval_timeout(eval, std::time::Duration::from_secs(30))
+}
+
+fn run_password_eval_timeout(
+    eval: &PasswordEval,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    use std::io::Read;
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+    use zeroize::Zeroize;
+
+    let mut cmd = match eval {
+        PasswordEval::Shell(s) => {
+            let mut c = Command::new("sh");
+            c.arg("-c").arg(s);
+            c
+        }
+        PasswordEval::Argv(parts) => {
+            let Some((prog, args)) = parts.split_first() else {
+                return Err("PasswordEval array is empty".to_string());
+            };
+            let mut c = Command::new(expand_env_tilde(prog));
+            for a in args {
+                c.arg(expand_env_tilde(a));
+            }
+            c
+        }
+    };
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // SAFETY: setsid is async-signal-safe; new session enables a group kill.
+    unsafe {
+        cmd.pre_exec(|| match libc::setsid() {
+            -1 => Err(std::io::Error::last_os_error()),
+            _ => Ok(()),
+        });
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("PasswordEval failed to start: {e}"))?;
+    let pid = child.id() as libc::pid_t;
+    let mut stdout = child.stdout.take().ok_or("PasswordEval: no stdout pipe")?;
+    let mut stderr = child.stderr.take().ok_or("PasswordEval: no stderr pipe")?;
+
+    // Drain both pipes in threads so a child writing past the pipe buffer cannot
+    // deadlock against the timeout wait.
+    let out_h = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+    let err_h = std::thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = stderr.read_to_string(&mut buf);
+        buf
+    });
+
+    // This thread is the sole owner and reaper of `child`, so a timeout kill
+    // always targets the still-live child's process group (no reused-PID race).
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    // SAFETY: child not yet reaped; pid is its group leader.
+                    unsafe {
+                        libc::kill(-pid, libc::SIGKILL);
+                    }
+                    let _ = child.wait();
+                    return Err("PasswordEval timed out".to_string());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(e) => return Err(format!("PasswordEval wait failed: {e}")),
+        }
+    };
+
+    let mut out_bytes = out_h.join().unwrap_or_default();
+    let stderr_text = err_h.join().unwrap_or_default();
+    if !status.success() {
+        out_bytes.zeroize();
+        let code = status
+            .code()
+            .map_or_else(|| "signal".to_string(), |c| c.to_string());
+        let detail = stderr_text.trim();
+        return Err(format!("PasswordEval exited {code}: {detail}"));
+    }
+    let mut raw = String::from_utf8_lossy(&out_bytes).into_owned();
+    out_bytes.zeroize();
+    let secret = extract_secret_line(&raw);
+    raw.zeroize();
+    if secret.is_empty() {
+        return Err("PasswordEval produced no output".to_string());
+    }
+    Ok(secret)
+}
+
 pub fn write_password_file_atomic(path: &str, password: &Secret) -> std::io::Result<()> {
     use std::io::Write;
     let expanded = Config::expand_tilde(path);
@@ -596,6 +788,91 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn extract_secret_line_takes_first_line_keeps_trailing_space() {
+        assert_eq!(extract_secret_line("pw\n"), "pw");
+        assert_eq!(extract_secret_line("pw\r\n"), "pw");
+        assert_eq!(extract_secret_line("pw\nmeta\nmore"), "pw");
+        assert_eq!(extract_secret_line("pw with space "), "pw with space ");
+        assert_eq!(extract_secret_line(""), "");
+    }
+
+    #[test]
+    fn expand_env_tilde_expands_vars() {
+        std::env::set_var("FERRO_TEST_X", "hunter2");
+        assert_eq!(expand_env_tilde("$FERRO_TEST_X"), "hunter2");
+        assert_eq!(expand_env_tilde("${FERRO_TEST_X}-x"), "hunter2-x");
+        assert_eq!(expand_env_tilde("literal"), "literal");
+    }
+
+    #[test]
+    fn password_eval_shell_form_captures_first_line() {
+        let r = run_password_eval(&PasswordEval::Shell("printf 'navipass\\nmeta'".into()));
+        assert_eq!(r, Ok("navipass".to_string()));
+    }
+
+    #[test]
+    fn password_eval_argv_form_expands_env() {
+        std::env::set_var("FERRO_TEST_PW", "argvpass");
+        let r = run_password_eval(&PasswordEval::Argv(vec![
+            "printf".into(),
+            "%s".into(),
+            "$FERRO_TEST_PW".into(),
+        ]));
+        assert_eq!(r, Ok("argvpass".to_string()));
+    }
+
+    #[test]
+    fn password_eval_nonzero_exit_and_empty_output_fail() {
+        assert!(run_password_eval(&PasswordEval::Shell("exit 3".into())).is_err());
+        assert!(run_password_eval(&PasswordEval::Shell("true".into())).is_err());
+    }
+
+    #[test]
+    fn password_eval_times_out_without_waiting_for_the_child() {
+        let start = std::time::Instant::now();
+        let r = run_password_eval_timeout(
+            &PasswordEval::Shell("sleep 5".into()),
+            std::time::Duration::from_millis(200),
+        );
+        assert!(r.is_err(), "a hung command must time out");
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(3),
+            "the timeout must not block on the child"
+        );
+    }
+
+    #[test]
+    fn password_eval_resolves_at_config_load() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(
+            f,
+            "BaseURL=\"https://x\"\nUsername=\"u\"\nPasswordEval=\"printf loadpass\"\n"
+        )
+        .unwrap();
+        let c = Config::load_from_file(f.path()).unwrap();
+        assert_eq!(c.password_str(), "loadpass");
+    }
+
+    #[test]
+    fn save_preserves_password_eval_and_omits_inline_password() {
+        let mut c = Config::default();
+        c.base_url = "https://x".into();
+        c.password = "resolved-secret".into();
+        c.password_eval = Some(PasswordEval::Shell("printf x".into()));
+        let f = NamedTempFile::new().unwrap();
+        c.save_to_file(f.path()).unwrap();
+        let written = std::fs::read_to_string(f.path()).unwrap();
+        assert!(
+            written.contains("PasswordEval"),
+            "PasswordEval preserved:\n{written}"
+        );
+        assert!(
+            !written.contains("resolved-secret"),
+            "the resolved plaintext must not be written back inline:\n{written}"
+        );
     }
 
     #[test]

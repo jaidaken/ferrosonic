@@ -4,6 +4,15 @@
 
 ### Added
 
+- **`PasswordEval` config option.** Run a command and use its output as the
+  password, so no secret need sit in `config.toml`. Accepts a shell string
+  (`PasswordEval = "pass show navidrome"`) or an argv array
+  (`["sops", "-d", "~/x"]`), resolves at startup in the order
+  env > `PasswordEval` > `PasswordFile` > inline. Hardened for the headless
+  daemon: stdin closed, own session, 30s timeout with a process-group kill,
+  fatal-on-failure (never a stale fallback), output zeroized, and the secret
+  never passed via argv or env. Works across distros and macOS via `/bin/sh`.
+
 - **Desktop notifications on track change.** A freedesktop.org notification
   (any Linux daemon: mako, dunst, GNOME, KDE) with cover art, fired from the
   daemon so it shows whether or not the TUI is open. On by default; toggle
