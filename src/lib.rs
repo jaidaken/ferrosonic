@@ -11,5 +11,6 @@ pub mod ipc;
 pub mod mpris;
 pub mod proc_util;
 pub mod secret;
+pub mod secret_store;
 pub mod subsonic;
 pub mod ui;

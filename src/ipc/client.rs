@@ -275,11 +275,12 @@ impl DaemonClient for InProcessClient {
                 username,
                 password,
             } => {
-                self.core
+                let storage = self
+                    .core
                     .update_server_config(&base_url, &username, &password)
                     .await
                     .map_err(err)?;
-                Ok(DaemonResponse::Ok)
+                Ok(DaemonResponse::ServerConfigSaved(storage))
             }
             DaemonRequest::TestServerConnection {
                 base_url,

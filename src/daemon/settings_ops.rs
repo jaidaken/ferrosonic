@@ -2,39 +2,74 @@
 
 use std::sync::Arc;
 
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::daemon::core::DaemonCore;
 use crate::error::Error;
-use crate::ipc::protocol::DaemonEvent;
+use crate::ipc::protocol::{DaemonEvent, PasswordStorage};
 use crate::subsonic::SubsonicClient;
 
 impl DaemonCore {
-    /// Persist new credentials, swap in a fresh Subsonic client, refresh the library.
+    /// Persist new credentials, swap in a fresh Subsonic client, refresh the
+    /// library. The password is stored in priority: an existing `PasswordEval`
+    /// or `PasswordFile` is honored, otherwise the OS keychain, falling back to
+    /// an inline owner-only config write when no keychain is reachable. Returns
+    /// where the password landed so the caller can inform the user.
     pub async fn update_server_config(
         self: &Arc<Self>,
         base_url: &str,
         username: &str,
         password: &crate::secret::Secret,
-    ) -> Result<(), Error> {
-        let music_folder_id;
-        {
-            let mut state = self.state.write().await;
-            state.config.base_url = base_url.to_string();
-            state.config.username = username.to_string();
-            music_folder_id = state.config.music_folder_id;
-            let pf_opt = state.config.password_file.clone().filter(|s| !s.is_empty());
-            if let Some(pf) = pf_opt.as_deref() {
-                if let Err(e) = crate::config::write_password_file_atomic(pf, password) {
-                    error!("Failed to write password to {}: {}", pf, e);
-                    return Err(Error::Io(e));
+    ) -> Result<PasswordStorage, Error> {
+        let mut state = self.state.write().await;
+        let old_url = std::mem::replace(&mut state.config.base_url, base_url.to_string());
+        let old_user = std::mem::replace(&mut state.config.username, username.to_string());
+        let had_keyring = state.config.password_keyring;
+        let music_folder_id = state.config.music_folder_id;
+        let pf_opt = state.config.password_file.clone().filter(|s| !s.is_empty());
+        let storage = if state.config.password_eval.is_some() {
+            // The command owns the secret; never persist the typed password.
+            state.config.password_keyring = false;
+            state.config.password = crate::secret::Secret::new();
+            state.config.save_default().map_err(Error::Config)?;
+            state.config.password = password.clone();
+            PasswordStorage::PasswordEval
+        } else if let Some(pf) = pf_opt.as_deref() {
+            if let Err(e) = crate::config::write_password_file_atomic(pf, password) {
+                error!("Failed to write password to {}: {}", pf, e);
+                return Err(Error::Io(e));
+            }
+            state.config.password_keyring = false;
+            state.config.password = crate::secret::Secret::new();
+            state.config.save_default().map_err(Error::Config)?;
+            state.config.password = password.clone();
+            PasswordStorage::PasswordFile
+        } else {
+            match crate::secret_store::store(base_url, username, password) {
+                Ok(()) => {
+                    state.config.password_keyring = true;
+                    state.config.password = crate::secret::Secret::new();
+                    state.config.save_default().map_err(Error::Config)?;
+                    state.config.password = password.clone();
+                    PasswordStorage::Keyring
                 }
-                state.config.password = crate::secret::Secret::new();
-                state.config.save_default().map_err(Error::Config)?;
-                state.config.password = password.clone();
-            } else {
-                state.config.password = password.clone();
-                state.config.save_default().map_err(Error::Config)?;
+                Err(e) => {
+                    warn!("OS keychain unavailable ({e}); writing the password inline to the owner-only config file");
+                    state.config.password_keyring = false;
+                    state.config.password = password.clone();
+                    state.config.save_default().map_err(Error::Config)?;
+                    PasswordStorage::Inline
+                }
+            }
+        };
+        drop(state);
+
+        // Outside the state lock so keychain IO never blocks readers: drop an
+        // orphaned entry when the credential left the keychain or its key changed.
+        let key_changed = old_url != base_url || old_user != username;
+        if had_keyring && (storage != PasswordStorage::Keyring || key_changed) {
+            if let Err(e) = crate::secret_store::delete(&old_url, &old_user) {
+                warn!("Could not remove the previous keychain entry: {e}");
             }
         }
 
@@ -56,7 +91,7 @@ impl DaemonCore {
         self.spawn_refresh_scrobble_capability();
 
         self.emit_config_changed().await;
-        Ok(())
+        Ok(storage)
     }
 
     /// Persist the scrobble toggle and broadcast the config change.

@@ -50,6 +50,12 @@ md5 = "0.7"
 rand = "0.8"
 # Secret newtype: explicit drop-zeroize on the boxed password bytes.
 zeroize = { version = "1.8", features = ["derive"] }
+# OS keychain credential storage. Default `v1` feature maps to the
+# zbus secret-service store on Linux (pure-Rust D-Bus + RustCrypto, no
+# libdbus C dep so the musl static release binary is preserved) and the
+# apple-native Keychain on macOS. The Windows store is target-gated and
+# never compiles on the Linux/macOS fleet.
+keyring = "4"
 strum = "0.26"
 strum_macros = "0.26"
 

@@ -104,7 +104,7 @@ systemctl --user enable --now ferrosonicd.service
 
 ## Configuration
 
-Configuration is stored at `~/.config/ferrosonic/config.toml`. You can edit it manually or configure the server connection through the application's Server page (F5).
+Configuration is stored at `~/.config/ferrosonic/config.toml`. You can edit it manually or configure the server connection through the application's Server page (F5). When you enter your password on the Server page, ferrosonic saves it to your operating system's keychain by default and keeps it out of `config.toml`; see [Where your password is stored](#where-your-password-is-stored).
 
 ```toml
 BaseURL = "https://your-subsonic-server.com"
@@ -126,9 +126,10 @@ Notifications = true
 |---|---|
 | `BaseURL` | URL of your Subsonic-compatible server (Navidrome, Airsonic, Gonic, etc.) |
 | `Username` | Your server username |
-| `Password` | Your server password |
-| `PasswordFile` | Optional path to a file containing the password (overrides `Password`) |
-| `PasswordEval` | Optional command whose output is the password, so no secret sits in the config. Overrides `Password` and `PasswordFile`; the `FERROSONIC_PASSWORD` env var still wins. See below. |
+| `Password` | Your server password. Used inline only as a last resort; the Server page prefers the OS keychain. |
+| `PasswordKeyring` | Set to `true` automatically when the password lives in the OS keychain; no plaintext is then written to the config. See below. |
+| `PasswordFile` | Optional path to a file containing the password (overrides `Password` and the keychain) |
+| `PasswordEval` | Optional command whose output is the password, so no secret sits in the config. Overrides `PasswordFile`, the keychain, and `Password`; the `FERROSONIC_PASSWORD` env var still wins. See below. |
 | `Theme` | Color theme name (e.g. `Default`, `Catppuccin`, `Tokyo Night`) |
 | `Daemon` | `true` (default) auto-spawns the background daemon; `false` runs single-process |
 | `Cava` | Enable the cava visualizer pane |
@@ -141,6 +142,22 @@ Notifications = true
 | `Notifications` | Desktop track-change notifications with cover art, default `true` |
 
 Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/ferrosonic/ferrosonicd.log` (daemon). The queue is persisted to `~/.config/ferrosonic/queue.json` so it survives daemon restarts.
+
+### Where your password is stored
+
+When you enter your password on the Server page (F5), ferrosonic stores it in your operating system's keychain (Secret Service / GNOME Keyring / KWallet on Linux, Keychain on macOS) and writes only a `PasswordKeyring = true` marker to `config.toml`, never the plaintext. Any password already sitting inline migrates to the keychain the next time you save. This is the default and needs no setup.
+
+On a machine with no usable keychain (a headless box, or no unlocked Secret Service), ferrosonic falls back to writing the password inline to `config.toml`, which is created with owner-only (`0600`) permissions, and the Server page tells you this happened. For headless or scripted setups, prefer `PasswordEval` below.
+
+At startup the password is resolved in this order, first hit wins:
+
+1. `FERROSONIC_PASSWORD` environment variable
+2. `PasswordEval` command
+3. `PasswordFile` path
+4. OS keychain (when `PasswordKeyring = true`)
+5. inline `Password`
+
+If a higher-priority source is configured but fails (command errors, file unreadable, keychain unreachable), ferrosonic clears the password and authentication fails cleanly rather than falling back to a stale credential.
 
 ### Keeping the password out of the config (`PasswordEval`)
 

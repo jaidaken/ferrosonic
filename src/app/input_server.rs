@@ -157,7 +157,7 @@ impl App {
                             })
                             .await
                         {
-                            Ok(_) => {
+                            Ok(resp) => {
                                 info!("Config saved and refetched");
                                 let ds = self.daemon_state.read().await;
                                 let mut cs = self.client_state.write().await;
@@ -165,8 +165,7 @@ impl App {
                                     daemon: &ds,
                                     client: &mut cs,
                                 };
-                                state.client.server_state.status =
-                                    Some("Connected and loaded data!".to_string());
+                                state.client.server_state.status = Some(server_save_status(&resp));
                             }
                             Err(e) => {
                                 info!("Config save failed: {}", e);
@@ -189,5 +188,27 @@ impl App {
         }
 
         Ok(())
+    }
+}
+
+/// Status line for a successful save, naming where the password was stored.
+/// Each string carries a positive keyword so the page renders it in green.
+fn server_save_status(resp: &crate::ipc::DaemonResponse) -> String {
+    use crate::ipc::{DaemonResponse, PasswordStorage};
+    match resp {
+        DaemonResponse::ServerConfigSaved(PasswordStorage::Keyring) => {
+            "Connected! Password saved to your OS keychain.".to_string()
+        }
+        DaemonResponse::ServerConfigSaved(PasswordStorage::PasswordFile) => {
+            "Connected! Password saved to your PasswordFile.".to_string()
+        }
+        DaemonResponse::ServerConfigSaved(PasswordStorage::PasswordEval) => {
+            "Connected successfully! Password supplied by your PasswordEval command.".to_string()
+        }
+        DaemonResponse::ServerConfigSaved(PasswordStorage::Inline) => {
+            "Connected! No OS keychain found; password saved to the config file (owner-only)."
+                .to_string()
+        }
+        _ => "Connected and loaded data!".to_string(),
     }
 }

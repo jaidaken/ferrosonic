@@ -206,6 +206,20 @@ pub enum EnqueueMode {
     InsertAfter(usize),
 }
 
+/// Where a saved password was persisted, reported back so the TUI can tell
+/// the user whether their credential reached the OS keychain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PasswordStorage {
+    /// Stored in the OS keychain (Secret Service / macOS Keychain).
+    Keyring,
+    /// Written to the configured `PasswordFile`.
+    PasswordFile,
+    /// Provided by the configured `PasswordEval` command; not persisted here.
+    PasswordEval,
+    /// No keychain available; written inline to the owner-only config file.
+    Inline,
+}
+
 /// Daemon-to-client reply to a single `DaemonRequest`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DaemonResponse {
@@ -213,6 +227,8 @@ pub enum DaemonResponse {
     Ok,
     /// Request failed; the message is human-readable.
     Err(String),
+    /// `UpdateServerConfig` succeeded; reports where the password was stored.
+    ServerConfigSaved(PasswordStorage),
     /// Albums of a requested artist.
     ArtistAlbums(Vec<Album>),
     /// The entire album library for the flat album-list view.

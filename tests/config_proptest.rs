@@ -58,6 +58,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
                 password: password.into(),
                 password_file: None,
                 password_eval: None,
+                password_keyring: false,
                 theme,
                 cava,
                 cava_size,

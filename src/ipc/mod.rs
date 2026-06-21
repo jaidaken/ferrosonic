@@ -8,5 +8,7 @@ pub mod server;
 pub mod socket_client;
 
 pub use client::{DaemonClient, InProcessClient};
-pub use protocol::{DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError};
+pub use protocol::{
+    DaemonEvent, DaemonRequest, DaemonResponse, EnqueueMode, IpcError, PasswordStorage,
+};
 pub use socket_client::SocketClient;

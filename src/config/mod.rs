@@ -8,7 +8,7 @@ use std::path::Path;
 use tracing::{debug, info, warn};
 
 use crate::error::ConfigError;
-use crate::io_util::{atomic_write_bytes, fsync_parent_dir};
+use crate::io_util::{atomic_write_bytes_private, fsync_parent_dir};
 use crate::secret::{serialize_revealed, Secret};
 
 /// All top-level TOML keys we expect. Anything not in this list is
@@ -20,6 +20,7 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "Password",
     "PasswordFile",
     "PasswordEval",
+    "PasswordKeyring",
     "Theme",
     "Cava",
     "CavaSize",
@@ -77,6 +78,12 @@ pub struct Config {
         skip_serializing_if = "Option::is_none"
     )]
     pub password_eval: Option<PasswordEval>,
+
+    /// True when the password lives in the OS keychain, keyed by `base_url` +
+    /// `username`. Resolved after `PasswordFile` and before the inline value.
+    /// When set, no plaintext password is written to the config file.
+    #[serde(rename = "PasswordKeyring", default)]
+    pub password_keyring: bool,
 
     /// Active theme name; empty selects the built-in default.
     #[serde(rename = "Theme", default)]
@@ -156,6 +163,8 @@ struct ConfigOnDisk<'a> {
     password_file: Option<&'a str>,
     #[serde(rename = "PasswordEval", skip_serializing_if = "Option::is_none")]
     password_eval: Option<&'a PasswordEval>,
+    #[serde(rename = "PasswordKeyring", skip_serializing_if = "std::ops::Not::not")]
+    password_keyring: bool,
     #[serde(rename = "Theme")]
     theme: &'a str,
     #[serde(rename = "Cava")]
@@ -200,9 +209,9 @@ fn serialize_revealed_opt<S: serde::Serializer>(
 impl Config {
     fn as_on_disk(&self) -> ConfigOnDisk<'_> {
         let pw_file_set = self.password_file.as_ref().is_some_and(|s| !s.is_empty());
-        // The secret lives outside the file when a PasswordFile or PasswordEval
-        // is set; do not also write the resolved plaintext back inline.
-        let secret_external = pw_file_set || self.password_eval.is_some();
+        // The secret lives outside the file when a PasswordFile, PasswordEval,
+        // or the OS keychain holds it; do not write the plaintext back inline.
+        let secret_external = pw_file_set || self.password_eval.is_some() || self.password_keyring;
         ConfigOnDisk {
             base_url: &self.base_url,
             username: &self.username,
@@ -213,6 +222,7 @@ impl Config {
             },
             password_file: self.password_file.as_deref(),
             password_eval: self.password_eval.as_ref(),
+            password_keyring: self.password_keyring,
             theme: &self.theme,
             cava: self.cava,
             cava_size: self.cava_size,
@@ -353,6 +363,7 @@ impl Default for Config {
             music_folder_id: None,
             music_folder_chosen: false,
             password_eval: None,
+            password_keyring: false,
         }
     }
 }
@@ -401,7 +412,7 @@ impl Config {
         }
     }
 
-    /// Resolves the password in priority order: `FERROSONIC_PASSWORD` env > `PasswordEval` > `PasswordFile` > inline.
+    /// Resolves the password in priority order: `FERROSONIC_PASSWORD` env > `PasswordEval` > `PasswordFile` > OS keychain > inline.
     ///
     /// ```
     /// use ferrosonic::config::Config;
@@ -495,6 +506,23 @@ impl Config {
                     self.password.clear();
                 }
             }
+            return;
+        }
+        if self.password_keyring {
+            match crate::secret_store::retrieve(&self.base_url, &self.username) {
+                Ok(Some(secret)) => {
+                    debug!("Using password from the OS keychain");
+                    self.password = secret;
+                }
+                Ok(None) => {
+                    warn!("PasswordKeyring set but no entry in the OS keychain; clearing inline password to avoid a stale credential");
+                    self.password.clear();
+                }
+                Err(e) => {
+                    warn!("{e}; clearing inline password to avoid a stale credential");
+                    self.password.clear();
+                }
+            }
         }
     }
 
@@ -522,7 +550,8 @@ impl Config {
         debug!("Saving config to {}", path.display());
         // ConfigOnDisk uses the real password and obeys password_file indirection so neither the redacted-serializer nor a caller mistake can leak or omit the secret.
         let contents = toml::to_string_pretty(&self.as_on_disk())?;
-        atomic_write_bytes(path, contents.as_bytes())?;
+        // Owner-only: the file may hold an inline plaintext password.
+        atomic_write_bytes_private(path, contents.as_bytes())?;
         info!("Config saved to {}", path.display());
         Ok(())
     }
@@ -872,6 +901,26 @@ mod tests {
         assert!(
             !written.contains("resolved-secret"),
             "the resolved plaintext must not be written back inline:\n{written}"
+        );
+    }
+
+    #[test]
+    fn save_with_keyring_marker_omits_inline_password() {
+        let mut c = Config::default();
+        c.base_url = "https://x".into();
+        c.username = "u".into();
+        c.password = "resolved-secret".into();
+        c.password_keyring = true;
+        let f = NamedTempFile::new().unwrap();
+        c.save_to_file(f.path()).unwrap();
+        let written = std::fs::read_to_string(f.path()).unwrap();
+        assert!(
+            written.contains("PasswordKeyring = true"),
+            "keyring marker preserved:\n{written}"
+        );
+        assert!(
+            !written.contains("resolved-secret"),
+            "the resolved plaintext must not be written inline when keyring holds it:\n{written}"
         );
     }
 

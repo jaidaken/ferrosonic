@@ -4,6 +4,17 @@
 
 ### Added
 
+- **OS keychain credential storage (default).** Entering your password on the
+  Server page (F5) now stores it in the operating system's keychain (Secret
+  Service / GNOME Keyring / KWallet on Linux, Keychain on macOS) and writes
+  only a `PasswordKeyring = true` marker to `config.toml`, never the plaintext;
+  an existing inline password migrates on next save. On a machine with no
+  usable keychain (headless, no unlocked Secret Service) it falls back to an
+  inline write and the Server page says so. The Linux backend is pure-Rust
+  (zbus Secret Service), so the static release binary keeps no `libdbus` C
+  dependency. Resolution order is now
+  env > `PasswordEval` > `PasswordFile` > keychain > inline.
+
 - **`PasswordEval` config option.** Run a command and use its output as the
   password, so no secret need sit in `config.toml`. Accepts a shell string
   (`PasswordEval = "pass show navidrome"`) or an argv array
@@ -33,6 +44,9 @@
 
 ### Changed
 
+- **`config.toml` is now written owner-only (`0600`).** It may hold an inline
+  password in the keychain-fallback case, so the file is no longer
+  world-readable on shared machines.
 - **Resume re-clocks cleanly.** Pausing releases the audio-device rate pin so
   other apps (a browser) play at their own rate; resuming compares the device
   rate to the track's and, if they differ, switches and waits the settle

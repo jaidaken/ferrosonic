@@ -50,6 +50,11 @@ impl TestDaemon {
 
     async fn build(config_dir: TempDir, restore_queue: bool, pipewire: PipeWireController) -> Self {
         std::env::set_var("FERROSONIC_CONFIG_DIR", config_dir.path());
+        // Keep credential saves off the real OS keychain. Hermetic under
+        // nextest's process-per-test; mark `#[serial]` for cargo test.
+        ferrosonic::secret_store::install_test_store(Arc::new(
+            ferrosonic::secret_store::InMemoryKeyStore::new(),
+        ));
 
         let fake_mpv = FakeMpv::start().await;
         let fake_subsonic = FakeSubsonic::start().await;
