@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-21
+
 ### Added
 
 - **OS keychain credential storage (default).** Entering your password on the
