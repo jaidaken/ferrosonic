@@ -290,8 +290,6 @@ impl MpvController {
     }
 
     /// Whether the IPC connection and mpv process are both alive; clears dead state as a side effect.
-    // Arms intentionally explicit / structurally unmergeable (audited).
-    #[allow(clippy::match_same_arms)]
     pub fn is_running(&mut self) -> bool {
         if self.writer.is_none() {
             return false;
@@ -310,15 +308,7 @@ impl MpvController {
             None => self.writer.is_some(),
             Some(child) => match child.try_wait() {
                 Ok(None) => true,
-                Ok(Some(_)) => {
-                    self.writer = None;
-                    self.process = None;
-                    if let Some(h) = self.reader_handle.take() {
-                        h.abort();
-                    }
-                    false
-                }
-                Err(_) => {
+                Ok(Some(_)) | Err(_) => {
                     self.writer = None;
                     self.process = None;
                     if let Some(h) = self.reader_handle.take() {

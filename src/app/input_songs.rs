@@ -6,7 +6,7 @@ use crate::error::Error;
 use super::{App, AppState, DaemonRequest, EnqueueMode};
 
 impl App {
-    // Arms intentionally explicit / structurally unmergeable (audited).
+    // Empty arms kept per-variant explicit; merging would hide which enum cases are handled.
     #[allow(clippy::match_same_arms)]
     // Cohesive single match/render; splitting would fragment one logical unit.
     #[allow(clippy::too_many_lines)]
