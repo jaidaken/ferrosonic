@@ -10,7 +10,7 @@ use super::{App, AppState, DaemonRequest};
 const MAX_FIELD_LEN: usize = 1024;
 
 impl App {
-    pub(super) async fn handle_server_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+    pub(super) async fn handle_server_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState {

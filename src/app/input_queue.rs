@@ -5,7 +5,7 @@ use crate::error::Error;
 use super::{App, AppState, DaemonRequest};
 
 impl App {
-    pub(super) async fn handle_queue_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+    pub(super) async fn handle_queue_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState {

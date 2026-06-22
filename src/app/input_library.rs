@@ -11,7 +11,7 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 impl App {
-    pub(super) async fn handle_library_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+    pub(super) async fn handle_library_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         use crate::ui::pages::library::{build_tree_items, TreeItem};
 
         let ds = self.daemon_state.read().await;
@@ -737,7 +737,7 @@ impl App {
     }
 
     /// Key handling for the flat album list (left pane, focus == 0).
-    async fn handle_album_list_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+    async fn handle_album_list_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         match key.code {
             KeyCode::Char('s') => {
                 {
@@ -862,7 +862,7 @@ impl App {
 
     /// Load the currently-selected album's songs into the right pane so it
     /// follows the album-list cursor (focus stays on the list).
-    pub(super) async fn load_selected_album_into_pane(&mut self) {
+    pub(super) async fn load_selected_album_into_pane(&self) {
         let id = {
             let cs = self.client_state.read().await;
             cs.artists
@@ -879,7 +879,7 @@ impl App {
     }
 
     async fn collect_songs_for(
-        &mut self,
+        &self,
         item: &crate::ui::pages::library::TreeItem,
     ) -> Vec<crate::subsonic::models::Child> {
         use crate::ui::pages::library::TreeItem;

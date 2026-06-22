@@ -278,7 +278,7 @@ impl App {
         Ok(())
     }
 
-    async fn handle_mouse_scroll_up(&mut self) -> Result<(), Error> {
+    async fn handle_mouse_scroll_up(&self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState {
@@ -335,7 +335,7 @@ impl App {
         Ok(())
     }
 
-    async fn handle_mouse_scroll_down(&mut self) -> Result<(), Error> {
+    async fn handle_mouse_scroll_down(&self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState {

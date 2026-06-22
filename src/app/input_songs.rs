@@ -8,7 +8,7 @@ use super::{App, AppState, DaemonRequest, EnqueueMode};
 impl App {
     // Arms intentionally explicit / structurally unmergeable (audited).
     #[allow(clippy::match_same_arms)]
-    pub(super) async fn handle_songs_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+    pub(super) async fn handle_songs_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState {

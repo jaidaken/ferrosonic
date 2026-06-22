@@ -5,7 +5,7 @@ use crate::error::Error;
 use super::{App, AppState, DaemonRequest, EnqueueMode};
 
 impl App {
-    pub(super) async fn handle_playlists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+    pub(super) async fn handle_playlists_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState {
@@ -367,7 +367,7 @@ impl App {
     /// Key handler for the add-to-playlist picker overlay; owns all input
     /// while open. Enter adds the held song to the highlighted playlist.
     pub(super) async fn handle_playlist_picker_key(
-        &mut self,
+        &self,
         key: event::KeyEvent,
     ) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
@@ -417,7 +417,7 @@ impl App {
     /// Move the highlighted playlist song by `delta` (+1 down, -1 up) and
     /// persist the new order. Optimistic: the local pane already mirrors the
     /// server list, so the reordered ids are authoritative.
-    async fn move_playlist_song(&mut self, delta: isize) -> Result<(), Error> {
+    async fn move_playlist_song(&self, delta: isize) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let len = cs.playlists.songs.len();
@@ -457,7 +457,7 @@ impl App {
 
     /// Replace the songs pane with the daemon's authoritative list after an
     /// edit, clamping the selection so an optimistic update cannot diverge.
-    async fn reconcile_playlist_songs(&mut self, songs: Vec<crate::subsonic::models::Child>) {
+    async fn reconcile_playlist_songs(&self, songs: Vec<crate::subsonic::models::Child>) {
         let mut cs = self.client_state.write().await;
         let len = songs.len();
         cs.playlists.songs = songs;
