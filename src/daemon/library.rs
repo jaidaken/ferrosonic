@@ -106,10 +106,18 @@ impl<V: Clone> LruCache<V> {
     pub fn len(&self) -> usize {
         self.map.len()
     }
+
+    /// Whether the cache holds no entries.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
 }
 
 /// Compatibility shim while the rest of the codebase still uses a
 /// bare `HashMap`. New code should use `LruCache` directly.
+// Transitional shim: default-hasher HashMap only; contains_key gates LRU reorder, not insert-if-absent.
+#[allow(clippy::implicit_hasher, clippy::map_entry)]
 pub fn cache_insert<V: Clone>(
     map: &mut HashMap<String, V>,
     order: &mut VecDeque<String>,

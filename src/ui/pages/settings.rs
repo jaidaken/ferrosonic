@@ -41,35 +41,35 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
         return;
     }
 
-    let s = &state.client.settings_state;
+    let settings = &state.client.settings_state;
     let cava_ok = state.client.cava_available;
-    let sel = s.selected_field;
+    let sel = settings.selected_field;
 
-    let theme_val = s.theme_name().to_string();
+    let theme_val = settings.theme_name().to_string();
     let cava_val = if !cava_ok {
         "Off (cava not found)".to_string()
-    } else if s.cava_enabled {
+    } else if settings.cava_enabled {
         "On".into()
     } else {
         "Off".into()
     };
     let cava_size_val = if cava_ok {
-        format!("{}%", s.cava_size)
+        format!("{}%", settings.cava_size)
     } else {
         "N/A".into()
     };
-    let cover_val = if s.cover_art { "On" } else { "Off" }.to_string();
-    let cover_size_val = format!("{} rows", s.cover_art_size);
-    let repeat_val = match s.repeat_mode {
+    let cover_val = if settings.cover_art { "On" } else { "Off" }.to_string();
+    let cover_size_val = format!("{} rows", settings.cover_art_size);
+    let repeat_val = match settings.repeat_mode {
         crate::config::RepeatMode::Off => "Off",
         crate::config::RepeatMode::One => "One",
         crate::config::RepeatMode::All => "All",
     }
     .to_string();
-    let auto_val = if s.auto_continue { "On" } else { "Off" }.to_string();
-    let scrobble_val = if s.scrobble { "On" } else { "Off" }.to_string();
-    let daemon_val = if s.daemon_enabled { "On" } else { "Off" }.to_string();
-    let notifications_val = if s.notifications { "On" } else { "Off" }.to_string();
+    let auto_val = if settings.auto_continue { "On" } else { "Off" }.to_string();
+    let scrobble_val = if settings.scrobble { "On" } else { "Off" }.to_string();
+    let daemon_val = if settings.daemon_enabled { "On" } else { "Off" }.to_string();
+    let notifications_val = if settings.notifications { "On" } else { "Off" }.to_string();
 
     let x = inner.x;
     let w = inner.width;
@@ -146,8 +146,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
             .unwrap_or(0);
         let start = sel_idx.saturating_sub(visible.saturating_sub(1));
         let buf = frame.buffer_mut();
-        let mut y = inner.y;
-        for item in items.iter().skip(start) {
+        for (y, item) in (inner.y..).zip(items.iter().skip(start)) {
             if y >= row_limit {
                 break;
             }
@@ -165,7 +164,6 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
                 }
                 Item::Gap => {}
             }
-            y += 1;
         }
     }
 

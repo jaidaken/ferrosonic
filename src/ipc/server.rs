@@ -25,20 +25,17 @@ const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 
 /// Reserve two slots so the snapshot pair is sent atomically or not at all; partial sends would leave the client desynced.
 async fn try_send_resync(tx: &tokio::sync::mpsc::Sender<Frame>, core: &Arc<DaemonCore>) -> bool {
-    let p1 = match tx.try_reserve() {
-        Ok(p) => p,
-        Err(_) => return false,
+    let Ok(p1) = tx.try_reserve() else {
+        return false;
     };
-    let p2 = if let Ok(p) = tx.try_reserve() {
-        p
-    } else {
+    let Ok(p2) = tx.try_reserve() else {
         drop(p1);
         return false;
     };
     let snap = core.snapshot().await;
-    p1.send(Frame::Event(DaemonEvent::NowPlayingChanged(
+    p1.send(Frame::Event(DaemonEvent::NowPlayingChanged(Box::new(
         snap.now_playing.clone(),
-    )));
+    ))));
     p2.send(Frame::Event(DaemonEvent::QueueChanged {
         queue: snap.queue.clone(),
         position: snap.queue_position,
@@ -144,7 +141,7 @@ async fn handle_stale_socket(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());
     }
-    if let Ok(_) = UnixStream::connect(path).await {
+    if UnixStream::connect(path).await.is_ok() {
         Err(std::io::Error::new(
             std::io::ErrorKind::AddrInUse,
             format!("daemon already running at {}", path.display()),
@@ -215,7 +212,7 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
                 _ = retry.tick() => {
                     if needs_resync {
                         let due = last_resync_at
-                            .map_or(true, |t| t.elapsed() >= std::time::Duration::from_millis(500));
+                            .is_none_or(|t| t.elapsed() >= std::time::Duration::from_millis(500));
                         if due
                             && try_send_resync(&event_writer_tx, &event_core).await
                         {

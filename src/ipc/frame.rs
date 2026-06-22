@@ -35,10 +35,11 @@ pub enum Frame {
     Event(DaemonEvent),
 }
 
-/// Result of a tolerant frame parse. Splits "couldn't parse the
-/// envelope" (fatal) from "envelope OK, payload type unknown" so the
-/// reader can recover from forward/back protocol mismatches without
-/// severing the connection.
+/// Result of a tolerant frame parse.
+///
+/// Splits "couldn't parse the envelope" (fatal) from "envelope OK, payload
+/// type unknown" so the reader can recover from forward/back protocol
+/// mismatches without severing the connection.
 #[derive(Debug)]
 pub enum FrameRead {
     /// Fully parsed; payload variant was known.

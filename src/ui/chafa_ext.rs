@@ -13,7 +13,7 @@ type ChafaCanvas = *mut c_void;
 
 // Symbol-tag mask. `CHAFA_SYMBOL_TAG_ALL` from chafa.h:
 // ~(EXTRA | BAD | UGLY) ≈ every symbol set chafa knows about.
-const CHAFA_SYMBOL_TAG_ALL: u32 = 0xBFE7FFFF;
+const CHAFA_SYMBOL_TAG_ALL: u32 = 0xBFE7_FFFF;
 
 // CHAFA_PIXEL_RGB8 enum value.
 const CHAFA_PIXEL_RGB8: u32 = 8;
@@ -177,10 +177,11 @@ pub struct EncodedCell {
     pub bg: Color,
 }
 
-/// Encode an image into `width × height` truecolor cells with high
-/// quality settings (Floyd-Steinberg dither, work factor 1.0, every
-/// symbol set chafa supports). Returns `None` if libchafa isn't
-/// available or the canvas allocation fails.
+/// Encode an image into `width × height` truecolor cells.
+///
+/// Uses high quality settings (Floyd-Steinberg dither, work factor 1.0, every
+/// symbol set chafa supports). Returns `None` if libchafa isn't available or
+/// the canvas allocation fails.
 pub fn encode(img: &DynamicImage, width: u16, height: u16) -> Option<Vec<EncodedCell>> {
     if width == 0 || height == 0 {
         return None;

@@ -907,7 +907,7 @@ impl App {
 fn sort_albums(albums: &mut [crate::subsonic::models::Album], sort: AlbumSort) {
     match sort {
         AlbumSort::Name => {
-            albums.sort_by(|a, b| album_sort_key(&a.name).cmp(&album_sort_key(&b.name)));
+            albums.sort_by_key(|a| album_sort_key(&a.name));
         }
         AlbumSort::ReleaseDate => albums.sort_by_key(|a| a.sort_year().unwrap_or(i32::MAX)),
     }

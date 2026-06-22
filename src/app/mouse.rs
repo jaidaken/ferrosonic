@@ -157,9 +157,8 @@ impl App {
         layout: &LayoutAreas,
     ) -> Result<(), Error> {
         use crate::app::models::SongOption;
-        let (left, right) = match (layout.content_left, layout.content_right) {
-            (Some(l), Some(r)) => (l, r),
-            _ => return Ok(()),
+        let (Some(left), Some(right)) = (layout.content_left, layout.content_right) else {
+            return Ok(());
         };
 
         let in_pane = |r: ratatui::layout::Rect| {

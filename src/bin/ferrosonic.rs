@@ -106,18 +106,15 @@ fn install_daemon_panic_hook() {
 }
 
 fn load_config(path: Option<&std::path::Path>) -> anyhow::Result<Config> {
-    match path {
-        Some(path) => {
-            info!("Loading config from {}", path.display());
-            Ok(Config::load_from_file(path)?)
-        }
-        None => {
-            info!("Loading default config");
-            Ok(Config::load_default().unwrap_or_else(|e| {
-                info!("No config found ({}), using defaults", e);
-                Config::new()
-            }))
-        }
+    if let Some(path) = path {
+        info!("Loading config from {}", path.display());
+        Ok(Config::load_from_file(path)?)
+    } else {
+        info!("Loading default config");
+        Ok(Config::load_default().unwrap_or_else(|e| {
+            info!("No config found ({}), using defaults", e);
+            Config::new()
+        }))
     }
 }
 
@@ -154,27 +151,24 @@ async fn main() -> anyhow::Result<()> {
         App::new(config)
     } else {
         let path = socket_path();
-        match connect_or_spawn(&path).await {
-            Some(client) => {
-                info!("Connected to the daemon at {}", path.display());
-                App::with_remote_client(client, config)
-            }
-            None => {
-                let daemon_log = config_dir()
-                    .unwrap_or_else(|| PathBuf::from("/tmp"))
-                    .join("ferrosonicd.log");
-                eprintln!("ferrosonic: could not reach the background daemon.");
-                eprintln!();
-                eprintln!("  Socket path : {}", path.display());
-                eprintln!("  Daemon log  : {}", daemon_log.display());
-                eprintln!();
-                eprintln!("Try one of:");
-                eprintln!("  - Inspect the daemon log for spawn errors.");
-                eprintln!("  - Remove a stale socket: rm {}", path.display());
-                eprintln!("  - Run with --standalone to skip the daemon this session.");
-                eprintln!("  - Set Daemon=false in your config to disable persistent playback.");
-                anyhow::bail!("daemon unreachable; see message above");
-            }
+        if let Some(client) = connect_or_spawn(&path).await {
+            info!("Connected to the daemon at {}", path.display());
+            App::with_remote_client(client, config)
+        } else {
+            let daemon_log = config_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join("ferrosonicd.log");
+            eprintln!("ferrosonic: could not reach the background daemon.");
+            eprintln!();
+            eprintln!("  Socket path : {}", path.display());
+            eprintln!("  Daemon log  : {}", daemon_log.display());
+            eprintln!();
+            eprintln!("Try one of:");
+            eprintln!("  - Inspect the daemon log for spawn errors.");
+            eprintln!("  - Remove a stale socket: rm {}", path.display());
+            eprintln!("  - Run with --standalone to skip the daemon this session.");
+            eprintln!("  - Set Daemon=false in your config to disable persistent playback.");
+            anyhow::bail!("daemon unreachable; see message above");
         }
     };
 

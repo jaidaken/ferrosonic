@@ -2,10 +2,11 @@
 
 use std::process::Command;
 
-/// Make `cmd`'s child receive `SIGKILL` when this process dies, even on a
-/// SIGKILL or crash where `Drop` never runs; without it an orphaned child
-/// keeps holding resources (mpv the audio device, cava a PTY). Linux-only;
-/// a no-op elsewhere.
+/// Make `cmd`'s child receive `SIGKILL` when this process dies.
+///
+/// Works even on a SIGKILL or crash where `Drop` never runs; without it an
+/// orphaned child keeps holding resources (mpv the audio device, cava a PTY).
+/// Linux-only; a no-op elsewhere.
 pub fn set_die_with_parent(cmd: &mut Command) {
     #[cfg(target_os = "linux")]
     {

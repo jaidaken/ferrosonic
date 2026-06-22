@@ -22,21 +22,15 @@ where
 /// Resolves when any of SIGTERM / SIGINT / SIGHUP fires, or returns pending forever if signal registration fails.
 pub async fn wait_for_unix_quit_signal() {
     use tokio::signal::unix::{signal, SignalKind};
-    let mut term = if let Ok(s) = signal(SignalKind::terminate()) {
-        s
-    } else {
+    let Ok(mut term) = signal(SignalKind::terminate()) else {
         std::future::pending::<()>().await;
         return;
     };
-    let mut int = if let Ok(s) = signal(SignalKind::interrupt()) {
-        s
-    } else {
+    let Ok(mut int) = signal(SignalKind::interrupt()) else {
         std::future::pending::<()>().await;
         return;
     };
-    let mut hup = if let Ok(s) = signal(SignalKind::hangup()) {
-        s
-    } else {
+    let Ok(mut hup) = signal(SignalKind::hangup()) else {
         std::future::pending::<()>().await;
         return;
     };

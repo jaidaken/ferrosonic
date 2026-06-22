@@ -49,10 +49,12 @@ impl<'a> NowPlayingWidget<'a> {
     }
 }
 
-/// Largest visually-square rect that fits inside the right-half
-/// reservation, centered. `cell_size` is the pixel dimensions of one
-/// terminal cell; we choose `art_w` / `art_h` so `art_w * cell.0 ==
-/// art_h * cell.1` (rendered pixels match → square cover).
+/// Largest visually-square rect that fits inside the right-half reservation,
+/// centered.
+///
+/// `cell_size` is the pixel dimensions of one terminal cell; we choose
+/// `art_w` / `art_h` so `art_w * cell.0 == art_h * cell.1` (rendered pixels
+/// match → square cover).
 #[must_use]
 pub fn art_rect(area: Rect, cover_art_cols: u16, cell_size: (u16, u16)) -> Option<Rect> {
     if cover_art_cols == 0 || area.height < 4 || area.width < cover_art_cols + 20 {
@@ -153,7 +155,10 @@ fn build_quality_string(np: &NowPlaying) -> String {
     }
     if let Some(rate) = np.sample_rate {
         let khz = f64::from(rate) / 1000.0;
-        if khz == khz.floor() {
+        // Exact integer-value check; floor() is exact, an epsilon compare would be wrong.
+        #[allow(clippy::float_cmp)]
+        let is_whole_khz = khz == khz.floor();
+        if is_whole_khz {
             // f64->u32 `as` saturates; khz is a positive sample-rate/1000.
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let khz_int = khz as u32;

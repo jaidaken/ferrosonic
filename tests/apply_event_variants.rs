@@ -77,7 +77,7 @@ async fn now_playing_changed_event_updates_state() {
         &h.client_state,
         &h.client,
         &h.cover_art,
-        DaemonEvent::NowPlayingChanged(np),
+        DaemonEvent::NowPlayingChanged(Box::new(np)),
     )
     .await;
     let ds = h.daemon.read().await;

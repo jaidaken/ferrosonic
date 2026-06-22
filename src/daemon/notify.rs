@@ -37,6 +37,8 @@ mod linux {
         default_path = "/org/freedesktop/Notifications"
     )]
     trait Notifications {
+        // org.freedesktop.Notifications.Notify signature is fixed by the D-Bus spec.
+        #[allow(clippy::too_many_arguments)]
         fn notify(
             &self,
             app_name: &str,
@@ -58,6 +60,12 @@ mod linux {
         last_notif_id: AtomicU32,
         last_song: StdMutex<Option<String>>,
         cover_file: Mutex<Option<NamedTempFile>>,
+    }
+
+    impl Default for Notifier {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl Notifier {

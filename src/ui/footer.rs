@@ -166,6 +166,8 @@ impl Widget for Footer<'_> {
 
         if let Some(rate) = self.sample_rate {
             let khz = f64::from(rate) / 1000.0;
+            // Exact integer-value check; floor() is exact, an epsilon compare would be wrong.
+            #[allow(clippy::float_cmp)]
             let rate_str = if khz == khz.floor() {
                 {
                     // f64->u32 `as` saturates; khz is a positive sample-rate/1000.

@@ -269,7 +269,7 @@ pub enum DaemonEvent {
     },
     /// Song / playback state / sample rate change. Position-only ticks
     /// use `PositionTick` to avoid event spam.
-    NowPlayingChanged(NowPlaying),
+    NowPlayingChanged(Box<NowPlaying>),
     /// Playback position update in seconds.
     PositionTick(f64),
     /// New starred-songs list.

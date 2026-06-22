@@ -1,5 +1,6 @@
 //! Subsonic API client
 
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use reqwest::Client;
@@ -163,7 +164,7 @@ impl SubsonicClient {
     ) -> Result<(), SubsonicError> {
         let mut endpoint = format!("createPlaylist?name={}", urlencoding::encode(name));
         for id in song_ids {
-            endpoint.push_str(&format!("&songId={}", urlencoding::encode(id)));
+            let _ = write!(endpoint, "&songId={}", urlencoding::encode(id));
         }
         self.request_action(&endpoint).await
     }
@@ -228,7 +229,7 @@ impl SubsonicClient {
     ) -> Result<(), SubsonicError> {
         let mut endpoint = format!("createPlaylist?playlistId={}", urlencoding::encode(id));
         for sid in song_ids {
-            endpoint.push_str(&format!("&songId={}", urlencoding::encode(sid)));
+            let _ = write!(endpoint, "&songId={}", urlencoding::encode(sid));
         }
         self.request_action(&endpoint).await
     }
@@ -258,7 +259,7 @@ impl SubsonicClient {
             urlencoding::encode(id),
         );
         if let Some(t) = time_ms {
-            endpoint.push_str(&format!("&time={t}"));
+            let _ = write!(endpoint, "&time={t}");
         }
         self.request_action(&endpoint).await
     }

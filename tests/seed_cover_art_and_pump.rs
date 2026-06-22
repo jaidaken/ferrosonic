@@ -124,7 +124,7 @@ async fn apply_event_now_playing_with_cover_art_enabled_fetches_image() {
         let mut cs = app.client_state.write().await;
         cs.settings_state.cover_art = true;
     }
-    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::daemon::state::NowPlaying {
+    let ev = DaemonEvent::NowPlayingChanged(Box::new(ferrosonic::daemon::state::NowPlaying {
         song: Some(song_with_cover("s1", "art-np")),
         state: ferrosonic::daemon::state::PlaybackState::Playing,
         position: 0.0,
@@ -133,7 +133,7 @@ async fn apply_event_now_playing_with_cover_art_enabled_fetches_image() {
         bit_depth: None,
         format: None,
         channels: None,
-    });
+    }));
     let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> =
         std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone()));
     let cover = std::sync::Arc::new(std::sync::Mutex::new(
@@ -158,7 +158,7 @@ async fn apply_event_now_playing_clears_cover_when_no_cover_id() {
         let mut cs = app.client_state.write().await;
         cs.settings_state.cover_art = true;
     }
-    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::daemon::state::NowPlaying {
+    let ev = DaemonEvent::NowPlayingChanged(Box::new(ferrosonic::daemon::state::NowPlaying {
         song: Some(Child {
             id: "no-cover".into(),
             title: "T".into(),
@@ -188,7 +188,7 @@ async fn apply_event_now_playing_clears_cover_when_no_cover_id() {
         bit_depth: None,
         format: None,
         channels: None,
-    });
+    }));
     let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> =
         std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone()));
     let cover = std::sync::Arc::new(std::sync::Mutex::new(

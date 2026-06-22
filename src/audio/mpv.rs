@@ -306,9 +306,10 @@ impl MpvController {
         }
         match self.process.as_mut() {
             None => self.writer.is_some(),
-            Some(child) => match child.try_wait() {
-                Ok(None) => true,
-                Ok(Some(_)) | Err(_) => {
+            Some(child) => {
+                if matches!(child.try_wait(), Ok(None)) {
+                    true
+                } else {
                     self.writer = None;
                     self.process = None;
                     if let Some(h) = self.reader_handle.take() {
@@ -316,7 +317,7 @@ impl MpvController {
                     }
                     false
                 }
-            },
+            }
         }
     }
 
@@ -761,7 +762,8 @@ async fn reader_loop(
             Ok(_) => {
                 if let Ok(resp) = serde_json::from_str::<MpvResponse>(&line) {
                     if let Some(req_id) = resp.request_id {
-                        if let Some(tx) = pending.lock().await.remove(&req_id) {
+                        let removed = pending.lock().await.remove(&req_id);
+                        if let Some(tx) = removed {
                             let payload = if resp.error == "success" {
                                 Ok(resp.data)
                             } else {

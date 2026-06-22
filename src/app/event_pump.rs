@@ -62,7 +62,7 @@ pub async fn apply_event(
             let cover_art_enabled = {
                 let mut ds = daemon_state.write().await;
                 let enabled = ds.config.cover_art;
-                ds.now_playing = np;
+                ds.now_playing = *np;
                 enabled
             };
             if cover_art_enabled {

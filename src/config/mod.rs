@@ -149,8 +149,10 @@ pub struct Config {
     pub music_folder_chosen: bool,
 }
 
-#[derive(Serialize)]
 // Serialization mirror of Config; same independent TOML setting keys.
+// ref_option_ref: serde serialize_with generates &Option<&T> for the password field (derive span).
+#[allow(clippy::ref_option_ref)]
+#[derive(Serialize)]
 #[allow(clippy::struct_excessive_bools)]
 struct ConfigOnDisk<'a> {
     #[serde(rename = "BaseURL")]
@@ -200,6 +202,8 @@ struct ConfigOnDisk<'a> {
     music_folder_chosen: bool,
 }
 
+// serde serialize_with calls this with &field, so &Option<&Secret> is forced by serde.
+#[allow(clippy::ref_option_ref, clippy::trivially_copy_pass_by_ref)]
 fn serialize_revealed_opt<S: serde::Serializer>(
     s: &Option<&Secret>,
     ser: S,
@@ -509,9 +513,9 @@ impl Config {
             let expanded = Self::expand_tilde(pf);
             match std::fs::read_to_string(&expanded) {
                 Ok(mut contents) => {
+                    use zeroize::Zeroize;
                     debug!("Using password from {}", expanded);
                     let secret = extract_secret_line(&contents);
-                    use zeroize::Zeroize;
                     contents.zeroize();
                     self.password = Secret::from_string(secret);
                 }

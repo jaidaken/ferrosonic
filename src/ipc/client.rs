@@ -346,7 +346,7 @@ impl DaemonClient for InProcessClient {
                 {
                     return Ok(DaemonResponse::CoverArt(Vec::new()));
                 }
-                let size = size.min(MAX_SIZE).max(1);
+                let size = size.clamp(1, MAX_SIZE);
                 let bytes = self.core.get_cover_art(&id, size).await;
                 Ok(DaemonResponse::CoverArt(bytes))
             }
@@ -441,6 +441,8 @@ impl InProcessClient {
     }
 }
 
+// Used as a map_err fn-item; map_err passes the owned error by value.
+#[allow(clippy::needless_pass_by_value)]
 fn err(e: crate::error::Error) -> IpcError {
     IpcError::Daemon(e.to_string())
 }

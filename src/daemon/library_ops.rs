@@ -359,13 +359,13 @@ impl DaemonCore {
                 None
             }
         };
-        let stale = self.config_gen_changed(gen_at_start);
+        let is_stale = self.config_gen_changed(gen_at_start);
 
         let new_list = {
             let mut state = self.state.write().await;
             if let Some(list) = refreshed.as_ref() {
-                if !stale {
-                    state.library.starred_songs.clone_from(&list);
+                if !is_stale {
+                    state.library.starred_songs.clone_from(list);
                     state.library.rebuild_starred_index();
                 }
             }
@@ -375,7 +375,7 @@ impl DaemonCore {
             id: song_id.to_string(),
             starred: new_starred,
         });
-        if refreshed.is_some() && !stale {
+        if refreshed.is_some() && !is_stale {
             self.emit(DaemonEvent::StarredChanged(new_list));
             self.bump_library_version();
         }

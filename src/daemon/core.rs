@@ -366,7 +366,7 @@ impl DaemonCore {
             let state = self.state.read().await;
             state.now_playing.clone()
         };
-        self.emit(DaemonEvent::NowPlayingChanged(np));
+        self.emit(DaemonEvent::NowPlayingChanged(Box::new(np)));
     }
 
     pub(super) async fn emit_queue(&self) {
@@ -828,9 +828,7 @@ impl DaemonCore {
                 }
                 let next =
                     tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await;
-                let chunk_opt = if let Ok(c) = next {
-                    c
-                } else {
+                let Ok(chunk_opt) = next else {
                     error!("Pre-buffer stream timeout (15s); aborting");
                     let mut mpv = core.mpv.lock().await;
                     let _ = mpv.loadfile(&url).await;

@@ -137,10 +137,8 @@ impl DaemonCore {
         if let Some(p) = next_pos {
             return self.play_queue_position(p, PlayMode::Direct).await;
         }
-        if auto_continue {
-            if self.extend_with_random_and_play().await? {
-                return Ok(());
-            }
+        if auto_continue && self.extend_with_random_and_play().await? {
+            return Ok(());
         }
         self.finish_at_queue_end().await;
         Ok(())
@@ -168,10 +166,8 @@ impl DaemonCore {
         if let Some(p) = next_pos {
             return self.play_queue_position(p, PlayMode::Direct).await;
         }
-        if auto_continue {
-            if self.extend_with_random_and_play().await? {
-                return Ok(());
-            }
+        if auto_continue && self.extend_with_random_and_play().await? {
+            return Ok(());
         }
         self.finish_at_queue_end().await;
         Ok(())

@@ -106,7 +106,7 @@ fn hex_to_color(hex: &str) -> Color {
 fn parse_gradient(values: &[String], fallback: &[&str; 8]) -> [String; 8] {
     let mut result: [String; 8] = std::array::from_fn(|i| fallback[i].to_string());
     for (i, v) in values.iter().enumerate().take(8) {
-        result[i].clone_from(&v);
+        result[i].clone_from(v);
     }
     result
 }
@@ -277,7 +277,7 @@ pub fn seed_default_themes(dir: &Path) {
     for (filename, content) in BUILTIN_THEMES {
         let path = dir.join(filename);
         if !path.exists() {
-            let res = std::fs::write(&path, content);
+            let res = crate::io_util::atomic_write_bytes(&path, content.as_bytes());
             if let Err(e) = res {
                 error!("Failed to write theme {}: {}", filename, e);
             } else {

@@ -203,6 +203,8 @@ pub fn drain_into_parser<R: std::io::Read>(
 /// Pure logic: vt100 screen to `CavaRow` vec. Tests feed bytes into a
 /// `vt100::Parser` then call this directly.
 #[must_use]
+// cur_fg / cur_bg are standard, distinct foreground/background color roles.
+#[allow(clippy::similar_names)]
 pub fn screen_to_cava_rows(screen: &vt100::Screen) -> Vec<CavaRow> {
     let (rows, cols) = screen.size();
     let mut cava_screen = Vec::with_capacity(rows as usize);

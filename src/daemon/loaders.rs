@@ -67,7 +67,7 @@ impl DaemonCore {
         song_count: u32,
     ) -> crate::subsonic::models::SearchResult3 {
         let Some(client) = self.subsonic.read().await.clone() else {
-            return Default::default();
+            return crate::subsonic::models::SearchResult3::default();
         };
         match client
             .search3(query, artist_count, album_count, song_count)
@@ -76,7 +76,7 @@ impl DaemonCore {
             Ok(r) => r,
             Err(e) => {
                 error!("search3 failed: {}", e);
-                Default::default()
+                crate::subsonic::models::SearchResult3::default()
             }
         }
     }

@@ -69,6 +69,8 @@ pub struct App {
 impl App {
     /// Standalone-mode constructor: daemon core runs in-process.
     #[must_use]
+    // By-value ownership-transfer constructor; config is the owned input.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(config: Config) -> Self {
         let daemon_state = new_shared_daemon_state_with_restored_queue(config.clone());
         let client_state = new_shared_client_state(&config);
@@ -101,6 +103,8 @@ impl App {
 
     /// Split-build constructor. `state.daemon` is a mirror populated
     /// from `DaemonRequest::Snapshot` and the event pump.
+    // By-value ownership-transfer constructor; config is the owned input.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn with_remote_client(client: Arc<dyn DaemonClient>, config: Config) -> Self {
         let daemon_state = new_shared_daemon_state(config.clone());
         let client_state = new_shared_client_state(&config);
@@ -422,7 +426,7 @@ impl App {
                     }
                     Ok(DaemonEvent::Shutdown) => break,
                     Ok(_) => {}
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }

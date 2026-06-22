@@ -142,7 +142,7 @@ async fn apply_event_now_playing_when_disabled_skips_cover_fetch() {
         let mut cs = app.client_state.write().await;
         cs.settings_state.cover_art = false;
     }
-    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::daemon::state::NowPlaying {
+    let ev = DaemonEvent::NowPlayingChanged(Box::new(ferrosonic::daemon::state::NowPlaying {
         song: Some({
             let mut s = song("x");
             s.cover_art = Some("art".into());
@@ -155,7 +155,7 @@ async fn apply_event_now_playing_when_disabled_skips_cover_fetch() {
         bit_depth: None,
         format: None,
         channels: None,
-    });
+    }));
     let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> =
         std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone()));
     let cover = std::sync::Arc::new(std::sync::Mutex::new(
@@ -191,7 +191,7 @@ async fn apply_event_now_playing_with_same_cover_id_skips_fetch() {
             chafa_cache: None,
         },
     ));
-    let ev = DaemonEvent::NowPlayingChanged(ferrosonic::daemon::state::NowPlaying {
+    let ev = DaemonEvent::NowPlayingChanged(Box::new(ferrosonic::daemon::state::NowPlaying {
         song: Some({
             let mut s = song("x");
             s.cover_art = Some("same-id".into());
@@ -204,7 +204,7 @@ async fn apply_event_now_playing_with_same_cover_id_skips_fetch() {
         bit_depth: None,
         format: None,
         channels: None,
-    });
+    }));
     let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> =
         std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone()));
     ferrosonic::app::apply_event(&app.daemon_state, &app.client_state, &client, &cover, ev).await;

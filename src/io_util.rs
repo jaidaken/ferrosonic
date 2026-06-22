@@ -5,9 +5,11 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 /// Remove files in the system temp dir matching `<prefix>...<suffix>` older
-/// than `max_age`. Backstop for temp files leaked when the owning process was
-/// `SIGKILLed` before its Drop-based cleanup ran; the age gate avoids deleting a
-/// live instance's files.
+/// than `max_age`.
+///
+/// Backstop for temp files leaked when the owning process was `SIGKILLed`
+/// before its Drop-based cleanup ran; the age gate avoids deleting a live
+/// instance's files.
 pub fn sweep_stale_tmp_files(prefix: &str, suffix: &str, max_age: Duration) {
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
         return;
@@ -117,7 +119,10 @@ pub(crate) fn fsync_parent_dir_with_fs<F: FileSystem>(fs: &F, path: &Path) {
     }
 }
 
-/// Atomic bytes-to-file via temp + fsync + rename + parent-dir fsync. Single audited entry point for the temp+rename pattern; callers using this avoid the `disallowed_methods` lint by routing through here.
+/// Atomic bytes-to-file via temp + fsync + rename + parent-dir fsync.
+///
+/// Single audited entry point for the temp+rename pattern; callers using this
+/// avoid the `disallowed_methods` lint by routing through here.
 ///
 /// ```
 /// use ferrosonic::io_util::atomic_write_bytes;
