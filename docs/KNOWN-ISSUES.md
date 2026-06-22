@@ -67,6 +67,8 @@ CLOSED 2026-06-22:
 - `core.rs` mpv EOF event listener (`reason != "eof"`, `count >= 2`): `FakeMpv::emit_end_file` injection seam + `tests/mpv_eof_advance.rs`. Mutant-verified (the `!=`-flip and the `>= 2` boundary both fail the tests).
 - `playback_tick.rs` 1500ms / 5s debounce boundaries: extracted to pure `within_just_loaded_window` / `preload_due` (parameterized on `now`); boundary tests in the `boundary_tests` module. Mutant-verified (`<`->`<=`, `>=`->`>` both fail).
 
+CLOSED 2026-06-22 (RAII guards):
+- `core.rs` LoadingFlagOwner / PrebufferGate / CancelSlotCleaner (disarm + Drop): deterministic unit tests in `core::guard_tests` cover every guard's armed and disarmed Drop. Mutant-verified: the two `disarm` no-ops, the `armed`-check removal, and `Arc::ptr_eq`->`true` all fail a test. `CancelSlotCleaner` was refactored to depend on a `CancelSlot` (the slot `Arc<Mutex<..>>`) instead of the whole core, so it is unit-testable. The integration supersession race stays covered by `tests/buffered_playback.rs::rapid_buffered_switches_only_load_latest_track`. The `disarm()` CALL-sites in `prebuffer_and_load` are provably equivalent (per-task Arc + ptr_eq); see [mutants_exclusions](mutants_exclusions.md).
+
 OPEN:
-- `core.rs` RAII guards (LoadingFlagOwner/PrebufferGate/CancelSlotCleaner disarm+drop): track-switch cancel race. The hard one: needs a `FakeSubsonic` controllable/blocking-stream seam so a Buffered prebuffer can be held mid-flight and superseded deterministically, then assert the superseded task's Drop clears only its own flag. Not built yet; deferred to avoid a flaky concurrent test.
 - `core.rs` prebuffer streaming thresholds: perf-timing, loads the same song; low correctness value, left alone.

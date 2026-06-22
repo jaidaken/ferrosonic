@@ -79,17 +79,21 @@ impl Drop for PrebufferGate {
     }
 }
 
+/// Cancel-slot handle shared with `CancelSlotCleaner` so the cleaner depends
+/// only on the slot, not the whole core.
+type CancelSlot = Arc<Mutex<Option<Arc<AtomicBool>>>>;
+
 /// Drop-time cleanup of this task's slot in `prebuffer_cancel`; spawns a tiny task to take the async mutex.
 struct CancelSlotCleaner {
-    core: Arc<DaemonCore>,
+    slot: CancelSlot,
     own: Arc<AtomicBool>,
     armed: std::cell::Cell<bool>,
 }
 
 impl CancelSlotCleaner {
-    const fn new(core: Arc<DaemonCore>, own: Arc<AtomicBool>) -> Self {
+    const fn new(slot: CancelSlot, own: Arc<AtomicBool>) -> Self {
         Self {
-            core,
+            slot,
             own,
             armed: std::cell::Cell::new(true),
         }
@@ -104,13 +108,13 @@ impl Drop for CancelSlotCleaner {
         if !self.armed.get() {
             return;
         }
-        let core = self.core.clone();
+        let slot = self.slot.clone();
         let own = self.own.clone();
         tokio::spawn(async move {
-            let mut slot = core.prebuffer_cancel.lock().await;
-            if let Some(current) = slot.as_ref() {
+            let mut guard = slot.lock().await;
+            if let Some(current) = guard.as_ref() {
                 if Arc::ptr_eq(current, &own) {
-                    *slot = None;
+                    *guard = None;
                 }
             }
         });
@@ -148,7 +152,7 @@ pub struct DaemonCore {
     /// Cancellation flag for the in-flight pre-buffer task. Replaced
     /// (and the old one flipped) on each new request so rapid track
     /// switches don't stack downloads.
-    prebuffer_cancel: Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
+    prebuffer_cancel: CancelSlot,
     /// Holds recent `NamedTempFile` handles so the underlying inode
     /// stays alive while mpv still has it open. Bounded so old files
     /// eventually get unlinked.
@@ -240,7 +244,7 @@ impl DaemonCore {
             event_tx,
             queue_save_tx,
             cover_art_cache: RwLock::new(crate::daemon::library::LruCache::new()),
-            prebuffer_cancel: Mutex::new(None),
+            prebuffer_cancel: Arc::new(Mutex::new(None)),
             prebuffer_files: Mutex::new(Vec::new()),
             prebuffer_loading: Mutex::new(None),
             last_loadfile: std::sync::Mutex::new(None),
@@ -788,7 +792,8 @@ impl DaemonCore {
 
             // RAII clears on every return: loading flag + cancel slot.
             let gate = PrebufferGate::new(loading);
-            let slot_cleaner = CancelSlotCleaner::new(core.clone(), cancel_task.clone());
+            let slot_cleaner =
+                CancelSlotCleaner::new(core.prebuffer_cancel.clone(), cancel_task.clone());
 
             let path = temp_task.path().to_path_buf();
             let path_str = path.to_string_lossy().to_string();
@@ -1050,5 +1055,116 @@ impl DaemonCore {
         if let Err(e) = pw.clear_forced_rate().await {
             warn!("Failed to clear PipeWire forced rate: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::{CancelSlot, CancelSlotCleaner, LoadingFlagOwner, PrebufferGate};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    fn flag(v: bool) -> Arc<AtomicBool> {
+        Arc::new(AtomicBool::new(v))
+    }
+
+    #[test]
+    fn loading_flag_owner_drop_clears_when_armed() {
+        let f = flag(true);
+        drop(LoadingFlagOwner::new(f.clone()));
+        assert!(
+            !f.load(Ordering::Acquire),
+            "an armed LoadingFlagOwner Drop must clear the loading flag"
+        );
+    }
+
+    #[test]
+    fn loading_flag_owner_disarm_leaves_flag_for_the_newer_task() {
+        let f = flag(true);
+        let mut owner = LoadingFlagOwner::new(f.clone());
+        owner.disarm();
+        drop(owner);
+        assert!(
+            f.load(Ordering::Acquire),
+            "a disarmed Drop must leave the flag to the task that took over"
+        );
+    }
+
+    #[test]
+    fn prebuffer_gate_drop_clears_when_armed() {
+        let f = flag(true);
+        drop(PrebufferGate::new(f.clone()));
+        assert!(
+            !f.load(Ordering::Acquire),
+            "an armed PrebufferGate Drop must clear the prebuffer-loading flag"
+        );
+    }
+
+    #[test]
+    fn prebuffer_gate_disarm_leaves_flag_on_cancel_paths() {
+        let f = flag(true);
+        let gate = PrebufferGate::new(f.clone());
+        gate.disarm();
+        drop(gate);
+        assert!(
+            f.load(Ordering::Acquire),
+            "a disarmed PrebufferGate must leave the flag for the superseding task"
+        );
+    }
+
+    /// Yields up to 1000 times (ample for the spawned cleanup task to run on
+    /// the current-thread test runtime) and reports whether the slot cleared.
+    async fn slot_clears(slot: &CancelSlot) -> bool {
+        for _ in 0..1000 {
+            if slot.lock().await.is_none() {
+                return true;
+            }
+            tokio::task::yield_now().await;
+        }
+        slot.lock().await.is_none()
+    }
+
+    #[tokio::test]
+    async fn cancel_slot_cleaner_clears_a_slot_it_still_owns() {
+        let own = flag(false);
+        let slot: CancelSlot = Arc::new(Mutex::new(Some(own.clone())));
+        drop(CancelSlotCleaner::new(slot.clone(), own.clone()));
+        assert!(
+            slot_clears(&slot).await,
+            "an armed Drop must clear the cancel slot it still owns"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_slot_cleaner_disarm_leaves_the_slot() {
+        let own = flag(false);
+        let slot: CancelSlot = Arc::new(Mutex::new(Some(own.clone())));
+        let cleaner = CancelSlotCleaner::new(slot.clone(), own.clone());
+        cleaner.disarm();
+        drop(cleaner);
+        assert!(
+            !slot_clears(&slot).await,
+            "a disarmed cleaner must not touch the slot (no cleanup task)"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_slot_cleaner_ignores_a_slot_owned_by_another_task() {
+        let own = flag(false);
+        let other = flag(false);
+        let slot: CancelSlot = Arc::new(Mutex::new(Some(other.clone())));
+        drop(CancelSlotCleaner::new(slot.clone(), own.clone()));
+        assert!(
+            !slot_clears(&slot).await,
+            "Drop must leave a slot a newer task now owns (ptr_eq guard)"
+        );
+        assert!(
+            slot.lock()
+                .await
+                .as_ref()
+                .is_some_and(|c| Arc::ptr_eq(c, &other)),
+            "the newer task's cancel handle must remain installed"
+        );
     }
 }
