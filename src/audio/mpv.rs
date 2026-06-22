@@ -284,6 +284,8 @@ impl MpvController {
     }
 
     /// Whether the IPC connection and mpv process are both alive; clears dead state as a side effect.
+    // Arms intentionally explicit / structurally unmergeable (audited).
+    #[allow(clippy::match_same_arms)]
     pub fn is_running(&mut self) -> bool {
         if self.writer.is_none() {
             return false;

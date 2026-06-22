@@ -404,6 +404,8 @@ impl App {
         });
     }
 
+    // Arms intentionally explicit / structurally unmergeable (audited).
+    #[allow(clippy::match_same_arms)]
     fn spawn_mpris_pump(&self, server: mpris_server::Server<crate::mpris::server::MprisPlayer>) {
         use crate::ipc::DaemonEvent;
         let mut rx = self.client.subscribe();

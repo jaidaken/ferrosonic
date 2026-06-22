@@ -178,6 +178,8 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
 
 /// Help-line text for the selected settings field. Indices MUST track the
 /// `Item::Row { idx }` order in `render`: 7 Scrobble, 8 Daemon, 9 Notifications.
+// Arms intentionally explicit / structurally unmergeable (audited).
+#[allow(clippy::match_same_arms)]
 const fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
     match sel {
         0 => "← → or Enter to change theme (auto-saves)",
