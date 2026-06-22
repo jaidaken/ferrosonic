@@ -13,7 +13,7 @@ impl DaemonCore {
     ///
     /// # Errors
     /// Returns an `Error` if mpv control fails.
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn replace_queue_and_play(
         self: &Arc<Self>,

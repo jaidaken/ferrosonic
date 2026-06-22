@@ -3,7 +3,7 @@ use crate::error::Error;
 use super::{App, AppState, DaemonRequest, EnqueueMode, LayoutAreas};
 
 impl App {
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub(super) async fn handle_playlists_click(
         &mut self,

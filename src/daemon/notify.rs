@@ -105,6 +105,9 @@ mod linux {
             NotificationsProxy::new(conn).await.ok()
         }
 
+        // cover_file lock intentionally spans the spawn_blocking write so concurrent
+        // cover writes to the shared tempfile path serialize; do not tighten.
+        #[allow(clippy::significant_drop_tightening)]
         async fn cover_uri(&self, bytes: &[u8]) -> Option<String> {
             let mut guard = self.cover_file.lock().await;
             if guard.is_none() {
@@ -115,7 +118,6 @@ mod linux {
                     .ok();
             }
             let path = guard.as_ref()?.path().to_path_buf();
-            drop(guard);
             // Atomic write off the async worker (atomic_write_bytes fsyncs);
             // the lock spans the await so concurrent writes to the path serialize.
             let dest = path.clone();

@@ -13,7 +13,7 @@ use rand::thread_rng;
 impl App {
     // Cohesive dispatcher over the 250 split threshold; tracked split-candidate (docs/KNOWN-ISSUES).
     #[allow(clippy::too_many_lines)]
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub(super) async fn handle_library_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         use crate::ui::pages::library::{build_tree_items, TreeItem};
@@ -736,7 +736,7 @@ impl App {
     }
 
     /// Key handling for the flat album list (left pane, focus == 0).
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     async fn handle_album_list_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         match key.code {

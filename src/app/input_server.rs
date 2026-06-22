@@ -12,7 +12,7 @@ const MAX_FIELD_LEN: usize = 1024;
 impl App {
     // Cohesive single match/render; splitting would fragment one logical unit.
     #[allow(clippy::too_many_lines)]
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub(super) async fn handle_server_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;

@@ -66,7 +66,7 @@ impl DaemonCore {
     ///
     /// # Errors
     /// Returns an `Error` if mpv control or a server request fails.
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn resume_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
@@ -273,7 +273,7 @@ impl DaemonCore {
     }
 
     /// Repeat-aware: loads current for One, wraps for All, no-ops at the end for Off.
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn preload_next_track(self: &Arc<Self>, current_pos: usize) {
         let gen = self.loadfile_gen.load(std::sync::atomic::Ordering::Acquire);
@@ -324,7 +324,7 @@ impl DaemonCore {
     }
 
     /// Re-align mpv's preloaded next track with the current queue after a queue mutation, so a gapless advance plays the queue's next track and not a stale preload. No-op unless actively `Playing`; drops mpv's slot-1 preload and re-preloads the repeat-aware next.
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn resync_gapless_preload(self: &Arc<Self>) {
         use crate::daemon::state::PlaybackState;
@@ -350,7 +350,7 @@ impl DaemonCore {
     }
 
     /// End-of-queue stop: halt mpv, mark `Stopped`, emit, and release the `PipeWire` pin so the idle daemon stops holding the device at the last track's rate.
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     async fn finish_at_queue_end(self: &Arc<Self>) {
         use crate::daemon::state::PlaybackState;
@@ -448,7 +448,7 @@ impl DaemonCore {
     ///
     /// # Errors
     /// Returns an `Error` if mpv control or a server request fails.
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn seek(self: &Arc<Self>, pos: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
@@ -466,7 +466,7 @@ impl DaemonCore {
     ///
     /// # Errors
     /// Returns an `Error` if mpv control or a server request fails.
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn seek_relative(self: &Arc<Self>, offset: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
@@ -478,7 +478,7 @@ impl DaemonCore {
     ///
     /// # Errors
     /// Returns an `Error` if mpv control or a server request fails.
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn set_volume(self: &Arc<Self>, vol: i32) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;

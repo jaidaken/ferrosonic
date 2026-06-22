@@ -23,7 +23,7 @@ impl App {
 
     // Cohesive single match/render; splitting would fragment one logical unit.
     #[allow(clippy::too_many_lines)]
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     async fn handle_mouse_click(&mut self, x: u16, y: u16) -> Result<(), Error> {
         use crate::ui::header::{Header, HeaderRegion};
@@ -152,7 +152,7 @@ impl App {
         }
     }
 
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     async fn handle_quick_play_click(
         &mut self,
@@ -286,7 +286,7 @@ impl App {
         Ok(())
     }
 
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     async fn handle_mouse_scroll_up(&self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
@@ -345,7 +345,7 @@ impl App {
         Ok(())
     }
 
-    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     async fn handle_mouse_scroll_down(&self) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
