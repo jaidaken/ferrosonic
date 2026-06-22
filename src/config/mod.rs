@@ -765,6 +765,11 @@ fn run_password_eval_timeout(
     Ok(secret)
 }
 
+/// Write `password` to the `PasswordFile` at `path` (tilde-expanded), owner-only
+/// (`0o600`), via temp + rename so a concurrent read never sees a partial file.
+///
+/// # Errors
+/// Returns an [`std::io::Error`] if the directory, write, or rename fails.
 pub fn write_password_file_atomic(path: &str, password: &Secret) -> std::io::Result<()> {
     use std::io::Write;
     let expanded = Config::expand_tilde(path);

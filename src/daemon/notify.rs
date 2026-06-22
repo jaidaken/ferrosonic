@@ -127,7 +127,7 @@ mod linux {
                 None => None,
             };
             let uri_val = uri.as_deref().map(Value::from);
-            let mut hints: HashMap<&str, &Value> = HashMap::new();
+            let mut hints: HashMap<&str, &Value<'_>> = HashMap::new();
             if let Some(v) = &uri_val {
                 hints.insert("image-path", v);
             }
