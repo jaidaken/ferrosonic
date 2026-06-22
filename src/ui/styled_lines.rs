@@ -22,10 +22,7 @@ pub fn get_song_with_artist_line<'a>(
     let indicator = if is_playing { "▶ " } else { "  " };
 
     let (title_color, artist_color, duration_color) = get_colors(is_selected, is_playing, colors);
-    let artist = match &song.artist {
-        Some(value) => value,
-        None => "n/a",
-    };
+    let artist = song.artist.as_deref().unwrap_or("n/a");
 
     let line = Line::from(vec![
         Span::styled(indicator.to_string(), Style::default().fg(colors.playing)),

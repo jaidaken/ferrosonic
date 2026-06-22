@@ -155,9 +155,7 @@ panic = "warn"
 mutex_atomic = "warn"
 # Surfaces calls to methods banned in clippy.toml disallowed-methods.
 disallowed_methods = "warn"
-# The `drop(state); drop(cs); drop(ds);` calls are deliberate lock-release
-# markers for lock-order discipline; the values are no-ops to drop but the
-# calls document the release point. Allow rather than scatter 70+ call-site
-# attributes for one intentional, uniform pattern.
+# Audited every site: all 72 are deliberate `drop(state)/drop(cs)/drop(ds)`
+# lock-release markers (no-op to drop, but document the release point).
 drop_non_drop = "allow"
 
