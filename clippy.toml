@@ -2,6 +2,10 @@ avoid-breaking-exported-api = true
 cognitive-complexity-threshold = 25
 type-complexity-threshold = 250
 too-many-arguments-threshold = 8
+# TUI key/event dispatchers and page renders are legitimately long cohesive
+# matches; 100 is too low. 250 still flags genuine bloat (the >250-line handlers
+# are tracked split-candidates in docs/clippy-backlog.md).
+too-many-lines-threshold = 250
 
 disallowed-methods = [
     { path = "std::fs::write", reason = "use temp + rename via fsync_parent_dir or atomic_write; bypass with #[allow(clippy::disallowed_methods)] + reason comment" },

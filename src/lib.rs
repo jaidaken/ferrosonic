@@ -10,6 +10,9 @@
     clippy::cast_possible_wrap,
     clippy::cast_precision_loss
 )]
+// Audited: the flagged structs are config/UI-state with independent toggles;
+// an enum or bitflags would not fit serde'd independent on/off flags.
+#![allow(clippy::struct_excessive_bools)]
 
 pub mod app;
 pub mod audio;
