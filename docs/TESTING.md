@@ -176,12 +176,12 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 - CLOSED 2026-06-22 (were the seam-required core.rs gaps):
   - RAII guards (LoadingFlagOwner/PrebufferGate/CancelSlotCleaner): `core::guard_tests` unit-tests every guard's armed + disarmed Drop. Mutant-verified (the two disarm no-ops, the `armed` check, `Arc::ptr_eq`->true all fail). `CancelSlotCleaner` refactored to a `CancelSlot` (Arc<Mutex>) dependency. The `disarm()` CALL-sites are PROVABLY EQUIVALENT (per-task Arc + ptr_eq + supersede-under-both-locks); see `mutants_exclusions.md`. Integration race stays on `buffered_playback::rapid_buffered_switches_only_load_latest_track`.
   - event listener (`reason != "eof"` / `count >= 2`): `FakeMpv::emit_end_file` injection seam + `tests/mpv_eof_advance.rs` (3 branches). Mutant-verified.
-- core.rs KNOWN-OPEN (REAL gaps, seam-required, for final depth pass, do NOT exclude as equivalent):
+  - real-mpv process lifecycle: `DaemonCore::start_mpv` and the `MpvController` Drop (kill + socket removal) are mutant-verified in `tests/real_mpv_smoke.rs` (skipped when no mpv on PATH); the new respawn test exercises `tear_down_connection`, whose `writer=None`/`process=None` mutants are equivalent (start() overwrites on respawn) - see `mutants_exclusions.md`.
+  - config_gen_changed (`-> false`): stale-refresh gate. `bump_config_gen_for_test` seam + delayed FakeSubsonic + `refresh_flows::refresh_starred_discards_result_when_config_changed_mid_request`. Mutant-verified.
+- core.rs KNOWN-OPEN (remaining, low value):
   - prebuffer streaming 606/619/680/693/705/707: detached HTTP-streaming task; threshold/trigger mutants change buffering latency but load the same song. needs a >512KB FakeSubsonic byte-stream + chunk-timing control. low correctness value (perf-timing, not song selection).
-  - start_mpv 252 (`-> Ok(())`): spawns the real mpv process; test harness pre-connects via connect_to_existing. real-process e2e only (mpv binary present).
-  - config_gen_changed 366 (`-> false`): stale-refresh gate in library_ops; needs a config_gen-bump-mid-refresh race seam.
   - dispatch_play 514 (`&&`->`||`): best-effort stop before reload; mutant sends an extra harmless stop when idle (same end state). killable by asserting the command stream; low value.
-  - config_gen_for_test 371: `#[doc(hidden)]` test-only accessor, no production caller, add `#[mutants::skip]` + exclusions entry.
+  - config_gen_for_test / bump_config_gen_for_test: `#[doc(hidden)]` test-only accessors, no production caller; `#[mutants::skip]` candidates.
 - NEXT: playback_ops.rs (heavily tested already, measure, expect strong), playback_tick.rs, then ipc/subsonic/audio re-verify/app/ui-remaining per priority list below.
 
 ### OLD CURRENT
