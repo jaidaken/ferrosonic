@@ -15,7 +15,7 @@ call site.
 | 2 | `subsonic` | `RwLock<Option<SubsonicClient>>` | active Subsonic client (replaced on `update_server_config`) |
 | 3 | `mpv` | `Mutex<MpvController>` | mpv IPC controller |
 | 4 | `pipewire` | `Mutex<PipeWireController>` | PipeWire sample-rate switcher |
-| 5 | `prebuffer_cancel` | `Mutex<Option<Arc<AtomicBool>>>` | cancel flag for the in-flight prebuffer task |
+| 5 | `prebuffer_cancel` | `Arc<Mutex<Option<Arc<AtomicBool>>>>` | cancel flag for the in-flight prebuffer task (Arc-shared so `CancelSlotCleaner` holds the slot, not the core) |
 | 6 | `prebuffer_loading` | `Mutex<Option<Arc<AtomicBool>>>` | gates idle-advance during prebuffer-to-loadfile gap |
 | 7 | `prebuffer_files` | `Mutex<Vec<Arc<NamedTempFile>>>` | keep-alive ring for prebuffer temp files |
 | 8 | `last_loadfile` | `std::sync::Mutex<Option<Instant>>` | timestamp of the most recent `loadfile` |
