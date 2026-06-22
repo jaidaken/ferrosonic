@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode, LayoutAreas};
 
 impl App {
     pub(super) async fn handle_playlists_click(
@@ -51,10 +51,9 @@ impl App {
                     state.client.playlists.songs = songs;
                     state.client.playlists.selected_song = if count > 0 { Some(0) } else { None };
                     state.client.playlists.focus = 1;
-                    state.client.notify(format!(
-                        "Loaded playlist: {} ({} songs)",
-                        playlist_name, count
-                    ));
+                    state
+                        .client
+                        .notify(format!("Loaded playlist: {playlist_name} ({count} songs)"));
                     self.last_click = Some((x, y, std::time::Instant::now()));
                     return Ok(());
                 }

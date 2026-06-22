@@ -1,4 +1,4 @@
-//! Daemon core: owns mpv, queue, library cache, event broadcast, config persistence. Lock order: state then subsonic then mpv then pipewire then prebuffer_cancel then prebuffer_loading then prebuffer_files then last_loadfile then last_preload_attempt then cover_art_cache. Authoritative table: docs/LOCK-ORDER.md.
+//! Daemon core: owns mpv, queue, library cache, event broadcast, config persistence. Lock order: state then subsonic then mpv then pipewire then `prebuffer_cancel` then `prebuffer_loading` then `prebuffer_files` then `last_loadfile` then `last_preload_attempt` then `cover_art_cache`. Authoritative table: docs/LOCK-ORDER.md.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -30,13 +30,13 @@ pub enum PlayMode {
 
 const EVENT_CHANNEL_CAPACITY: usize = 32;
 
-/// Drop clears prebuffer_loading if dispatch_play is cancelled before the spawn task takes over.
+/// Drop clears `prebuffer_loading` if `dispatch_play` is cancelled before the spawn task takes over.
 struct LoadingFlagOwner {
     flag: Option<Arc<AtomicBool>>,
 }
 
 impl LoadingFlagOwner {
-    fn new(flag: Arc<AtomicBool>) -> Self {
+    const fn new(flag: Arc<AtomicBool>) -> Self {
         Self { flag: Some(flag) }
     }
     fn disarm(&mut self) {
@@ -60,7 +60,7 @@ struct PrebufferGate {
 }
 
 impl PrebufferGate {
-    fn new(flag: Arc<AtomicBool>) -> Self {
+    const fn new(flag: Arc<AtomicBool>) -> Self {
         Self {
             flag,
             armed: std::cell::Cell::new(true),
@@ -79,7 +79,7 @@ impl Drop for PrebufferGate {
     }
 }
 
-/// Drop-time cleanup of this task's slot in prebuffer_cancel; spawns a tiny task to take the async mutex.
+/// Drop-time cleanup of this task's slot in `prebuffer_cancel`; spawns a tiny task to take the async mutex.
 struct CancelSlotCleaner {
     core: Arc<DaemonCore>,
     own: Arc<AtomicBool>,
@@ -87,7 +87,7 @@ struct CancelSlotCleaner {
 }
 
 impl CancelSlotCleaner {
-    fn new(core: Arc<DaemonCore>, own: Arc<AtomicBool>) -> Self {
+    const fn new(core: Arc<DaemonCore>, own: Arc<AtomicBool>) -> Self {
         Self {
             core,
             own,
@@ -174,9 +174,9 @@ pub struct DaemonCore {
     /// probe, cava watchers) can exit promptly instead of holding
     /// `Arc<Self>` alive until their own timers fire.
     pub(super) shutdown: std::sync::atomic::AtomicBool,
-    /// Wakes futures awaiting shutdown; consumers select on shutdown_signal().
+    /// Wakes futures awaiting shutdown; consumers select on `shutdown_signal()`.
     shutdown_notify: tokio::sync::Notify,
-    /// Bumped on each library refresh; LibraryVersionChanged carries it for pull-style clients.
+    /// Bumped on each library refresh; `LibraryVersionChanged` carries it for pull-style clients.
     library_version: std::sync::atomic::AtomicU64,
     /// Throttles repeat preload attempts when network keeps failing; 5s backoff.
     pub(super) last_preload_attempt: std::sync::Mutex<Option<std::time::Instant>>,
@@ -198,7 +198,7 @@ impl DaemonCore {
         Self::new_with_mpv(state, config, MpvController::new())
     }
 
-    /// Test seam: build a DaemonCore around a pre-built MpvController.
+    /// Test seam: build a `DaemonCore` around a pre-built `MpvController`.
     pub fn new_with_mpv(
         state: SharedDaemonState,
         config: &Config,
@@ -207,7 +207,7 @@ impl DaemonCore {
         Self::new_with_mpv_and_pipewire(state, config, mpv, PipeWireController::new())
     }
 
-    /// Test seam: build a DaemonCore around pre-built mpv + `PipeWire` controllers, so tests can inject a recording `pw-metadata` runner and assert the force-rate pin is set on play and cleared on pause/stop.
+    /// Test seam: build a `DaemonCore` around pre-built mpv + `PipeWire` controllers, so tests can inject a recording `pw-metadata` runner and assert the force-rate pin is set on play and cleared on pause/stop.
     pub fn new_with_mpv_and_pipewire(
         state: SharedDaemonState,
         config: &Config,
@@ -264,13 +264,13 @@ impl DaemonCore {
 
     /// Best-effort cleanup of `/tmp/ferrosonic-prebuf-*.dat` left
     /// behind by previous crashes (spawn task panics never run the
-    /// NamedTempFile destructor).
+    /// `NamedTempFile` destructor).
     fn sweep_orphan_prebuffer_files() {
         // Older than 5 min: avoids racing a live instance's prebuffer task.
         crate::io_util::sweep_stale_tmp_files(
             "ferrosonic-prebuf-",
             ".dat",
-            std::time::Duration::from_secs(300),
+            std::time::Duration::from_mins(5),
         );
     }
 
@@ -305,7 +305,7 @@ impl DaemonCore {
                     Ok(e) => e,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                         warn!("mpv event listener lagged; probing idle state");
-                        if let Ok(true) = core.mpv.lock().await.is_idle().await {
+                        if matches!(core.mpv.lock().await.is_idle().await, Ok(true)) {
                             let _ = core.advance_auto().await;
                         }
                         continue;
@@ -425,7 +425,7 @@ impl DaemonCore {
 }
 
 impl DaemonCore {
-    /// Fetch random songs, extend queue and play first new track under one write lock so another client cannot mutate the queue between extend and play_from index.
+    /// Fetch random songs, extend queue and play first new track under one write lock so another client cannot mutate the queue between extend and `play_from` index.
     /// Up to `LOOKAHEAD` random songs whose ids are not already in the queue,
     /// so auto-continue never replays a track until the library is exhausted.
     /// When every candidate is already queued the bag is spent, and the raw
@@ -491,7 +491,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Auto-continue fetch failed: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Auto-continue failed: {}", e),
+                    message: format!("Auto-continue failed: {e}"),
                     is_error: true,
                 });
                 return Ok(false);
@@ -535,7 +535,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to get stream URL: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to get stream URL: {}", e),
+                    message: format!("Failed to get stream URL: {e}"),
                     is_error: true,
                 });
                 return Err(());
@@ -545,7 +545,7 @@ impl DaemonCore {
         state.now_playing.song = Some(song.clone());
         state.now_playing.state = PlaybackState::Playing;
         state.now_playing.position = 0.0;
-        state.now_playing.duration = song.duration.unwrap_or(0) as f64;
+        state.now_playing.duration = f64::from(song.duration.unwrap_or(0));
         state.now_playing.sample_rate = None;
         state.now_playing.bit_depth = None;
         state.now_playing.format = None;
@@ -588,7 +588,7 @@ impl DaemonCore {
                         error!("Failed to play: {}", e);
                         drop(mpv);
                         self.emit(DaemonEvent::Notification {
-                            message: format!("MPV error: {}", e),
+                            message: format!("MPV error: {e}"),
                             is_error: true,
                         });
                         return Ok(());
@@ -661,7 +661,7 @@ impl DaemonCore {
         self.shutdown_notify.notify_waiters();
     }
 
-    /// Resolves immediately if already shut down, else on next request_shutdown.
+    /// Resolves immediately if already shut down, else on next `request_shutdown`.
     pub async fn shutdown_signal(&self) {
         let fut = self.shutdown_notify.notified();
         tokio::pin!(fut);
@@ -782,7 +782,7 @@ impl DaemonCore {
 
             let client = reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
-                .timeout(std::time::Duration::from_secs(60))
+                .timeout(std::time::Duration::from_mins(1))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
             let resp = match client.get(&url).send().await {
@@ -823,15 +823,14 @@ impl DaemonCore {
                 }
                 let next =
                     tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await;
-                let chunk_opt = match next {
-                    Ok(c) => c,
-                    Err(_) => {
-                        error!("Pre-buffer stream timeout (15s); aborting");
-                        let mut mpv = core.mpv.lock().await;
-                        let _ = mpv.loadfile(&url).await;
-                        core.stamp_loadfile();
-                        return;
-                    }
+                let chunk_opt = if let Ok(c) = next {
+                    c
+                } else {
+                    error!("Pre-buffer stream timeout (15s); aborting");
+                    let mut mpv = core.mpv.lock().await;
+                    let _ = mpv.loadfile(&url).await;
+                    core.stamp_loadfile();
+                    return;
                 };
                 let Some(chunk) = chunk_opt else { break };
                 let chunk = match chunk {

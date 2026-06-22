@@ -22,7 +22,8 @@ pub struct Footer<'a> {
 
 impl<'a> Footer<'a> {
     /// Footer for `page` with the theme palette.
-    pub fn new(page: Page, colors: ThemeColors) -> Self {
+    #[must_use]
+    pub const fn new(page: Page, colors: ThemeColors) -> Self {
         Self {
             page,
             sample_rate: None,
@@ -33,19 +34,22 @@ impl<'a> Footer<'a> {
     }
 
     /// Builder: show the active sample rate.
-    pub fn sample_rate(mut self, rate: Option<u32>) -> Self {
+    #[must_use]
+    pub const fn sample_rate(mut self, rate: Option<u32>) -> Self {
         self.sample_rate = rate;
         self
     }
 
     /// Builder: show a transient notification.
-    pub fn notification(mut self, notification: Option<&'a Notification>) -> Self {
+    #[must_use]
+    pub const fn notification(mut self, notification: Option<&'a Notification>) -> Self {
         self.notification = notification;
         self
     }
 
     /// Builder: show the repeat mode indicator.
-    pub fn repeat_mode(mut self, mode: crate::config::RepeatMode) -> Self {
+    #[must_use]
+    pub const fn repeat_mode(mut self, mode: crate::config::RepeatMode) -> Self {
         self.repeat_mode = mode;
         self
     }
@@ -161,11 +165,11 @@ impl Widget for Footer<'_> {
         }
 
         if let Some(rate) = self.sample_rate {
-            let khz = rate as f64 / 1000.0;
+            let khz = f64::from(rate) / 1000.0;
             let rate_str = if khz == khz.floor() {
                 format!("{}kHz", khz as u32)
             } else {
-                format!("{:.1}kHz", khz)
+                format!("{khz:.1}kHz")
             };
             let x = right.x + right.width.saturating_sub(rate_str.len() as u16);
             buf.set_string(

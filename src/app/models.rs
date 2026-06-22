@@ -2,7 +2,7 @@
 
 use strum_macros::{Display, EnumIter};
 
-#[derive(Display, EnumIter, Clone, Debug, PartialEq)]
+#[derive(Display, EnumIter, Clone, Debug, PartialEq, Eq)]
 /// Which song list the Quick Play page shows.
 pub enum SongOption {
     /// Starred songs list.

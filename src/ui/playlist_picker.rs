@@ -26,11 +26,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, colors: &
     let y = area.y + area.height.saturating_sub(h) / 2;
     let rect = Rect::new(x, y, w, h);
 
-    let song = picker
-        .song
-        .as_ref()
-        .map(|s| s.title.as_str())
-        .unwrap_or("song");
+    let song = picker.song.as_ref().map_or("song", |s| s.title.as_str());
     let title = format!(" Add '{song}' to…  (Enter: add  Esc: cancel) ");
 
     let items: Vec<ListItem<'_>> = playlists

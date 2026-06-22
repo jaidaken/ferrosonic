@@ -33,7 +33,7 @@ pub struct OpenSubsonicExtensionsData {
     pub extensions: Vec<OpenSubsonicExtension>,
 }
 
-/// One advertised OpenSubsonic extension.
+/// One advertised `OpenSubsonic` extension.
 #[derive(Debug, Clone, Deserialize)]
 pub struct OpenSubsonicExtension {
     /// Extension key, e.g. `playbackReport`.
@@ -168,7 +168,7 @@ pub struct Album {
     /// Release year (tagged; may be a remaster year).
     #[serde(default)]
     pub year: Option<i32>,
-    /// OpenSubsonic original release date; preferred over `year` for sorting.
+    /// `OpenSubsonic` original release date; preferred over `year` for sorting.
     #[serde(default, rename = "originalReleaseDate")]
     pub original_release_date: Option<ItemDate>,
     /// Genre label.
@@ -176,7 +176,7 @@ pub struct Album {
     pub genre: Option<String>,
 }
 
-/// OpenSubsonic partial date (any component may be absent).
+/// `OpenSubsonic` partial date (any component may be absent).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ItemDate {
     /// Year component.
@@ -346,12 +346,13 @@ impl Child {
     }
 
     /// Duration as `MM:SS`, or `--:--` when unknown.
+    #[must_use]
     pub fn format_duration(&self) -> String {
         match self.duration {
             Some(d) => {
                 let mins = d / 60;
                 let secs = d % 60;
-                format!("{:02}:{:02}", mins, secs)
+                format!("{mins:02}:{secs:02}")
             }
             None => "--:--".to_string(),
         }

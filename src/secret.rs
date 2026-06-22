@@ -10,6 +10,7 @@ pub struct Secret(Box<[u8]>);
 
 impl Secret {
     /// Empty secret.
+    #[must_use]
     pub fn new() -> Self {
         Self(Box::from([]))
     }
@@ -21,6 +22,7 @@ impl Secret {
     /// let s = Secret::from_string(String::from("hunter2"));
     /// assert_eq!(s.reveal(), "hunter2");
     /// ```
+    #[must_use]
     pub fn from_string(mut s: String) -> Self {
         let bytes = s.as_bytes().to_vec().into_boxed_slice();
         s.zeroize();
@@ -34,26 +36,31 @@ impl Secret {
     /// let s = Secret::from_bytes(vec![b'a', b'b', b'c']);
     /// assert_eq!(s.reveal_bytes(), b"abc");
     /// ```
+    #[must_use]
     pub fn from_bytes(b: Vec<u8>) -> Self {
         Self(b.into_boxed_slice())
     }
 
     /// The secret as a str; empty string when not valid UTF-8.
+    #[must_use]
     pub fn reveal(&self) -> &str {
         std::str::from_utf8(&self.0).unwrap_or("")
     }
 
     /// The raw secret bytes.
+    #[must_use]
     pub fn reveal_bytes(&self) -> &[u8] {
         &self.0
     }
 
     /// Whether the secret holds no bytes.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Length of the secret in bytes.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -167,7 +174,7 @@ impl Serialize for Secret {
 impl<'de> Deserialize<'de> for Secret {
     fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         struct V;
-        impl<'de> Visitor<'de> for V {
+        impl Visitor<'_> for V {
             type Value = Secret;
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str("a string")

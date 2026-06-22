@@ -66,7 +66,9 @@ pub async fn apply_event(
             if cover_art_enabled {
                 if let Some(id) = new_cover_id {
                     let should_fetch = {
-                        let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
+                        let mut guard = cover_art
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
                         if guard.current_id.as_deref() == Some(id.as_str()) {
                             false
                         } else {
@@ -86,8 +88,9 @@ pub async fn apply_event(
                             Ok(DaemonResponse::CoverArt(bytes)) => {
                                 info!("Cover art bytes received: {} bytes", bytes.len());
                                 if !bytes.is_empty() {
-                                    let mut guard =
-                                        cover_art.lock().unwrap_or_else(|p| p.into_inner());
+                                    let mut guard = cover_art
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                                     guard.load(id, &bytes);
                                 }
                             }
@@ -100,7 +103,9 @@ pub async fn apply_event(
                         }
                     }
                 } else {
-                    let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
+                    let mut guard = cover_art
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     guard.clear();
                 }
             }
@@ -123,10 +128,10 @@ pub async fn apply_event(
             };
             {
                 let mut ds = daemon_state.write().await;
-                for song in ds.queue.iter_mut() {
+                for song in &mut ds.queue {
                     update(song);
                 }
-                for song in ds.library.random_songs.iter_mut() {
+                for song in &mut ds.library.random_songs {
                     update(song);
                 }
                 for list in ds.library.album_songs_cache.values_mut() {
@@ -152,10 +157,10 @@ pub async fn apply_event(
             }
             {
                 let mut cs = client_state.write().await;
-                for song in cs.artists.songs.iter_mut() {
+                for song in &mut cs.artists.songs {
                     update(song);
                 }
-                for song in cs.playlists.songs.iter_mut() {
+                for song in &mut cs.playlists.songs {
                     update(song);
                 }
             }
@@ -248,7 +253,9 @@ pub async fn apply_event(
                 };
                 if let Some(id) = current_id {
                     let should_fetch = {
-                        let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
+                        let mut guard = cover_art
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
                         if guard.current_id.as_deref() == Some(id.as_str()) {
                             false
                         } else {
@@ -266,14 +273,18 @@ pub async fn apply_event(
                             .await
                         {
                             if !bytes.is_empty() {
-                                let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
+                                let mut guard = cover_art
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                                 guard.load(id, &bytes);
                             }
                         }
                     }
                 }
             } else {
-                let mut guard = cover_art.lock().unwrap_or_else(|p| p.into_inner());
+                let mut guard = cover_art
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 guard.clear();
             }
         }

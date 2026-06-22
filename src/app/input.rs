@@ -2,7 +2,7 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest, Page};
 
 impl App {
     /// Handle terminal events. Pub for integration tests; production
@@ -26,7 +26,7 @@ impl App {
                         (
                             td.cava_gradient.clone(),
                             td.cava_horizontal_gradient.clone(),
-                            cs.settings_state.cava_size as u32,
+                            u32::from(cs.settings_state.cava_size),
                         )
                     };
                     self.start_cava(&g, &h, cava_h);
@@ -53,7 +53,7 @@ impl App {
         // Quit-confirm prompt: while it is up, only y/n/esc do anything.
         if state.client.quit_prompt {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                KeyCode::Char('y' | 'Y') => {
                     state.client.quit_prompt = false;
                     state.client.should_quit = true;
                     drop(state);
@@ -62,7 +62,7 @@ impl App {
                     let _ = self.client.request(DaemonRequest::Shutdown).await;
                     return Ok(());
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') => {
+                KeyCode::Char('n' | 'N') => {
                     state.client.quit_prompt = false;
                     state.client.should_quit = true;
                     return Ok(());
@@ -170,7 +170,7 @@ impl App {
                 state.client.page = Page::Settings;
                 return Ok(());
             }
-            (KeyCode::Char('p'), KeyModifiers::NONE) | (KeyCode::Char(' '), KeyModifiers::NONE) => {
+            (KeyCode::Char('p' | ' '), KeyModifiers::NONE) => {
                 drop(state);
                 drop(cs);
                 drop(ds);

@@ -7,7 +7,11 @@ use tracing::{debug, info};
 use url::Url;
 
 use super::auth::generate_auth_params;
-use super::models::*;
+use super::models::{
+    Album, AlbumData, AlbumList2Data, Artist, ArtistData, ArtistsData, Child, MusicFolder,
+    MusicFoldersData, OpenSubsonicExtensionsData, PingData, Playlist, PlaylistData, PlaylistsData,
+    RandomSongsData, Search3Data, SearchResult3, StarredSongsData, SubsonicResponse,
+};
 use crate::error::SubsonicError;
 use crate::secret::Secret;
 
@@ -50,7 +54,7 @@ impl SubsonicClient {
     }
 
     /// Scope subsequent browse calls to one library, or all when `None`.
-    pub fn set_music_folder(&mut self, id: Option<i64>) {
+    pub const fn set_music_folder(&mut self, id: Option<i64>) {
         self.music_folder_id = id;
     }
 
@@ -67,12 +71,13 @@ impl SubsonicClient {
     }
 
     #[doc(hidden)]
+    #[must_use]
     pub fn base_url(&self) -> &str {
         self.base_url.as_str()
     }
 
     fn build_url(&self, endpoint: &str) -> Result<Url, SubsonicError> {
-        let mut url = self.base_url.join(&format!("rest/{}", endpoint))?;
+        let mut url = self.base_url.join(&format!("rest/{endpoint}"))?;
 
         let (salt, token) = generate_auth_params(&self.password);
 
@@ -92,7 +97,7 @@ impl SubsonicClient {
         let response = self.http.get(url).send().await?;
         let text = response.text().await?;
         let parsed: SubsonicResponse<serde_json::Value> = serde_json::from_str(&text)
-            .map_err(|e| SubsonicError::Parse(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| SubsonicError::Parse(format!("Failed to parse response: {e}")))?;
         let inner = parsed.subsonic_response;
         if inner.status != "ok" {
             let (code, message) = match inner.error {
@@ -198,7 +203,7 @@ impl SubsonicClient {
         self.request_action(&endpoint).await
     }
 
-    /// List the OpenSubsonic extensions the server advertises, by name.
+    /// List the `OpenSubsonic` extensions the server advertises, by name.
     pub async fn get_open_subsonic_extensions(&self) -> Result<Vec<String>, SubsonicError> {
         let data: OpenSubsonicExtensionsData = self.request("getOpenSubsonicExtensions").await?;
         Ok(data.extensions.into_iter().map(|e| e.name).collect())
@@ -222,7 +227,7 @@ impl SubsonicClient {
         self.request_action(&endpoint).await
     }
 
-    /// OpenSubsonic `reportPlayback` (extension `playbackReport`). Reports a
+    /// `OpenSubsonic` `reportPlayback` (extension `playbackReport`). Reports a
     /// playback-timeline state; the server owns the scrobble decision.
     pub async fn report_playback(
         &self,
@@ -252,7 +257,7 @@ impl SubsonicClient {
         let text = response.text().await?;
 
         let parsed: SubsonicResponse<T> = serde_json::from_str(&text)
-            .map_err(|e| SubsonicError::Parse(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| SubsonicError::Parse(format!("Failed to parse response: {e}")))?;
 
         let inner = parsed.subsonic_response;
 
@@ -283,7 +288,7 @@ impl SubsonicClient {
         let text = response.text().await?;
 
         let parsed: SubsonicResponse<PingData> = serde_json::from_str(&text)
-            .map_err(|e| SubsonicError::Parse(format!("Failed to parse ping response: {}", e)))?;
+            .map_err(|e| SubsonicError::Parse(format!("Failed to parse ping response: {e}")))?;
 
         if parsed.subsonic_response.status != "ok" {
             let (code, message) = match parsed.subsonic_response.error {
@@ -389,14 +394,14 @@ impl SubsonicClient {
 
     /// Fetch one artist and their albums.
     pub async fn get_artist(&self, id: &str) -> Result<(Artist, Vec<Album>), SubsonicError> {
-        let url = self.build_url(&format!("getArtist?id={}", id))?;
+        let url = self.build_url(&format!("getArtist?id={id}"))?;
         debug!("Fetching artist: {}", id);
 
         let response = self.http.get(url).send().await?;
         let text = response.text().await?;
 
         let parsed: SubsonicResponse<ArtistData> = serde_json::from_str(&text)
-            .map_err(|e| SubsonicError::Parse(format!("Failed to parse artist response: {}", e)))?;
+            .map_err(|e| SubsonicError::Parse(format!("Failed to parse artist response: {e}")))?;
 
         if parsed.subsonic_response.status != "ok" {
             let (code, message) = match parsed.subsonic_response.error {
@@ -429,14 +434,14 @@ impl SubsonicClient {
 
     /// Fetch one album and its songs.
     pub async fn get_album(&self, id: &str) -> Result<(Album, Vec<Child>), SubsonicError> {
-        let url = self.build_url(&format!("getAlbum?id={}", id))?;
+        let url = self.build_url(&format!("getAlbum?id={id}"))?;
         debug!("Fetching album: {}", id);
 
         let response = self.http.get(url).send().await?;
         let text = response.text().await?;
 
         let parsed: SubsonicResponse<AlbumData> = serde_json::from_str(&text)
-            .map_err(|e| SubsonicError::Parse(format!("Failed to parse album response: {}", e)))?;
+            .map_err(|e| SubsonicError::Parse(format!("Failed to parse album response: {e}")))?;
 
         if parsed.subsonic_response.status != "ok" {
             let (code, message) = match parsed.subsonic_response.error {
@@ -483,15 +488,14 @@ impl SubsonicClient {
 
     /// Fetch one playlist and its songs.
     pub async fn get_playlist(&self, id: &str) -> Result<(Playlist, Vec<Child>), SubsonicError> {
-        let url = self.build_url(&format!("getPlaylist?id={}", id))?;
+        let url = self.build_url(&format!("getPlaylist?id={id}"))?;
         debug!("Fetching playlist: {}", id);
 
         let response = self.http.get(url).send().await?;
         let text = response.text().await?;
 
-        let parsed: SubsonicResponse<PlaylistData> = serde_json::from_str(&text).map_err(|e| {
-            SubsonicError::Parse(format!("Failed to parse playlist response: {}", e))
-        })?;
+        let parsed: SubsonicResponse<PlaylistData> = serde_json::from_str(&text)
+            .map_err(|e| SubsonicError::Parse(format!("Failed to parse playlist response: {e}")))?;
 
         if parsed.subsonic_response.status != "ok" {
             let (code, message) = match parsed.subsonic_response.error {
@@ -542,7 +546,7 @@ impl SubsonicClient {
         let resp = self.http.get(url).send().await?;
         if !resp.status().is_success() {
             return Err(SubsonicError::Api {
-                code: resp.status().as_u16() as i32,
+                code: i32::from(resp.status().as_u16()),
                 message: format!("getCoverArt HTTP {}", resp.status()),
             });
         }

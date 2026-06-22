@@ -32,7 +32,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to load starred songs: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to load starred songs: {}", e),
+                    message: format!("Failed to load starred songs: {e}"),
                     is_error: true,
                 });
             }
@@ -60,7 +60,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to load random songs: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to load random songs: {}", e),
+                    message: format!("Failed to load random songs: {e}"),
                     is_error: true,
                 });
             }
@@ -93,7 +93,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to load artists: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to load artists: {}", e),
+                    message: format!("Failed to load artists: {e}"),
                     is_error: true,
                 });
             }
@@ -387,7 +387,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to load albums: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to load albums: {}", e),
+                    message: format!("Failed to load albums: {e}"),
                     is_error: true,
                 });
             }
@@ -411,7 +411,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to load album list: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to load albums: {}", e),
+                    message: format!("Failed to load albums: {e}"),
                     is_error: true,
                 });
                 Vec::new()
@@ -478,7 +478,13 @@ fn sync_starred_songs(
     if starred {
         daemon.library.starred_ids.insert(song_id.to_string());
         let already = daemon.library.starred_songs.iter().any(|s| s.id == song_id);
-        if !already {
+        if already {
+            for s in &mut daemon.library.starred_songs {
+                if s.id == song_id {
+                    s.starred = marker.clone();
+                }
+            }
+        } else {
             let source = daemon
                 .queue
                 .iter()
@@ -490,12 +496,6 @@ fn sync_starred_songs(
             if let Some(mut s) = source {
                 s.starred = marker;
                 daemon.library.starred_songs.push(s);
-            }
-        } else {
-            for s in daemon.library.starred_songs.iter_mut() {
-                if s.id == song_id {
-                    s.starred = marker.clone();
-                }
             }
         }
     } else {

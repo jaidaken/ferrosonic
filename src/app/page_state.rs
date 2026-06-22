@@ -98,7 +98,7 @@ pub enum AlbumSort {
 impl AlbumSort {
     /// The next sort in the cycle.
     #[must_use]
-    pub fn next(self) -> Self {
+    pub const fn next(self) -> Self {
         match self {
             Self::Name => Self::ReleaseDate,
             Self::ReleaseDate => Self::Name,
@@ -227,27 +227,30 @@ impl Default for SettingsState {
 
 impl SettingsState {
     /// Name of the active theme.
+    #[must_use]
     pub fn theme_name(&self) -> &str {
         &self.themes[self.theme_index].name
     }
 
     /// Color palette of the active theme.
+    #[must_use]
     pub fn theme_colors(&self) -> &ThemeColors {
         &self.themes[self.theme_index].colors
     }
 
     /// The active theme.
+    #[must_use]
     pub fn current_theme(&self) -> &ThemeData {
         &self.themes[self.theme_index]
     }
 
     /// Advance to the next theme, wrapping at the end.
-    pub fn next_theme(&mut self) {
+    pub const fn next_theme(&mut self) {
         self.theme_index = (self.theme_index + 1) % self.themes.len();
     }
 
     /// Step back to the previous theme, wrapping at the start.
-    pub fn prev_theme(&mut self) {
+    pub const fn prev_theme(&mut self) {
         self.theme_index = (self.theme_index + self.themes.len() - 1) % self.themes.len();
     }
 

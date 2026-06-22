@@ -2,7 +2,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode};
 
 impl App {
     pub(super) async fn handle_playlists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
@@ -59,7 +59,7 @@ impl App {
         // Delete-confirmation prompt owns y/n/esc while open.
         if state.client.playlists.confirming_delete {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                KeyCode::Char('y' | 'Y') => {
                     let id = state
                         .client
                         .playlists
@@ -80,7 +80,7 @@ impl App {
                         .await;
                     return Ok(());
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                KeyCode::Char('n' | 'N') | KeyCode::Esc => {
                     state.client.playlists.confirming_delete = false;
                 }
                 _ => {}
@@ -162,8 +162,7 @@ impl App {
                                 if count > 0 { Some(0) } else { None };
                             state.client.playlists.focus = 1;
                             state.client.notify(format!(
-                                "Loaded playlist: {} ({} songs)",
-                                playlist_name, count
+                                "Loaded playlist: {playlist_name} ({count} songs)"
                             ));
                             return Ok(());
                         }
@@ -193,7 +192,7 @@ impl App {
                     if let Some(idx) = state.client.playlists.selected_song {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
                             let title = song.title.clone();
-                            state.client.notify(format!("Added to queue: {}", title));
+                            state.client.notify(format!("Added to queue: {title}"));
                             drop(state);
                             drop(cs);
                             drop(ds);
@@ -209,9 +208,7 @@ impl App {
                 } else if !state.client.playlists.songs.is_empty() {
                     let count = state.client.playlists.songs.len();
                     let songs = state.client.playlists.songs.clone();
-                    state
-                        .client
-                        .notify(format!("Added {} songs to queue", count));
+                    state.client.notify(format!("Added {count} songs to queue"));
                     drop(state);
                     drop(cs);
                     drop(ds);
@@ -230,7 +227,7 @@ impl App {
                     if let Some(idx) = state.client.playlists.selected_song {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
                             let title = song.title.clone();
-                            state.client.notify(format!("Playing next: {}", title));
+                            state.client.notify(format!("Playing next: {title}"));
                             drop(state);
                             drop(cs);
                             drop(ds);

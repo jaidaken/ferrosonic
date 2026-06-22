@@ -51,10 +51,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     } else {
         "Off".into()
     };
-    let cava_size_val = if !cava_ok {
-        "N/A".into()
-    } else {
+    let cava_size_val = if cava_ok {
         format!("{}%", s.cava_size)
+    } else {
+        "N/A".into()
     };
     let cover_val = if s.cover_art { "On" } else { "Off" }.to_string();
     let cover_size_val = format!("{} rows", s.cover_art_size);
@@ -178,7 +178,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
 
 /// Help-line text for the selected settings field. Indices MUST track the
 /// `Item::Row { idx }` order in `render`: 7 Scrobble, 8 Daemon, 9 Notifications.
-fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
+const fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
     match sel {
         0 => "← → or Enter to change theme (auto-saves)",
         1 if cava_ok => "← → or Enter to toggle cava visualizer (auto-saves)",

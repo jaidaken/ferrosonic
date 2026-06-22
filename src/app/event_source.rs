@@ -32,13 +32,14 @@ impl EventSource for CrosstermEventSource {
 }
 
 /// Test seam: events fed through an mpsc channel. The send half is
-/// kept by the test driver; the receive half acts as an EventSource.
+/// kept by the test driver; the receive half acts as an `EventSource`.
 pub struct ChannelEventSource {
     rx: tokio::sync::mpsc::Receiver<Event>,
 }
 
 impl ChannelEventSource {
     /// Build the source plus the sender the test driver feeds events into.
+    #[must_use]
     pub fn new() -> (tokio::sync::mpsc::Sender<Event>, Self) {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         (tx, Self { rx })

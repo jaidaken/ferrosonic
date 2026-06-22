@@ -26,12 +26,13 @@ pub struct InProcessClient {
 
 impl InProcessClient {
     /// Wrap an existing core.
-    pub fn new(core: Arc<DaemonCore>) -> Self {
+    pub const fn new(core: Arc<DaemonCore>) -> Self {
         Self { core }
     }
 
     /// Borrow the wrapped core.
-    pub fn core(&self) -> &Arc<DaemonCore> {
+    #[must_use]
+    pub const fn core(&self) -> &Arc<DaemonCore> {
         &self.core
     }
 }

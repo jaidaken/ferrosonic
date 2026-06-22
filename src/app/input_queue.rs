@@ -2,7 +2,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest};
 
 impl App {
     pub(super) async fn handle_queue_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
@@ -108,7 +108,7 @@ impl App {
                         } else if idx >= queue_len - 1 {
                             state.client.queue_state.selected = Some(queue_len - 2);
                         }
-                        state.client.notify(format!("Removed: {}", removed_title));
+                        state.client.notify(format!("Removed: {removed_title}"));
                         drop(state);
                         drop(cs);
                         drop(ds);
@@ -192,7 +192,7 @@ impl App {
                     } else {
                         state
                             .client
-                            .notify(format!("Cleared {} played songs", removed));
+                            .notify(format!("Cleared {removed} played songs"));
                         // Re-anchor client selection to the same song post-trim.
                         if let (Some(p), Some(sel)) = (pos, sel_before) {
                             state.client.queue_state.selected = Some(sel.saturating_sub(p));

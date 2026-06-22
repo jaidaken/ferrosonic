@@ -1,4 +1,4 @@
-//! libchafa FFI loader; high-quality knobs ratatui-image's bundled wrapper doesn't expose. L60_FILE exempt: FFI-runtime branches require libchafa installed.
+//! libchafa FFI loader; high-quality knobs ratatui-image's bundled wrapper doesn't expose. `L60_FILE` exempt: FFI-runtime branches require libchafa installed.
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
@@ -193,7 +193,7 @@ pub fn encode(img: &DynamicImage, width: u16, height: u16) -> Option<Vec<Encoded
             return None;
         }
         (chafa.canvas_config_set_symbol_map)(config, chafa.symbol_map);
-        (chafa.canvas_config_set_geometry)(config, width as i32, height as i32);
+        (chafa.canvas_config_set_geometry)(config, i32::from(width), i32::from(height));
         if let Some(f) = chafa.canvas_config_set_canvas_mode {
             f(config, CHAFA_CANVAS_MODE_TRUECOLOR);
         }
@@ -227,11 +227,17 @@ pub fn encode(img: &DynamicImage, width: u16, height: u16) -> Option<Vec<Encoded
         let mut cells = Vec::with_capacity((width as usize) * (height as usize));
         for y in 0..height {
             for x in 0..width {
-                let c = (chafa.canvas_get_char_at)(canvas, x as i32, y as i32);
+                let c = (chafa.canvas_get_char_at)(canvas, i32::from(x), i32::from(y));
                 let ch = char::from_u32(c).unwrap_or(' ');
                 let mut fg: i32 = 0;
                 let mut bg: i32 = 0;
-                (chafa.canvas_get_colors_at)(canvas, x as i32, y as i32, &mut fg, &mut bg);
+                (chafa.canvas_get_colors_at)(
+                    canvas,
+                    i32::from(x),
+                    i32::from(y),
+                    &raw mut fg,
+                    &raw mut bg,
+                );
                 cells.push(EncodedCell {
                     ch,
                     fg: argb_to_color(fg),
@@ -247,7 +253,7 @@ pub fn encode(img: &DynamicImage, width: u16, height: u16) -> Option<Vec<Encoded
     }
 }
 
-fn argb_to_color(c: i32) -> Color {
+const fn argb_to_color(c: i32) -> Color {
     Color::Rgb(
         ((c >> 16) & 0xff) as u8,
         ((c >> 8) & 0xff) as u8,

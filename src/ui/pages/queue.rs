@@ -35,11 +35,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
         .map(|(i, song)| {
             let is_current = state.daemon.queue_position == Some(i);
             let is_selected = state.client.queue_state.selected == Some(i);
-            let is_played = state
-                .daemon
-                .queue_position
-                .map(|pos| i < pos)
-                .unwrap_or(false);
+            let is_played = state.daemon.queue_position.is_some_and(|pos| i < pos);
             let is_starred = song.starred.is_some();
 
             let indicator = if is_current { "▶ " } else { "  " };
@@ -48,8 +44,8 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
             let artist = song.artist.clone().unwrap_or_default();
             let duration = song.format_duration();
             let track_info = match (song.disc_number, song.track) {
-                (Some(d), Some(t)) if d > 1 => format!(" [{}.{}]", d, t),
-                (_, Some(t)) => format!(" [#{}]", t),
+                (Some(d), Some(t)) if d > 1 => format!(" [{d}.{t}]"),
+                (_, Some(t)) => format!(" [#{t}]"),
                 _ => String::new(),
             };
 
@@ -98,15 +94,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
                 ),
                 Span::styled(song.title.clone(), title_style),
                 Span::styled(track_info, Style::default().fg(colors.muted)),
-                if !artist.is_empty() {
-                    Span::styled(format!(" - {}", artist), artist_style)
-                } else {
+                if artist.is_empty() {
                     Span::raw("")
+                } else {
+                    Span::styled(format!(" - {artist}"), artist_style)
                 },
-                Span::styled(
-                    format!(" [{}]", duration),
-                    Style::default().fg(colors.muted),
-                ),
+                Span::styled(format!(" [{duration}]"), Style::default().fg(colors.muted)),
             ]);
 
             ListItem::new(line)

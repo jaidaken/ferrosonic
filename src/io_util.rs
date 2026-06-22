@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 
 /// Remove files in the system temp dir matching `<prefix>...<suffix>` older
 /// than `max_age`. Backstop for temp files leaked when the owning process was
-/// SIGKILLed before its Drop-based cleanup ran; the age gate avoids deleting a
+/// `SIGKILLed` before its Drop-based cleanup ran; the age gate avoids deleting a
 /// live instance's files.
 pub fn sweep_stale_tmp_files(prefix: &str, suffix: &str, max_age: Duration) {
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
@@ -98,7 +98,7 @@ pub fn fsync_parent_dir(path: &Path) {
 }
 
 #[cfg(not(test))]
-fn record_public_fsync_call() {}
+const fn record_public_fsync_call() {}
 
 #[cfg(test)]
 fn record_public_fsync_call() {
@@ -117,7 +117,7 @@ pub(crate) fn fsync_parent_dir_with_fs<F: FileSystem>(fs: &F, path: &Path) {
     }
 }
 
-/// Atomic bytes-to-file via temp + fsync + rename + parent-dir fsync. Single audited entry point for the temp+rename pattern; callers using this avoid the disallowed_methods lint by routing through here.
+/// Atomic bytes-to-file via temp + fsync + rename + parent-dir fsync. Single audited entry point for the temp+rename pattern; callers using this avoid the `disallowed_methods` lint by routing through here.
 ///
 /// ```
 /// use ferrosonic::io_util::atomic_write_bytes;
@@ -163,7 +163,7 @@ pub(crate) fn atomic_write_bytes_with_fs_mode<F: FileSystem>(
         }
     }
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("dat");
-    let tmp = path.with_extension(format!("{}.tmp", ext));
+    let tmp = path.with_extension(format!("{ext}.tmp"));
     if let Err(e) = fs.write_then_sync(&tmp, body, mode) {
         let _ = fs.remove_file_if_exists(&tmp);
         return Err(e);

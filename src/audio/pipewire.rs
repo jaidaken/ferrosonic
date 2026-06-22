@@ -1,4 +1,4 @@
-//! PipeWire sample rate control
+//! `PipeWire` sample rate control
 
 use std::process::{Command, Output};
 use std::sync::Arc;
@@ -29,14 +29,14 @@ impl CommandRunner for PwMetadataCommand {
             .args(args)
             .output()
             .await
-            .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))
+            .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {e}")))
     }
 
     fn run_blocking(&self, args: &[&str]) -> Result<Output, AudioError> {
         Command::new("pw-metadata")
             .args(args)
             .output()
-            .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {}", e)))
+            .map_err(|e| AudioError::PipeWire(format!("Failed to run pw-metadata: {e}")))
     }
 }
 
@@ -49,6 +49,7 @@ pub struct PipeWireController {
 
 impl PipeWireController {
     /// Construct with the production `pw-metadata` runner.
+    #[must_use]
     pub fn new() -> Self {
         Self::with_runner(Arc::new(PwMetadataCommand))
     }
@@ -101,12 +102,14 @@ impl PipeWireController {
     }
 
     /// Rate this controller last set, if any.
-    pub fn get_current_rate(&self) -> Option<u32> {
+    #[must_use]
+    pub const fn get_current_rate(&self) -> Option<u32> {
         self.current_rate
     }
 
     /// Force-rate value probed at construction, restored on drop.
-    pub fn get_original_rate(&self) -> Option<u32> {
+    #[must_use]
+    pub const fn get_original_rate(&self) -> Option<u32> {
         self.original_rate
     }
 
@@ -123,8 +126,7 @@ impl PipeWireController {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(AudioError::PipeWire(format!(
-                "pw-metadata failed: {}",
-                stderr
+                "pw-metadata failed: {stderr}"
             )));
         }
         self.current_rate = Some(rate);
@@ -141,8 +143,7 @@ impl PipeWireController {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(AudioError::PipeWire(format!(
-                "pw-metadata failed: {}",
-                stderr
+                "pw-metadata failed: {stderr}"
             )));
         }
         self.current_rate = None;
@@ -161,6 +162,7 @@ impl PipeWireController {
 /// assert_eq!(parse_force_rate_from_output(""), 0);
 /// assert_eq!(parse_force_rate_from_output("clock.force-rate value:'oops'"), 0);
 /// ```
+#[must_use]
 pub fn parse_force_rate_from_output(stdout: &str) -> u32 {
     for line in stdout.lines() {
         if line.contains("clock.force-rate") && line.contains("value:") {

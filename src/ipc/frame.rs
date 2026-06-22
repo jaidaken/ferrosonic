@@ -166,20 +166,18 @@ where
     let raw: serde_json::Value = serde_json::from_slice(&body)?;
 
     if let Some(req) = raw.get("Request") {
-        if let Some(id) = req.get("id").and_then(|v| v.as_u64()) {
+        if let Some(id) = req.get("id").and_then(serde_json::Value::as_u64) {
             let inner = req
                 .get("req")
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "<missing>".into());
+                .map_or_else(|| "<missing>".into(), std::string::ToString::to_string);
             return Ok(FrameRead::UnknownRequest { id, body: inner });
         }
     }
     if let Some(resp) = raw.get("Response") {
-        if let Some(id) = resp.get("id").and_then(|v| v.as_u64()) {
+        if let Some(id) = resp.get("id").and_then(serde_json::Value::as_u64) {
             let inner = resp
                 .get("payload")
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "<missing>".into());
+                .map_or_else(|| "<missing>".into(), std::string::ToString::to_string);
             return Ok(FrameRead::UnknownResponse { id, body: inner });
         }
     }

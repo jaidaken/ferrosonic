@@ -2,7 +2,7 @@ use crossterm::event::{self, MouseButton, MouseEventKind};
 
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode, LayoutAreas, Page};
 
 impl App {
     /// Route one mouse event to header buttons or the active page.
@@ -108,7 +108,7 @@ impl App {
                         + time_width
                         + 2;
                     if bar_width > 0 && rel_x >= bar_start && rel_x < bar_start + bar_width {
-                        let fraction = (rel_x - bar_start) as f64 / bar_width as f64;
+                        let fraction = f64::from(rel_x - bar_start) / f64::from(bar_width);
                         let seek_pos = fraction * duration;
                         let _ = self
                             .client

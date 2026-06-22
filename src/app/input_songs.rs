@@ -3,7 +3,7 @@ use crossterm::event::{self, KeyCode};
 use crate::app::models::SongOption;
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode};
 
 impl App {
     pub(super) async fn handle_songs_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
@@ -15,19 +15,17 @@ impl App {
         };
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => match state.client.songs.focus {
-                0 => {
-                    match state.client.songs.selected_option {
-                        Some(SongOption::Starred) => {}
-                        Some(SongOption::Random) => {
-                            state.client.songs.selected_option = Some(SongOption::Starred);
-                            drop(state);
-                            drop(cs);
-                            drop(ds);
-                            let _ = self.client.request(DaemonRequest::RefreshStarred).await;
-                        }
-                        None => {}
-                    };
-                }
+                0 => match state.client.songs.selected_option {
+                    Some(SongOption::Starred) => {}
+                    Some(SongOption::Random) => {
+                        state.client.songs.selected_option = Some(SongOption::Starred);
+                        drop(state);
+                        drop(cs);
+                        drop(ds);
+                        let _ = self.client.request(DaemonRequest::RefreshStarred).await;
+                    }
+                    None => {}
+                },
                 1 => {
                     if let Some(sel) = state.client.songs.selected_index {
                         if sel > 0 {
@@ -40,19 +38,17 @@ impl App {
                 _ => {}
             },
             KeyCode::Down | KeyCode::Char('j') => match state.client.songs.focus {
-                0 => {
-                    match state.client.songs.selected_option {
-                        Some(SongOption::Starred) => {
-                            state.client.songs.selected_option = Some(SongOption::Random);
-                            drop(state);
-                            drop(cs);
-                            drop(ds);
-                            let _ = self.client.request(DaemonRequest::RefreshRandom).await;
-                        }
-                        Some(SongOption::Random) => {}
-                        None => {}
-                    };
-                }
+                0 => match state.client.songs.selected_option {
+                    Some(SongOption::Starred) => {
+                        state.client.songs.selected_option = Some(SongOption::Random);
+                        drop(state);
+                        drop(cs);
+                        drop(ds);
+                        let _ = self.client.request(DaemonRequest::RefreshRandom).await;
+                    }
+                    Some(SongOption::Random) => {}
+                    None => {}
+                },
                 1 => {
                     let max = state.songs_list().len().saturating_sub(1);
                     if let Some(sel) = state.client.songs.selected_index {
@@ -94,7 +90,7 @@ impl App {
                     .map_err(Error::from);
             }
             KeyCode::Tab => {
-                state.client.songs.focus = if state.client.songs.focus == 1 { 0 } else { 1 }
+                state.client.songs.focus = usize::from(state.client.songs.focus != 1);
             }
             KeyCode::Left => {
                 state.client.songs.focus = 0;

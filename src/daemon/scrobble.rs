@@ -1,4 +1,4 @@
-//! Dual-path play reporting driven from the playback tick: classic `scrobble` or OpenSubsonic `reportPlayback`.
+//! Dual-path play reporting driven from the playback tick: classic `scrobble` or `OpenSubsonic` `reportPlayback`.
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -50,7 +50,7 @@ fn position_ms(position: f64) -> u64 {
 }
 
 impl DaemonCore {
-    /// Query the server's OpenSubsonic extensions and record whether
+    /// Query the server's `OpenSubsonic` extensions and record whether
     /// `playbackReport` is available; selects the modern vs classic path.
     pub(super) fn spawn_refresh_scrobble_capability(self: &Arc<Self>) {
         if self.shutdown.load(Ordering::Acquire) {
@@ -67,8 +67,7 @@ impl DaemonCore {
             let supported = client
                 .get_open_subsonic_extensions()
                 .await
-                .map(|exts| exts.iter().any(|e| e == "playbackReport"))
-                .unwrap_or(false);
+                .is_ok_and(|exts| exts.iter().any(|e| e == "playbackReport"));
             core.playback_report_supported
                 .store(supported, Ordering::Release);
             debug!("playbackReport extension supported: {supported}");

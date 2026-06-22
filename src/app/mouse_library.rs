@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode, LayoutAreas};
 
 impl App {
     pub(super) async fn handle_library_click(
@@ -56,27 +56,25 @@ impl App {
                                     .client
                                     .request(DaemonRequest::LoadArtist(artist_id.clone()))
                                     .await;
-                                match albums_resp {
-                                    Ok(crate::ipc::DaemonResponse::ArtistAlbums(_)) => {
-                                        // Cache + AlbumsChanged already emitted by daemon.
-                                        let ds = self.daemon_state.read().await;
-                                        let mut cs = self.client_state.write().await;
-                                        let state = AppState {
-                                            daemon: &ds,
-                                            client: &mut cs,
-                                        };
-                                        state.client.artists.expanded.insert(artist_id);
-                                        tracing::info!("Loaded albums for {}", artist_name);
-                                    }
-                                    _ => {
-                                        let ds = self.daemon_state.read().await;
-                                        let mut cs = self.client_state.write().await;
-                                        let state = AppState {
-                                            daemon: &ds,
-                                            client: &mut cs,
-                                        };
-                                        state.client.notify_error("Failed to load artist");
-                                    }
+                                if let Ok(crate::ipc::DaemonResponse::ArtistAlbums(_)) = albums_resp
+                                {
+                                    // Cache + AlbumsChanged already emitted by daemon.
+                                    let ds = self.daemon_state.read().await;
+                                    let mut cs = self.client_state.write().await;
+                                    let state = AppState {
+                                        daemon: &ds,
+                                        client: &mut cs,
+                                    };
+                                    state.client.artists.expanded.insert(artist_id);
+                                    tracing::info!("Loaded albums for {}", artist_name);
+                                } else {
+                                    let ds = self.daemon_state.read().await;
+                                    let mut cs = self.client_state.write().await;
+                                    let state = AppState {
+                                        daemon: &ds,
+                                        client: &mut cs,
+                                    };
+                                    state.client.notify_error("Failed to load artist");
                                 }
                                 self.last_click = Some((x, y, std::time::Instant::now()));
                                 return Ok(());
@@ -115,10 +113,9 @@ impl App {
                                 state.client.artists.songs = songs.clone();
                                 state.client.artists.selected_song = Some(0);
                                 state.client.artists.focus = 1;
-                                state.client.notify(format!(
-                                    "Playing album: {} ({} songs)",
-                                    album_name, count
-                                ));
+                                state
+                                    .client
+                                    .notify(format!("Playing album: {album_name} ({count} songs)"));
                             }
                             let _ = self
                                 .client
@@ -143,7 +140,7 @@ impl App {
                                     daemon: &ds,
                                     client: &mut cs,
                                 };
-                                state.client.notify(format!("Playing: {}", title));
+                                state.client.notify(format!("Playing: {title}"));
                             }
                             let _ = self
                                 .client

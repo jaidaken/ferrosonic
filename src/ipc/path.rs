@@ -2,7 +2,7 @@
 //!
 //! Order: `$FERROSONIC_SOCK` →
 //! `$XDG_RUNTIME_DIR/ferrosonic/ferrosonicd.sock` →
-//! `/tmp/ferrosonic-{uid}/ferrosonicd.sock`. AF_UNIX caps at 108 bytes.
+//! `/tmp/ferrosonic-{uid}/ferrosonicd.sock`. `AF_UNIX` caps at 108 bytes.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -13,6 +13,7 @@ const SOCKET_FILENAME: &str = "ferrosonicd.sock";
 const SUBDIR: &str = "ferrosonic";
 
 /// Resolve the daemon socket path per the order documented above.
+#[must_use]
 pub fn socket_path() -> PathBuf {
     if let Ok(custom) = std::env::var("FERROSONIC_SOCK") {
         return PathBuf::from(custom);
@@ -25,12 +26,12 @@ pub fn socket_path() -> PathBuf {
     }
     let uid = unsafe { libc::getuid() };
     let mut p = PathBuf::from("/tmp");
-    p.push(format!("ferrosonic-{}", uid));
+    p.push(format!("ferrosonic-{uid}"));
     p.push(SOCKET_FILENAME);
     p
 }
 
-/// chmod 0700 only when we created the directory; XDG_RUNTIME_DIR is
+/// chmod 0700 only when we created the directory; `XDG_RUNTIME_DIR` is
 /// already restricted and /tmp must not be touched.
 pub fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;

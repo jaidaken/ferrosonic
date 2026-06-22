@@ -26,6 +26,7 @@ pub struct LruCache<V> {
 
 impl<V: Clone> LruCache<V> {
     /// Empty cache.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -101,6 +102,7 @@ impl<V: Clone> LruCache<V> {
     /// c.insert("x".to_string(), (), 4);
     /// assert_eq!(c.len(), 1);
     /// ```
+    #[must_use]
     pub fn len(&self) -> usize {
         self.map.len()
     }

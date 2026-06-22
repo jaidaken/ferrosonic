@@ -1,4 +1,4 @@
-//! Cover-art state on top of ratatui-image, with chafa-direct encoder for half-blocks path. L60_FILE borderline: chafa + sixel branches need a real terminal.
+//! Cover-art state on top of ratatui-image, with chafa-direct encoder for half-blocks path. `L60_FILE` borderline: chafa + sixel branches need a real terminal.
 
 use std::sync::Mutex;
 
@@ -48,7 +48,7 @@ fn query_cell_size() -> Option<(u16, u16)> {
     use std::os::unix::io::AsRawFd;
     let fd = std::io::stdout().as_raw_fd();
     let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
-    let r = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws as *mut _) };
+    let r = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &raw mut ws) };
     if r != 0 || ws.ws_xpixel == 0 || ws.ws_ypixel == 0 || ws.ws_col == 0 || ws.ws_row == 0 {
         return None;
     }
@@ -155,8 +155,11 @@ impl CoverArtState {
             }
         };
 
-        let cell_size = queried_cell
-            .unwrap_or_else(|| picker.as_ref().map(|p| p.font_size()).unwrap_or((10, 20)));
+        let cell_size = queried_cell.unwrap_or_else(|| {
+            picker
+                .as_ref()
+                .map_or((10, 20), ratatui_image::picker::Picker::font_size)
+        });
 
         Self {
             picker,
@@ -169,7 +172,7 @@ impl CoverArtState {
         }
     }
 
-    /// Commit bytes only if id matches current_id (set_pending) or current_id is None; otherwise this fetch was superseded.
+    /// Commit bytes only if id matches `current_id` (`set_pending`) or `current_id` is None; otherwise this fetch was superseded.
     pub fn load(&mut self, id: String, bytes: &[u8]) {
         match self.current_id.as_deref() {
             Some(cur) if cur == id.as_str() => {
@@ -218,7 +221,7 @@ impl CoverArtState {
         self.chafa_cache = None;
     }
 
-    /// Reserve current_id ahead of an async fetch so concurrent NowPlayingChanged events for the same id don't double-fetch.
+    /// Reserve `current_id` ahead of an async fetch so concurrent `NowPlayingChanged` events for the same id don't double-fetch.
     pub fn set_pending(&mut self, id: String) {
         self.current_id = Some(id);
         self.image = None;

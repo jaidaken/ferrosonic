@@ -8,7 +8,7 @@ use crate::daemon::core::{DaemonCore, PlayMode};
 use crate::error::Error;
 
 impl DaemonCore {
-    /// Toggle pause by current state: `Playing` pauses, `Paused` resumes, `Stopped` with a queued position starts playback. Delegates so the PipeWire pin release/re-apply lives in one place per direction.
+    /// Toggle pause by current state: `Playing` pauses, `Paused` resumes, `Stopped` with a queued position starts playback. Delegates so the `PipeWire` pin release/re-apply lives in one place per direction.
     pub async fn toggle_pause(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         let (playback_state, queue_pos) = {
@@ -25,7 +25,7 @@ impl DaemonCore {
         }
     }
 
-    /// Pause playback. Stops mpv so it disconnects its PipeWire stream and
+    /// Pause playback. Stops mpv so it disconnects its `PipeWire` stream and
     /// releases the force-rate pin, so the audio device follows other apps
     /// (e.g. a browser) while paused. The playhead is kept in
     /// `now_playing.position`; resume re-pins the known rate then reloads and
@@ -238,7 +238,7 @@ impl DaemonCore {
             let mut state = self.state.write().await;
             match self.commit_play_state_in_lock(&mut state, &client, pos) {
                 Ok(v) => v,
-                Err(_) => return Ok(()),
+                Err(()) => return Ok(()),
             }
         };
 
@@ -330,7 +330,7 @@ impl DaemonCore {
         self.preload_next_track(pos).await;
     }
 
-    /// End-of-queue stop: halt mpv, mark `Stopped`, emit, and release the PipeWire pin so the idle daemon stops holding the device at the last track's rate.
+    /// End-of-queue stop: halt mpv, mark `Stopped`, emit, and release the `PipeWire` pin so the idle daemon stops holding the device at the last track's rate.
     async fn finish_at_queue_end(self: &Arc<Self>) {
         use crate::daemon::state::PlaybackState;
         info!("Reached end of queue");

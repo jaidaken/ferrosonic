@@ -2,7 +2,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest};
 
 #[derive(Clone, Copy)]
 enum SettingChange {
@@ -44,7 +44,7 @@ impl App {
                         cs.notify(msg);
                     }
                 }
-                KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Char(' ') => {
+                KeyCode::Right | KeyCode::Char('l' | ' ') | KeyCode::Enter => {
                     change = adjust_setting(&mut cs.settings_state, field, 1, cava_ok);
                     if let Some(c) = change {
                         let msg = change_message(&cs.settings_state, c);
@@ -114,13 +114,13 @@ impl App {
                 daemon: &ds,
                 client: &mut cs,
             };
-            state.client.notify_error(format!("Failed to save: {}", e));
+            state.client.notify_error(format!("Failed to save: {e}"));
             return Ok(());
         }
 
         // Cava lifecycle is client-side; daemon toggle doesn't affect it.
         let cava_running = self.cava_parser.is_some();
-        let cava_h = cava_size as u32;
+        let cava_h = u32::from(cava_size);
         match change {
             SettingChange::Cava => {
                 if cava_enabled {
@@ -178,13 +178,13 @@ fn adjust_setting(
             Some(SettingChange::Cava)
         }
         2 if cava_ok => {
-            let cur = s.cava_size as i32;
+            let cur = i32::from(s.cava_size);
             let new = (cur + step * 5).clamp(10, 80) as u8;
-            if new != s.cava_size {
+            if new == s.cava_size {
+                None
+            } else {
                 s.cava_size = new;
                 Some(SettingChange::CavaSize)
-            } else {
-                None
             }
         }
         3 => {
@@ -192,13 +192,13 @@ fn adjust_setting(
             Some(SettingChange::CoverArt)
         }
         4 => {
-            let cur = s.cover_art_size as i32;
+            let cur = i32::from(s.cover_art_size);
             let new = (cur + step * 2).clamp(8, 24) as u8;
-            if new != s.cover_art_size {
+            if new == s.cover_art_size {
+                None
+            } else {
                 s.cover_art_size = new;
                 Some(SettingChange::CoverArtSize)
-            } else {
-                None
             }
         }
         5 => {
@@ -249,7 +249,7 @@ fn change_message(s: &crate::app::state::SettingsState, change: SettingChange) -
     }
 }
 
-fn on_off(v: bool) -> &'static str {
+const fn on_off(v: bool) -> &'static str {
     if v {
         "On"
     } else {

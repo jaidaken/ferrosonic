@@ -5,6 +5,7 @@
 use crate::subsonic::models::Child;
 
 /// Notification body: artist on the first line, album on the second.
+#[must_use]
 pub fn track_body(song: &Child) -> String {
     let artist = song.artist.as_deref().unwrap_or("Unknown Artist");
     match song.album.as_deref() {
@@ -62,6 +63,7 @@ mod linux {
     impl Notifier {
         /// Construct an idle notifier; no D-Bus connection is made until the
         /// first notification is shown.
+        #[must_use]
         pub fn new() -> Self {
             Self {
                 conn: OnceCell::new(),

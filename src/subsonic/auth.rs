@@ -19,6 +19,7 @@ use crate::secret::Secret;
 /// assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
 /// assert!(salt.chars().all(|c| c.is_ascii_alphanumeric()));
 /// ```
+#[must_use]
 pub fn generate_auth_params(password: &Secret) -> (String, String) {
     let salt = generate_salt();
     let token = generate_token(password, &salt);
@@ -45,7 +46,7 @@ fn generate_token(password: &Secret, salt: &str) -> String {
     buf.extend_from_slice(salt.as_bytes());
     let digest = md5::compute(&buf);
     buf.zeroize();
-    format!("{:x}", digest)
+    format!("{digest:x}")
 }
 
 #[cfg(test)]

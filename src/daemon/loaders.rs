@@ -50,7 +50,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to load album songs: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to load album: {}", e),
+                    message: format!("Failed to load album: {e}"),
                     is_error: true,
                 });
                 Vec::new()
@@ -111,7 +111,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to load playlist songs: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to load playlist: {}", e),
+                    message: format!("Failed to load playlist: {e}"),
                     is_error: true,
                 });
                 Vec::new()
@@ -121,7 +121,7 @@ impl DaemonCore {
 
     /// Returns empty on error so the caller renders no art.
     pub async fn get_cover_art(self: &Arc<Self>, id: &str, size: u32) -> Vec<u8> {
-        let key = format!("{}@{}", id, size);
+        let key = format!("{id}@{size}");
         {
             let mut cache = self.cover_art_cache.write().await;
             if let Some(bytes) = cache.get(&key) {

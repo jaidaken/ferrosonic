@@ -113,8 +113,8 @@ fn parse_gradient(values: &[String], fallback: &[&str; 8]) -> [String; 8] {
 
 impl ThemeData {
     fn from_file_content(name: &str, content: &str) -> Result<Self, String> {
-        let file: ThemeFile = toml::from_str(content)
-            .map_err(|e| format!("Failed to parse theme '{}': {}", name, e))?;
+        let file: ThemeFile =
+            toml::from_str(content).map_err(|e| format!("Failed to parse theme '{name}': {e}"))?;
 
         let c = &file.colors;
         let colors = ThemeColors {
@@ -152,7 +152,7 @@ impl ThemeData {
             None => std::array::from_fn(|i| default_h[i].to_string()),
         };
 
-        Ok(ThemeData {
+        Ok(Self {
             name: name.to_string(),
             colors,
             cava_gradient,
@@ -161,8 +161,9 @@ impl ThemeData {
     }
 
     /// The built-in fallback theme.
+    #[must_use]
     pub fn default_theme() -> Self {
-        ThemeData {
+        Self {
             name: "Default".to_string(),
             colors: ThemeColors {
                 primary: Color::Cyan,
@@ -214,10 +215,10 @@ pub fn load_themes() -> Vec<ThemeData> {
             let mut entries: Vec<_> = std::fs::read_dir(&dir)
                 .into_iter()
                 .flatten()
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
                 .collect();
-            entries.sort_by_key(|e| e.file_name());
+            entries.sort_by_key(std::fs::DirEntry::file_name);
 
             for entry in entries {
                 let path = entry.path();
@@ -273,9 +274,10 @@ pub fn seed_default_themes(dir: &Path) {
         let path = dir.join(filename);
         if !path.exists() {
             let res = std::fs::write(&path, content);
-            match res {
-                Err(e) => error!("Failed to write theme {}: {}", filename, e),
-                Ok(()) => info!("Seeded theme file: {}", filename),
+            if let Err(e) = res {
+                error!("Failed to write theme {}: {}", filename, e)
+            } else {
+                info!("Seeded theme file: {}", filename)
             }
         }
     }

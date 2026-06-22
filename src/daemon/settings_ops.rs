@@ -1,4 +1,4 @@
-//! Settings + server-config setters; broadcast ConfigChanged on commit.
+//! Settings + server-config setters; broadcast `ConfigChanged` on commit.
 
 use std::sync::Arc;
 
@@ -126,9 +126,9 @@ impl DaemonCore {
         match SubsonicClient::new(base_url, username, password) {
             Ok(client) => match client.ping().await {
                 Ok(()) => (true, "Connection OK".to_string()),
-                Err(e) => (false, format!("Connection failed: {}", e)),
+                Err(e) => (false, format!("Connection failed: {e}")),
             },
-            Err(e) => (false, format!("Invalid URL: {}", e)),
+            Err(e) => (false, format!("Invalid URL: {e}")),
         }
     }
 

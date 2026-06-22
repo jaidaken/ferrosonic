@@ -25,7 +25,7 @@ struct PlaybackTickInputs {
     just_loaded: bool,
 }
 
-/// Outcome of one playback tick. Branch priority: AdvanceEarly > Preload > GaplessAdvance > AdvanceOnIdle.
+/// Outcome of one playback tick. Branch priority: `AdvanceEarly` > Preload > `GaplessAdvance` > `AdvanceOnIdle`.
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PlaybackTickAction {
@@ -45,7 +45,7 @@ enum TickContinuation {
     Continue,
 }
 
-/// Result of try_gapless_advance under the write critical section.
+/// Result of `try_gapless_advance` under the write critical section.
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GaplessOutcome {
@@ -92,8 +92,7 @@ impl DaemonCore {
             let tr = state.now_playing.duration - state.now_playing.position;
             let hn = state
                 .queue_position
-                .map(|p| p + 1 < state.queue.len())
-                .unwrap_or(false);
+                .is_some_and(|p| p + 1 < state.queue.len());
             (tr, hn, state.now_playing.position, state.queue_position)
         };
 
@@ -110,8 +109,7 @@ impl DaemonCore {
             .lock()
             .await
             .as_ref()
-            .map(|a| a.load(Ordering::Acquire))
-            .unwrap_or(false);
+            .is_some_and(|a| a.load(Ordering::Acquire));
 
         let just_loaded = self
             .last_loadfile
@@ -136,7 +134,7 @@ impl DaemonCore {
         }
     }
 
-    /// Pure state-machine. Priority: AdvanceEarly > Preload > GaplessAdvance > AdvanceOnIdle.
+    /// Pure state-machine. Priority: `AdvanceEarly` > Preload > `GaplessAdvance` > `AdvanceOnIdle`.
     const fn decide_playback_tick_action(inputs: &PlaybackTickInputs) -> PlaybackTickAction {
         if !inputs.is_active || !inputs.mpv_running {
             return PlaybackTickAction::Skip;
@@ -195,7 +193,7 @@ impl DaemonCore {
             });
             if let Some((next_pos, song)) = resolved {
                 state.queue_position = Some(next_pos);
-                state.now_playing.duration = song.duration.unwrap_or(0) as f64;
+                state.now_playing.duration = f64::from(song.duration.unwrap_or(0));
                 state.now_playing.song = Some(song);
                 state.now_playing.position = 0.0;
                 // Clear so the tick re-probes + re-pins; a gapless jump across
@@ -279,7 +277,7 @@ impl DaemonCore {
         }
     }
 
-    /// Emit a PositionTick event with mpv's current playhead.
+    /// Emit a `PositionTick` event with mpv's current playhead.
     async fn tick_emit_position(self: &Arc<Self>) {
         use crate::daemon::state::PlaybackState;
         let pos_opt = {

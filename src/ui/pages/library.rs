@@ -464,11 +464,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
 fn library_label(id: Option<i64>, folders: &[crate::subsonic::models::MusicFolder]) -> String {
     match id {
         None => "Library: All".to_string(),
-        Some(id) => folders
-            .iter()
-            .find(|f| f.id == id)
-            .map(|f| format!("Library: {}", f.name))
-            .unwrap_or_else(|| format!("Library: #{id}")),
+        Some(id) => folders.iter().find(|f| f.id == id).map_or_else(
+            || format!("Library: #{id}"),
+            |f| format!("Library: {}", f.name),
+        ),
     }
 }
 
@@ -629,7 +628,7 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
     let has_multiple_discs = artists
         .songs
         .iter()
-        .any(|s| s.disc_number.map(|d| d > 1).unwrap_or(false));
+        .any(|s| s.disc_number.is_some_and(|d| d > 1));
 
     let items: Vec<ListItem<'_>> = artists
         .songs
@@ -637,10 +636,7 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
         .enumerate()
         .map(|(i, song)| {
             let is_selected = focused && Some(i) == artists.selected_song;
-            let is_playing = state
-                .current_song()
-                .map(|s| s.id == song.id)
-                .unwrap_or(false);
+            let is_playing = state.current_song().is_some_and(|s| s.id == song.id);
 
             let line = get_song_without_artist_line(
                 song,

@@ -4,7 +4,7 @@ use std::os::unix::io::FromRawFd;
 
 use tracing::{error, info};
 
-use super::*;
+use super::{App, CavaColor, CavaRow, CavaSpan};
 
 impl App {
     /// Spawn cava on a pty sized to the terminal, replacing any running instance.
@@ -20,19 +20,19 @@ impl App {
         crate::io_util::sweep_stale_tmp_files(
             "ferrosonic-cava-",
             ".conf",
-            std::time::Duration::from_secs(3600),
+            std::time::Duration::from_hours(1),
         );
 
         let (term_w, term_h) = crossterm::terminal::size().unwrap_or((80, 24));
-        let cava_h = (term_h as u32 * cava_size / 100).max(4) as u16;
+        let cava_h = (u32::from(term_h) * cava_size / 100).max(4) as u16;
         let cava_w = term_w;
 
         let mut master: libc::c_int = 0;
         let mut slave: libc::c_int = 0;
         unsafe {
             if libc::openpty(
-                &mut master,
-                &mut slave,
+                &raw mut master,
+                &raw mut slave,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
@@ -128,7 +128,7 @@ impl App {
         self.cava_config = None;
     }
 
-    /// Drains cava pty into client_state.cava_screen for local render.
+    /// Drains cava pty into `client_state.cava_screen` for local render.
     pub async fn read_cava_output(&mut self) {
         let (Some(ref mut master), Some(ref mut parser)) =
             (&mut self.cava_pty_master, &mut self.cava_parser)
@@ -169,7 +169,7 @@ pub enum DrainOutcome {
 }
 
 /// Drain `reader` into `parser`. Caller resets state on `Eof` or
-/// `HardError`; `NoData` (WouldBlock) is normal between frames.
+/// `HardError`; `NoData` (`WouldBlock`) is normal between frames.
 pub fn drain_into_parser<R: std::io::Read>(
     reader: &mut R,
     parser: &mut vt100::Parser,
@@ -200,8 +200,9 @@ pub fn drain_into_parser<R: std::io::Read>(
     }
 }
 
-/// Pure logic: vt100 screen to CavaRow vec. Tests feed bytes into a
-/// vt100::Parser then call this directly.
+/// Pure logic: vt100 screen to `CavaRow` vec. Tests feed bytes into a
+/// `vt100::Parser` then call this directly.
+#[must_use]
 pub fn screen_to_cava_rows(screen: &vt100::Screen) -> Vec<CavaRow> {
     let (rows, cols) = screen.size();
     let mut cava_screen = Vec::with_capacity(rows as usize);
@@ -250,7 +251,7 @@ pub fn screen_to_cava_rows(screen: &vt100::Screen) -> Vec<CavaRow> {
     cava_screen
 }
 
-fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
+const fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
     match color {
         vt100::Color::Default => CavaColor::Default,
         vt100::Color::Idx(i) => CavaColor::Indexed(i),
@@ -259,6 +260,7 @@ fn vt100_color_to_cava(color: vt100::Color) -> CavaColor {
 }
 
 /// Render a cava config with the theme's vertical and horizontal gradients.
+#[must_use]
 pub fn generate_cava_config(g: &[String; 8], h: &[String; 8]) -> String {
     format!(
         "\

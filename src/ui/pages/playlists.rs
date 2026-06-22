@@ -36,8 +36,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
             .playlists
             .selected_playlist
             .and_then(|i| state.daemon.library.playlists.get(i))
-            .map(|p| p.name.as_str())
-            .unwrap_or("");
+            .map_or("", |p| p.name.as_str());
         let content = format!("Delete '{name}'?  (y: confirm  n: cancel)");
         render_edit_box(frame, chunks[0], &content, " Delete playlist ", &colors);
     }
@@ -112,7 +111,7 @@ fn render_playlists(
             let duration = playlist.duration.map(|d| {
                 let mins = d / 60;
                 let secs = d % 60;
-                format!("{}:{:02}", mins, secs)
+                format!("{mins}:{secs:02}")
             });
 
             let style = if is_selected {
@@ -126,14 +125,14 @@ fn render_playlists(
             let mut spans = vec![
                 Span::styled(&playlist.name, style),
                 Span::styled(
-                    format!(" ({} songs)", count),
+                    format!(" ({count} songs)"),
                     Style::default().fg(colors.muted),
                 ),
             ];
 
             if let Some(dur) = duration {
                 spans.push(Span::styled(
-                    format!(" [{}]", dur),
+                    format!(" [{dur}]"),
                     Style::default().fg(colors.muted),
                 ));
             }
@@ -172,10 +171,10 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
         Style::default().fg(colors.border_unfocused)
     };
 
-    let title = if !playlists.songs.is_empty() {
-        format!(" Songs ({}) ", playlists.songs.len())
-    } else {
+    let title = if playlists.songs.is_empty() {
         " Songs ".to_string()
+    } else {
+        format!(" Songs ({}) ", playlists.songs.len())
     };
 
     let block = Block::default()
@@ -197,10 +196,7 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
         .enumerate()
         .map(|(i, song)| {
             let is_selected = focused && playlists.selected_song == Some(i);
-            let is_playing = state
-                .current_song()
-                .map(|s| s.id == song.id)
-                .unwrap_or(false);
+            let is_playing = state.current_song().is_some_and(|s| s.id == song.id);
 
             let indicator = if is_playing { "▶ " } else { "  " };
             let artist = song.artist.clone().unwrap_or_default();
@@ -221,12 +217,12 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
             let line = Line::from(vec![
                 Span::styled(indicator, Style::default().fg(colors.playing)),
                 Span::styled(&song.title, Style::default().fg(title_color)),
-                if !artist.is_empty() {
-                    Span::styled(format!(" - {}", artist), Style::default().fg(artist_color))
-                } else {
+                if artist.is_empty() {
                     Span::raw("")
+                } else {
+                    Span::styled(format!(" - {artist}"), Style::default().fg(artist_color))
                 },
-                Span::styled(format!(" [{}]", duration), Style::default().fg(time_color)),
+                Span::styled(format!(" [{duration}]"), Style::default().fg(time_color)),
             ]);
 
             ListItem::new(line)

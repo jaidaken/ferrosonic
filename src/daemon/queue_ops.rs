@@ -117,7 +117,7 @@ impl DaemonCore {
             Err(e) => {
                 error!("Failed to load random songs: {}", e);
                 self.emit(DaemonEvent::Notification {
-                    message: format!("Failed to shuffle library: {}", e),
+                    message: format!("Failed to shuffle library: {e}"),
                     is_error: true,
                 });
                 return Ok(());

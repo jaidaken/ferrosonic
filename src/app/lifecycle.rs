@@ -1,4 +1,4 @@
-//! Signal handling + TerminalGuard for clean shutdown.
+//! Signal handling + `TerminalGuard` for clean shutdown.
 
 use crate::app::state::SharedClientState;
 
@@ -8,7 +8,7 @@ pub async fn handle_signal_received(client_state: SharedClientState) {
     s.should_quit = true;
 }
 
-/// Spawn a task that resolves `signal_fut` then sets should_quit; tests pass any Future, production passes `wait_for_unix_quit_signal()`.
+/// Spawn a task that resolves `signal_fut` then sets `should_quit`; tests pass any Future, production passes `wait_for_unix_quit_signal()`.
 pub fn spawn_quit_listener<F>(client_state: SharedClientState, signal_fut: F)
 where
     F: std::future::Future<Output = ()> + Send + 'static,
@@ -22,26 +22,23 @@ where
 /// Resolves when any of SIGTERM / SIGINT / SIGHUP fires, or returns pending forever if signal registration fails.
 pub async fn wait_for_unix_quit_signal() {
     use tokio::signal::unix::{signal, SignalKind};
-    let mut term = match signal(SignalKind::terminate()) {
-        Ok(s) => s,
-        Err(_) => {
-            std::future::pending::<()>().await;
-            return;
-        }
+    let mut term = if let Ok(s) = signal(SignalKind::terminate()) {
+        s
+    } else {
+        std::future::pending::<()>().await;
+        return;
     };
-    let mut int = match signal(SignalKind::interrupt()) {
-        Ok(s) => s,
-        Err(_) => {
-            std::future::pending::<()>().await;
-            return;
-        }
+    let mut int = if let Ok(s) = signal(SignalKind::interrupt()) {
+        s
+    } else {
+        std::future::pending::<()>().await;
+        return;
     };
-    let mut hup = match signal(SignalKind::hangup()) {
-        Ok(s) => s,
-        Err(_) => {
-            std::future::pending::<()>().await;
-            return;
-        }
+    let mut hup = if let Ok(s) = signal(SignalKind::hangup()) {
+        s
+    } else {
+        std::future::pending::<()>().await;
+        return;
     };
     tokio::select! {
         _ = term.recv() => {}
@@ -57,6 +54,7 @@ pub struct TerminalGuard {
 
 impl TerminalGuard {
     /// Guard that undoes crossterm raw mode, alternate screen, and mouse capture.
+    #[must_use]
     pub fn new_crossterm() -> Self {
         Self {
             cleanup: Some(Box::new(|| {

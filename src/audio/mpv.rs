@@ -73,7 +73,7 @@ pub struct MpvController {
     process: Option<Child>,
     request_id: AtomicU64,
     writer: Option<OwnedWriteHalf>,
-    /// Outstanding requests keyed by request_id; reader task resolves.
+    /// Outstanding requests keyed by `request_id`; reader task resolves.
     pending: PendingMap,
     /// Background reader task; aborted on disconnect/shutdown.
     reader_handle: Option<tokio::task::JoinHandle<()>>,
@@ -99,6 +99,7 @@ fn parse_mpv_version(raw: &str) -> Option<(u16, u16)> {
 
 impl MpvController {
     /// Construct against the default runtime-dir socket path.
+    #[must_use]
     pub fn new() -> Self {
         Self::with_socket_path(mpv_socket_path())
     }
@@ -111,6 +112,7 @@ impl MpvController {
     /// let mut ctrl = MpvController::with_socket_path(PathBuf::from("/tmp/ferrosonic-doctest.sock"));
     /// assert!(!ctrl.is_running(), "fresh controller has no IPC yet");
     /// ```
+    #[must_use]
     pub fn with_socket_path(socket_path: PathBuf) -> Self {
         let (event_tx, _) = tokio::sync::broadcast::channel(EVENT_CHANNEL_CAP);
         Self {
@@ -357,8 +359,7 @@ impl MpvController {
             Err(_) => {
                 self.pending.lock().await.remove(&request_id);
                 Err(AudioError::MpvIpc(format!(
-                    "mpv command timeout after {:?} (req {})",
-                    COMMAND_DEADLINE, request_id
+                    "mpv command timeout after {COMMAND_DEADLINE:?} (req {request_id})"
                 )))
             }
         }
@@ -601,7 +602,7 @@ impl MpvController {
                 Some(24)
             } else if f.contains("16") {
                 Some(16)
-            } else if f.contains("8") {
+            } else if f.contains('8') {
                 Some(8)
             } else {
                 None
@@ -629,7 +630,7 @@ impl MpvController {
         Ok(count.map(|c| match c {
             1 => "Mono".to_string(),
             2 => "Stereo".to_string(),
-            n => format!("{}ch", n),
+            n => format!("{n}ch"),
         }))
     }
 

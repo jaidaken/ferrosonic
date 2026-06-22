@@ -43,7 +43,7 @@ impl SocketClient {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let pending: Arc<PendingMap> = Arc::new(Mutex::new(HashMap::new()));
 
-        let client = Arc::new(SocketClient {
+        let client = Arc::new(Self {
             next_id: AtomicU64::new(1),
             writer_tx,
             pending: pending.clone(),
@@ -60,8 +60,8 @@ impl SocketClient {
             let _ = write_half.shutdown().await;
         });
 
-        let reader_pending = pending.clone();
-        let reader_events = event_tx.clone();
+        let reader_pending = pending;
+        let reader_events = event_tx;
         tokio::spawn(async move {
             let mut reader = read_half;
             loop {
@@ -86,8 +86,7 @@ impl SocketClient {
                         let mut map = reader_pending.lock().await;
                         if let Some(tx) = map.remove(&id) {
                             let _ = tx.send(Err(IpcError::Daemon(format!(
-                                "unknown response variant: {}",
-                                body
+                                "unknown response variant: {body}"
                             ))));
                         }
                     }

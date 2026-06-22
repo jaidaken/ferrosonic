@@ -24,7 +24,8 @@ pub struct NowPlayingWidget<'a> {
 
 impl<'a> NowPlayingWidget<'a> {
     /// Widget over the current now-playing state.
-    pub fn new(now_playing: &'a NowPlaying, colors: ThemeColors) -> Self {
+    #[must_use]
+    pub const fn new(now_playing: &'a NowPlaying, colors: ThemeColors) -> Self {
         Self {
             now_playing,
             focused: false,
@@ -34,13 +35,15 @@ impl<'a> NowPlayingWidget<'a> {
     }
 
     /// Builder: mark the pane focused for border styling.
-    pub fn focused(mut self, focused: bool) -> Self {
+    #[must_use]
+    pub const fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
     }
 
     /// Builder: reserve columns on the left for cover art.
-    pub fn art_reserved_cols(mut self, cols: u16) -> Self {
+    #[must_use]
+    pub const fn art_reserved_cols(mut self, cols: u16) -> Self {
         self.art_reserved_cols = cols;
         self
     }
@@ -50,6 +53,7 @@ impl<'a> NowPlayingWidget<'a> {
 /// reservation, centered. `cell_size` is the pixel dimensions of one
 /// terminal cell; we choose `art_w` / `art_h` so `art_w * cell.0 ==
 /// art_h * cell.1` (rendered pixels match → square cover).
+#[must_use]
 pub fn art_rect(area: Rect, cover_art_cols: u16, cell_size: (u16, u16)) -> Option<Rect> {
     if cover_art_cols == 0 || area.height < 4 || area.width < cover_art_cols + 20 {
         return None;
@@ -62,9 +66,9 @@ pub fn art_rect(area: Rect, cover_art_cols: u16, cell_size: (u16, u16)) -> Optio
     let right_w = cover_art_cols;
     let right_h = inner.height.saturating_sub(1);
 
-    let (cw, ch) = (cell_size.0.max(1) as u32, cell_size.1.max(1) as u32);
+    let (cw, ch) = (u32::from(cell_size.0.max(1)), u32::from(cell_size.1.max(1)));
     // For visually square output: art_w/art_h = ch/cw.
-    let art_h = (right_h as u32).min((right_w as u32) * cw / ch);
+    let art_h = u32::from(right_h).min(u32::from(right_w) * cw / ch);
     let art_w = art_h * ch / cw;
     if art_w == 0 || art_h == 0 {
         return None;
@@ -142,21 +146,21 @@ impl Widget for NowPlayingWidget<'_> {
 fn build_quality_string(np: &NowPlaying) -> String {
     let mut parts = Vec::new();
     if let Some(ref fmt) = np.format {
-        parts.push(fmt.to_string().to_uppercase());
+        parts.push(fmt.clone().to_uppercase());
     }
     if let Some(bits) = np.bit_depth {
-        parts.push(format!("{}-bit", bits));
+        parts.push(format!("{bits}-bit"));
     }
     if let Some(rate) = np.sample_rate {
-        let khz = rate as f64 / 1000.0;
+        let khz = f64::from(rate) / 1000.0;
         if khz == khz.floor() {
             parts.push(format!("{}kHz", khz as u32));
         } else {
-            parts.push(format!("{:.1}kHz", khz));
+            parts.push(format!("{khz:.1}kHz"));
         }
     }
     if let Some(ref channels) = np.channels {
-        parts.push(channels.to_string());
+        parts.push(channels.clone());
     }
     parts.join(" │ ")
 }
@@ -247,7 +251,7 @@ pub fn render_progress_bar(
         return;
     }
 
-    let time_str = format!("{} / {}", pos, dur);
+    let time_str = format!("{pos} / {dur}");
     let time_width = time_str.len() as u16;
 
     let bar_width = area.width.saturating_sub(time_width + 3);
@@ -263,7 +267,7 @@ pub fn render_progress_bar(
 
     let bar_start = start_x + time_width + 2;
     if bar_width > 0 {
-        let filled = (bar_width as f64 * progress) as u16;
+        let filled = (f64::from(bar_width) * progress) as u16;
 
         for x in bar_start..(bar_start + filled) {
             buf[(x, area.y)]

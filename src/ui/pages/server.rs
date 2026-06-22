@@ -173,7 +173,7 @@ fn render_button(
         Style::default().fg(colors.muted)
     };
 
-    let text = format!("[ {} ]", label);
+    let text = format!("[ {label} ]");
     let button = Paragraph::new(text).style(style);
     frame.render_widget(button, area);
 }

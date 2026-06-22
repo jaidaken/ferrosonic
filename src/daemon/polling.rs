@@ -15,7 +15,7 @@ impl DaemonCore {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    _ = self.shutdown_signal() => return,
+                    () = self.shutdown_signal() => return,
                     next = rx.recv() => {
                         if next.is_none() { return; }
                     }
@@ -49,7 +49,7 @@ impl DaemonCore {
             watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
-                    _ = core.shutdown_signal() => return,
+                    () = core.shutdown_signal() => return,
                     _ = tick.tick() => core.update_playback_info().await,
                     _ = watchdog.tick() => {
                         if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {

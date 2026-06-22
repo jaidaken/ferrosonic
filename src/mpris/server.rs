@@ -21,6 +21,7 @@ const API_VERSION: &str = "1.16.1";
 const CLIENT_NAME: &str = "ferrosonic";
 
 /// Authenticated getCoverArt URL for MPRIS metadata; None when unconfigured.
+#[must_use]
 pub fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String> {
     if config.base_url.is_empty() || cover_art_id.is_empty() {
         return None;
@@ -241,7 +242,7 @@ impl PlayerInterface for MprisPlayer {
             metadata.set_album(song.album);
 
             if let Some(duration) = song.duration {
-                metadata.set_length(Some(Time::from_micros(duration as i64 * 1_000_000)));
+                metadata.set_length(Some(Time::from_micros(i64::from(duration) * 1_000_000)));
             }
 
             if let Some(track) = song.track {
@@ -289,15 +290,12 @@ impl PlayerInterface for MprisPlayer {
 
     async fn can_go_next(&self) -> fdo::Result<bool> {
         let ds = self.daemon_state.read().await;
-        Ok(ds
-            .queue_position
-            .map(|p| p + 1 < ds.queue.len())
-            .unwrap_or(false))
+        Ok(ds.queue_position.is_some_and(|p| p + 1 < ds.queue.len()))
     }
 
     async fn can_go_previous(&self) -> fdo::Result<bool> {
         let ds = self.daemon_state.read().await;
-        Ok(ds.queue_position.map(|p| p > 0).unwrap_or(false))
+        Ok(ds.queue_position.is_some_and(|p| p > 0))
     }
 
     async fn can_play(&self) -> fdo::Result<bool> {
@@ -359,11 +357,8 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
             PlaybackState::Paused => PlaybackStatus::Paused,
             PlaybackState::Stopped => PlaybackStatus::Stopped,
         };
-        let cgn = ds
-            .queue_position
-            .map(|p| p + 1 < ds.queue.len())
-            .unwrap_or(false);
-        let cgp = ds.queue_position.map(|p| p > 0).unwrap_or(false);
+        let cgn = ds.queue_position.is_some_and(|p| p + 1 < ds.queue.len());
+        let cgp = ds.queue_position.is_some_and(|p| p > 0);
         (pb, cgn, cgp, ds.current_song().cloned(), ds.config.clone())
     };
 
@@ -388,7 +383,7 @@ fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
     metadata.set_album(song.album.clone());
 
     if let Some(duration) = song.duration {
-        metadata.set_length(Some(Time::from_micros(duration as i64 * 1_000_000)));
+        metadata.set_length(Some(Time::from_micros(i64::from(duration) * 1_000_000)));
     }
 
     if let Some(ref cover_art_id) = song.cover_art {

@@ -57,7 +57,7 @@ pub struct Config {
     #[serde(rename = "Username", default)]
     pub username: String,
 
-    /// Resolved at load-time from env, PasswordEval, PasswordFile, then this inline value. Secret masks Debug + Serialize so accidental log/wire paths emit "***"; save_to_file routes through ConfigOnDisk which writes the real value.
+    /// Resolved at load-time from env, `PasswordEval`, `PasswordFile`, then this inline value. Secret masks Debug + Serialize so accidental log/wire paths emit "***"; `save_to_file` routes through `ConfigOnDisk` which writes the real value.
     #[serde(rename = "Password", default)]
     pub password: Secret,
 
@@ -254,11 +254,12 @@ pub enum RepeatMode {
 
 impl RepeatMode {
     /// Lowercase label shown in the footer.
-    pub fn label(self) -> &'static str {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
         match self {
-            RepeatMode::Off => "off",
-            RepeatMode::One => "one",
-            RepeatMode::All => "all",
+            Self::Off => "off",
+            Self::One => "one",
+            Self::All => "all",
         }
     }
     /// Step through `Off -> One -> All -> Off` for UI cycling.
@@ -269,11 +270,12 @@ impl RepeatMode {
     /// assert_eq!(RepeatMode::One.cycle(), RepeatMode::All);
     /// assert_eq!(RepeatMode::All.cycle(), RepeatMode::Off);
     /// ```
-    pub fn cycle(self) -> Self {
+    #[must_use]
+    pub const fn cycle(self) -> Self {
         match self {
-            RepeatMode::Off => RepeatMode::One,
-            RepeatMode::One => RepeatMode::All,
-            RepeatMode::All => RepeatMode::Off,
+            Self::Off => Self::One,
+            Self::One => Self::All,
+            Self::All => Self::Off,
         }
     }
     /// Auto-advance: `One` repeats current, `All` wraps, `Off` returns `None` at the end (caller handles auto-continue / stop).
@@ -284,14 +286,15 @@ impl RepeatMode {
     /// assert_eq!(RepeatMode::All.next_auto(4, 5), Some(0));
     /// assert_eq!(RepeatMode::Off.next_auto(4, 5), None);
     /// ```
-    pub fn next_auto(self, current: usize, queue_len: usize) -> Option<usize> {
+    #[must_use]
+    pub const fn next_auto(self, current: usize, queue_len: usize) -> Option<usize> {
         if queue_len == 0 {
             return None;
         }
         match self {
-            RepeatMode::One => Some(current),
-            RepeatMode::All => Some((current + 1) % queue_len),
-            RepeatMode::Off => {
+            Self::One => Some(current),
+            Self::All => Some((current + 1) % queue_len),
+            Self::Off => {
                 if current + 1 < queue_len {
                     Some(current + 1)
                 } else {
@@ -308,13 +311,14 @@ impl RepeatMode {
     /// assert_eq!(RepeatMode::All.next_manual(0, 3), Some(1));
     /// assert_eq!(RepeatMode::Off.next_manual(2, 3), None);
     /// ```
-    pub fn next_manual(self, current: usize, queue_len: usize) -> Option<usize> {
+    #[must_use]
+    pub const fn next_manual(self, current: usize, queue_len: usize) -> Option<usize> {
         if queue_len == 0 {
             return None;
         }
         match self {
-            RepeatMode::All | RepeatMode::One => Some((current + 1) % queue_len),
-            RepeatMode::Off => {
+            Self::All | Self::One => Some((current + 1) % queue_len),
+            Self::Off => {
                 if current + 1 < queue_len {
                     Some(current + 1)
                 } else {
@@ -331,13 +335,14 @@ impl RepeatMode {
     /// assert_eq!(RepeatMode::One.prev_wrap(5), Some(4));
     /// assert_eq!(RepeatMode::Off.prev_wrap(5), None);
     /// ```
-    pub fn prev_wrap(self, queue_len: usize) -> Option<usize> {
+    #[must_use]
+    pub const fn prev_wrap(self, queue_len: usize) -> Option<usize> {
         if queue_len == 0 {
             return None;
         }
         match self {
-            RepeatMode::All | RepeatMode::One => Some(queue_len - 1),
-            RepeatMode::Off => None,
+            Self::All | Self::One => Some(queue_len - 1),
+            Self::Off => None,
         }
     }
 }
@@ -369,31 +374,32 @@ impl Default for Config {
 }
 
 impl Config {
-    fn default_cava_size() -> u8 {
+    const fn default_cava_size() -> u8 {
         40
     }
 
-    fn default_daemon() -> bool {
+    const fn default_daemon() -> bool {
         true
     }
 
-    fn default_cover_art_size() -> u8 {
+    const fn default_cover_art_size() -> u8 {
         16
     }
 
-    fn default_scrobble() -> bool {
+    const fn default_scrobble() -> bool {
         true
     }
 
-    fn default_notifications() -> bool {
+    const fn default_notifications() -> bool {
         true
     }
 
-    fn default_rate_switch_delay_ms() -> u32 {
+    const fn default_rate_switch_delay_ms() -> u32 {
         500
     }
 
     /// Alias for [`Config::default`].
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -433,7 +439,7 @@ impl Config {
         }
 
         let contents = std::fs::read_to_string(path)?;
-        let mut config: Config = toml::from_str(&contents)?;
+        let mut config: Self = toml::from_str(&contents)?;
         config.resolve_password();
         // Warn on unknown top-level keys so typos like `RepeateMode`
         // don't silently revert to the default.
@@ -458,10 +464,11 @@ impl Config {
     /// assert_eq!(Config::expand_tilde("/etc/passwd"), "/etc/passwd");
     /// assert_eq!(Config::expand_tilde(""), "");
     /// ```
+    #[must_use]
     pub fn expand_tilde(path: &str) -> String {
         if let Some(rest) = path.strip_prefix("~/") {
             if let Ok(home) = std::env::var("HOME") {
-                return format!("{}/{}", home, rest);
+                return format!("{home}/{rest}");
             }
         }
         path.to_string()
@@ -535,7 +542,7 @@ impl Config {
         self.save_to_file(&path)
     }
 
-    /// Atomically write the config TOML; round-trips via load_from_file.
+    /// Atomically write the config TOML; round-trips via `load_from_file`.
     ///
     /// ```
     /// use ferrosonic::config::Config;
@@ -556,7 +563,7 @@ impl Config {
         Ok(())
     }
 
-    /// True when base_url, username, and password are all non-empty.
+    /// True when `base_url`, username, and password are all non-empty.
     ///
     /// ```
     /// use ferrosonic::config::Config;
@@ -568,16 +575,18 @@ impl Config {
     /// c.password = Secret::from("p");
     /// assert!(c.is_configured());
     /// ```
+    #[must_use]
     pub fn is_configured(&self) -> bool {
         !self.base_url.is_empty() && !self.username.is_empty() && !self.password.is_empty()
     }
 
     /// The resolved password in plain text.
+    #[must_use]
     pub fn password_str(&self) -> &str {
         self.password.reveal()
     }
 
-    /// Reject empty or malformed base_url. Empty username/password warn only.
+    /// Reject empty or malformed `base_url`. Empty username/password warn only.
     ///
     /// ```
     /// use ferrosonic::config::Config;
@@ -636,7 +645,7 @@ fn expand_env_tilde(arg: &str) -> String {
                 let end = expanded[i + 2..].find('}').map(|p| i + 2 + p);
                 match end {
                     Some(e) => (&expanded[i + 2..e], e + 1),
-                    None => (&expanded[i + 1..i + 1], i + 1),
+                    None => (&expanded[(i + 1)..=i], i + 1),
                 }
             } else {
                 let mut e = i + 1;

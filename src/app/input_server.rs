@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::error::Error;
 
-use super::*;
+use super::{App, AppState, DaemonClient, DaemonRequest};
 
 const MAX_FIELD_LEN: usize = 1024;
 
@@ -123,8 +123,7 @@ impl App {
                                     daemon: &ds,
                                     client: &mut cs,
                                 };
-                                state.client.server_state.status =
-                                    Some(format!("IPC error: {}", e));
+                                state.client.server_state.status = Some(format!("IPC error: {e}"));
                             }
                         }
                         return Ok(());
@@ -176,7 +175,7 @@ impl App {
                                     client: &mut cs,
                                 };
                                 state.client.server_state.status =
-                                    Some(format!("Save failed: {}", e));
+                                    Some(format!("Save failed: {e}"));
                             }
                         }
                         return Ok(());

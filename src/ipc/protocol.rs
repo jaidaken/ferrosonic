@@ -323,7 +323,7 @@ pub enum DaemonEvent {
     ConfigChanged(Config),
     /// Daemon is shutting down; subscribers should disconnect.
     Shutdown,
-    /// Opt-in pull-style alternative to the bulk ArtistsChanged etc events.
+    /// Opt-in pull-style alternative to the bulk `ArtistsChanged` etc events.
     LibraryVersionChanged(u64),
 }
 

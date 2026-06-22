@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-/// Honors FERROSONIC_CONFIG_DIR for tests; XDG otherwise.
+/// Honors `FERROSONIC_CONFIG_DIR` for tests; XDG otherwise.
+#[must_use]
 pub fn config_dir() -> Option<PathBuf> {
     if let Some(override_path) = std::env::var_os("FERROSONIC_CONFIG_DIR") {
         return Some(PathBuf::from(override_path));
@@ -9,21 +10,25 @@ pub fn config_dir() -> Option<PathBuf> {
 }
 
 /// Path of `config.toml` under the XDG config dir.
+#[must_use]
 pub fn config_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("config.toml"))
 }
 
 /// Path of the user themes directory.
+#[must_use]
 pub fn themes_dir() -> Option<PathBuf> {
     config_dir().map(|p| p.join("themes"))
 }
 
 /// Path of the daemon log file.
+#[must_use]
 pub fn log_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("ferrosonic.log"))
 }
 
 /// Path of the mpv IPC socket under the runtime dir.
+#[must_use]
 pub fn mpv_socket_path() -> PathBuf {
     // Prefer $XDG_RUNTIME_DIR (per-user, mode 0700) when present;
     // otherwise UID-scope the /tmp path so two users on the same host
@@ -35,10 +40,11 @@ pub fn mpv_socket_path() -> PathBuf {
         }
     }
     let uid = unsafe { libc::getuid() };
-    std::env::temp_dir().join(format!("ferrosonic-mpv-{}.sock", uid))
+    std::env::temp_dir().join(format!("ferrosonic-mpv-{uid}.sock"))
 }
 
 /// Path of the persisted queue snapshot.
+#[must_use]
 pub fn queue_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("queue.json"))
 }
