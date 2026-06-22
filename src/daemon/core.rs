@@ -425,6 +425,14 @@ impl DaemonCore {
         self.config_gen.load(std::sync::atomic::Ordering::Acquire)
     }
 
+    /// Test seam: bump `config_gen` as `update_server_config` does, so a test
+    /// can simulate a server change racing an in-flight library refresh.
+    #[doc(hidden)]
+    pub fn bump_config_gen_for_test(&self) {
+        self.config_gen
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+    }
+
     pub(super) fn bump_library_version(&self) {
         let v = self
             .library_version

@@ -107,6 +107,32 @@ impl FakeSubsonic {
             .await;
     }
 
+    /// Like `expect_starred_with` but holds the response for `delay_ms`, so a
+    /// test can act (e.g. bump config_gen) while the refresh is mid-request.
+    pub async fn expect_starred_with_delay(&self, songs: &[&str], delay_ms: u64) {
+        let song_list: Vec<Value> = songs
+            .iter()
+            .enumerate()
+            .map(|(i, title)| {
+                json!({
+                    "id": format!("starred-{}", i),
+                    "title": title,
+                    "starred": "2026-05-11T00:00:00Z",
+                    "artist": "X",
+                    "album": "Y"
+                })
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getStarred2"))
+            .respond_with(
+                ok_body(json!({ "starred2": { "song": song_list } }))
+                    .set_delay(std::time::Duration::from_millis(delay_ms)),
+            )
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_music_folders(&self, folders: &[(i64, &str)]) {
         let list: Vec<Value> = folders
             .iter()
