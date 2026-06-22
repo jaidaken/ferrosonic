@@ -2,7 +2,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::error::Error;
 
-use super::{App, AppState, DaemonClient, DaemonRequest};
+use super::{App, AppState, DaemonRequest};
 
 #[derive(Clone, Copy)]
 enum SettingChange {

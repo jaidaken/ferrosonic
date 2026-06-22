@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode, LayoutAreas};
+use super::{App, AppState, DaemonRequest, EnqueueMode, LayoutAreas};
 
 impl App {
     pub(super) async fn handle_playlists_click(

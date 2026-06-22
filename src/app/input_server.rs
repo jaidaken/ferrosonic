@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::error::Error;
 
-use super::{App, AppState, DaemonClient, DaemonRequest};
+use super::{App, AppState, DaemonRequest};
 
 const MAX_FIELD_LEN: usize = 1024;
 

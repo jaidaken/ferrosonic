@@ -2,7 +2,7 @@ use crossterm::event::{self, MouseButton, MouseEventKind};
 
 use crate::error::Error;
 
-use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode, LayoutAreas, Page};
+use super::{App, AppState, DaemonRequest, EnqueueMode, LayoutAreas, Page};
 
 impl App {
     /// Route one mouse event to header buttons or the active page.

@@ -2,7 +2,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::error::Error;
 
-use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode};
+use super::{App, AppState, DaemonRequest, EnqueueMode};
 
 impl App {
     pub(super) async fn handle_playlists_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {

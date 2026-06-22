@@ -5,7 +5,7 @@ use tracing::info;
 use crate::app::page_state::{AlbumSort, LibraryView};
 use crate::error::Error;
 
-use super::{App, AppState, DaemonClient, DaemonRequest, EnqueueMode};
+use super::{App, AppState, DaemonRequest, EnqueueMode};
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;

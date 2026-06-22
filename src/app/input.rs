@@ -2,7 +2,7 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
 use crate::error::Error;
 
-use super::{App, AppState, DaemonClient, DaemonRequest, Page};
+use super::{App, AppState, DaemonRequest, Page};
 
 impl App {
     /// Handle terminal events. Pub for integration tests; production

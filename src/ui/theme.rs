@@ -275,9 +275,9 @@ pub fn seed_default_themes(dir: &Path) {
         if !path.exists() {
             let res = std::fs::write(&path, content);
             if let Err(e) = res {
-                error!("Failed to write theme {}: {}", filename, e)
+                error!("Failed to write theme {}: {}", filename, e);
             } else {
-                info!("Seeded theme file: {}", filename)
+                info!("Seeded theme file: {}", filename);
             }
         }
     }

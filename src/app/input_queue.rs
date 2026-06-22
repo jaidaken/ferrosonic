@@ -2,7 +2,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::error::Error;
 
-use super::{App, AppState, DaemonClient, DaemonRequest};
+use super::{App, AppState, DaemonRequest};
 
 impl App {
     pub(super) async fn handle_queue_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
