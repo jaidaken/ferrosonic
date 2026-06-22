@@ -40,22 +40,18 @@ authoritative current status.
   - open/low-value: cava raw-FD RAII guard (`cava_pipe.rs` still `from_raw_fd` without a guard); mpv reader single-line framing (works in practice: mpv emits one JSON per line; parser is fuzz-guarded); `queue.json` 0o600 (now in the config dir not `/tmp`, so low severity; song ids are not secrets).
   - false-positive: mpv `send_command` multi-lock on `pending` is safe; request ids are unique (`AtomicU64`), so no wrong-oneshot demux. No fix.
 - **P8 MEDIUM/LOW TRIAGE** DONE. `docs/KNOWN-ISSUES.md` now exists (accepted/deferred items). The pedantic/nursery clippy backlog was cleared to **0** on lib+bins (2026-06-22 de-silencing pass: real fixes + per-site allows, zero global silences; see KNOWN-ISSUES build-hygiene).
-- **P9 CI GATES** PARTIAL.
-  - done: `test.yml` + `release.yml` exist; `deny.toml` (cargo-deny); nightly cron; `unwrap_check` CI job denies `unwrap_used`/`expect_used` on lib+bins (machine-enforced, not just the grep backstop).
-  - open: CI triggers are `workflow_dispatch` + cron only, NOT push/PR (`test.yml:6-8`); the `[lints.clippy]` table still declares `unwrap_used`/`expect_used` as `warn` (the deny lives in the CI job, not the crate manifest).
+- **P9 CI GATES** DONE.
+  - `test.yml` gates on every push to `master` and on PRs (`on: push/pull_request`), plus a nightly cron for the slow mutants job; `release.yml` fires on tag push; `deny.toml` (cargo-deny); `unwrap_check` CI job denies `unwrap_used`/`expect_used` on lib+bins (machine-enforced, not just the grep backstop).
+  - residual nit (not a gap): the `[lints.clippy]` table still declares `unwrap_used`/`expect_used` as `warn` (the deny lives in the CI job, not the crate manifest).
 - **P10 RELEASE** DONE: 0.5.x then 0.6.0 shipped (tag-triggered `release.yml`, musl binary attached).
 
 ### New finding (not in the original audit)
 
-- **TEST-FIXTURE /tmp LEAK.** Tests call `tempfile::tempdir()` (135 call sites) producing `/tmp/.tmpXXXXXX/`. `TempDir`'s `Drop` is skipped on SIGKILL (nextest timeout, cargo-mutants group-kill, `panic=abort`), so the dirs survive. 9,594 present 2026-06-15, accumulating. The production mpv socket no longer leaks (fixed path, `paths.rs:27`). Fix = design choice (relocate test roots under a swept prefix vs janitor pass).
+- **TEST-FIXTURE /tmp LEAK (latent, not currently accumulating).** Tests call `tempfile::tempdir()` producing `/tmp/.tmpXXXXXX/`; `TempDir`'s `Drop` is skipped on SIGKILL (nextest timeout, cargo-mutants group-kill, `panic=abort`), so a killed run can leave dirs behind. The 9,594 seen 2026-06-15 are gone (0 present 2026-06-22). The mechanism remains, so a future hard-killed run can re-leak; a swept-prefix test root or janitor pass would make it self-cleaning. The production mpv socket does not leak (fixed path, `paths.rs:27`).
 
 ### Worth doing, value-ranked
 
-1. **CI on push/PR** (P9). Nothing auto-gates regressions today. Low effort (edit `test.yml` triggers).
-2. **Test-fixture /tmp leak.** Active, accumulating. Fix needs a call (135 sites).
-3. **IPC per-connection idle timeout** (P4). Real: a hung client holds a writer task forever.
-4. **clippy `unwrap`/`expect` to deny** (P9): DONE via the `unwrap_check` CI job (scoped deny on lib+bins); the pedantic backlog that blocked a manifest-wide deny is now cleared to 0.
-5. **Release cut** (P10): DONE (0.6.0 shipped).
+1. **Test-fixture /tmp leak self-cleaning.** Latent (0 now, but a hard-killed run re-leaks). Swept-prefix root or janitor pass. The only non-feature stabilization item left; everything else here is DONE (P8 KNOWN-ISSUES, P9 CI gates + clippy deny, P10 0.6.0 release).
 
 ### Low-value / defer (localhost single-user IPC; defense-in-depth)
 
