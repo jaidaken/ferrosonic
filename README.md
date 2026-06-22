@@ -1,36 +1,43 @@
 # Ferrosonic
 
-A terminal-based Subsonic music client written in Rust, featuring bit-perfect audio playback, gapless transitions, and full desktop integration.
+A terminal Subsonic music client written in Rust: bit-perfect audio, gapless playback, and full desktop integration.
 
-Ferrosonic is inspired by [Termsonic](https://git.sixfoisneuf.fr/termsonic/about/), the original terminal Subsonic client written in Go by [SixFoisNeuf](https://www.sixfoisneuf.fr/posts/termsonic-a-terminal-client-for-subsonic/). Ferrosonic is a ground-up rewrite in Rust with additional features including PipeWire sample rate switching for bit-perfect audio, MPRIS2 media controls, multiple color themes, and mouse support.
+It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termsonic/about/) (a Go client by [SixFoisNeuf](https://www.sixfoisneuf.fr/posts/termsonic-a-terminal-client-for-subsonic/)), adding PipeWire sample-rate switching, MPRIS2 controls, themes, and mouse support.
 
 ## Features
 
-- **Bit-perfect audio** - Automatic PipeWire sample rate switching to match the source material (44.1kHz, 48kHz, 96kHz, 192kHz, etc.)
-- **Gapless playback** - Seamless transitions between tracks with pre-buffered next track
-- **Persistent playback (optional)** - A background daemon owns the audio session so music keeps playing when you close the terminal. It is the same `ferrosonic` binary re-launched in the background, auto-spawned by the TUI; toggle off in Settings for single-process mode.
-- **MPRIS2 integration** - Full desktop media control support (play, pause, stop, next, previous, seek) with push-style `PropertiesChanged` notifications
-- **Desktop notifications** - Track-change notifications with cover art via the freedesktop.org `org.freedesktop.Notifications` interface (works under mako, dunst, GNOME, KDE); fired daemon-side so they appear even with the TUI closed
-- **Scrobbling** - Reports plays to the server (Last.fm / ListenBrainz when linked server-side) via classic `scrobble` plus the OpenSubsonic `reportPlayback` extension when the server advertises it
-- **Library page** - Tree-based artist/album browser with expandable artists and album listings
-- **Quick Play page** - Jump straight into your **Starred** songs or a **Random** roll without browsing
-- **Star songs** - Mark favourites with `n` (currently-playing) or `m` (highlighted); starred tracks show a ★ everywhere and populate the Quick Play Starred view
-- **Shuffle play** - Shuffle all songs by a selected artist or album directly from the Library page
-- **Repeat modes** - Cycle Off / One / All with `r`; the gapless pre-loader re-preloads the same track on One and wraps on All
-- **Cover art** - Display album art in the now-playing section using kitty / iTerm2 / sixel image protocols; falls back to half-blocks on plainer terminals (chafa-enhanced when the `chafa` library is installed)
-- **Playlist support** - Browse and play server playlists with shuffle capability
-- **Playlist editing** - Rename, delete, add songs, remove songs, and reorder server playlists from the Playlists page; add any highlighted song to a playlist via a picker
-- **Play queue management** - Add, remove, reorder, shuffle, and clear queue history; queue persists across daemon restarts
-- **Save queue as playlist** - Press `s` on the Queue page to create a server-side playlist from the current queue
-- **Audio quality display** - Real-time display of sample rate, bit depth, codec format, and channel layout
-- **Audio visualizer** - Integrated cava audio visualizer with theme-matched gradient colors
-- **13 built-in themes** - Default, Monokai, Dracula, Nord, Gruvbox, Catppuccin, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, One Dark, and Ayu Dark
-- **Custom themes** - Create your own themes as TOML files in `~/.config/ferrosonic/themes/`
-- **Mouse support** - Clickable buttons, tabs, lists, and progress bar seeking
-- **Library search** - `/` runs a single unified server-side `search3` across artists, albums, and songs at once, results shown together in the tree
-- **Library selection** - On multi-library servers, press `f` on the Library page to cycle which music folder (or all) the artist tree, album list, random songs, and search are scoped to; defaults to the server's main library, labels the active one in the pane title, and is remembered across restarts
-- **Multi-disc album support** - Proper disc and track number display
-- **Keyboard-driven** - Vim-style navigation (j/k) alongside arrow keys
+### Audio
+
+- **Bit-perfect output** - PipeWire switches the system sample rate to match the source (44.1, 48, 96, 192 kHz and others) and restores it on exit.
+- **Gapless playback** - the next track is pre-buffered into mpv before the current one ends.
+- **Quality readout** - live sample rate, bit depth, codec, and channel layout.
+- **Visualizer** - built-in cava pane with theme-matched gradient colors.
+
+### Library and queue
+
+- **Tree browser** - expandable artist/album view, with a flat album-list toggle (`v`).
+- **Unified search** - `/` runs one server-side `search3` across artists, albums, and songs together.
+- **Multi-library** - on multi-folder servers, `f` scopes the tree, album list, random songs, and search to one music folder; remembered across restarts.
+- **Quick Play** - jump straight into your Starred songs or a fresh Random roll, no browsing.
+- **Stars** - favourite tracks with `n` (playing) or `m` (highlighted); shown with a star everywhere.
+- **Shuffle and repeat** - shuffle any artist, album, or the whole library; cycle repeat Off/One/All with `r`.
+- **Queue** - add, remove, reorder, shuffle, and clear history; persists across daemon restarts; save as a server playlist with `s`.
+- **Playlists** - browse, play, and fully edit server playlists (rename, delete, add/remove/reorder songs).
+- **Multi-disc albums** - correct disc and track numbering.
+
+### Desktop integration
+
+- **Persistent playback** - an optional background daemon keeps music playing after you close the terminal. [Details below](#persistent-playback).
+- **MPRIS2** - full media-key control (play, pause, stop, next, previous, seek) with push-style `PropertiesChanged` updates.
+- **Notifications** - track-change desktop notifications with cover art, fired daemon-side so they appear with the TUI closed (mako, dunst, GNOME, KDE).
+- **Scrobbling** - reports plays via classic `scrobble` plus the OpenSubsonic `reportPlayback` extension when the server advertises it (Last.fm / ListenBrainz when linked server-side).
+
+### Interface
+
+- **13 themes** - Default, Monokai, Dracula, Nord, Gruvbox, Catppuccin, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, One Dark, Ayu Dark; plus custom TOML themes in `~/.config/ferrosonic/themes/`.
+- **Cover art** - kitty / iTerm2 / sixel image protocols, with a chafa-enhanced half-block fallback.
+- **Mouse support** - clickable tabs, buttons, lists, and progress-bar seeking.
+- **Keyboard-driven** - Vim-style `j`/`k` alongside arrow keys.
 
 ## Screenshots
 
