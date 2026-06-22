@@ -16,6 +16,7 @@ pub struct FakeMpv {
     _tempdir: TempDir,
     state: Arc<Mutex<FakeMpvState>>,
     changed: Arc<Notify>,
+    emit: Arc<Notify>,
     _accept_task: JoinHandle<()>,
 }
 
@@ -35,6 +36,9 @@ struct FakeMpvState {
     playlist: Vec<String>,
     commands: Vec<Vec<Value>>,
     fail_loadfile: bool,
+    /// Unsolicited event messages queued by tests; flushed to the connection
+    /// on `emit` notify, modeling mpv pushing events like `end-file`.
+    pending_events: Vec<Value>,
 }
 
 impl FakeMpv {
@@ -62,13 +66,16 @@ impl FakeMpv {
             ..Default::default()
         }));
         let changed = Arc::new(Notify::new());
+        let emit = Arc::new(Notify::new());
         let state_for_task = state.clone();
         let changed_for_task = changed.clone();
+        let emit_for_task = emit.clone();
         let accept_task = tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let state = state_for_task.clone();
                 let changed = changed_for_task.clone();
-                tokio::spawn(handle_connection(stream, state, changed));
+                let emit = emit_for_task.clone();
+                tokio::spawn(handle_connection(stream, state, changed, emit));
             }
         });
         Self {
@@ -76,6 +83,7 @@ impl FakeMpv {
             _tempdir: tempdir,
             state,
             changed,
+            emit,
             _accept_task: accept_task,
         }
     }
@@ -177,47 +185,78 @@ impl FakeMpv {
         }
         self.changed.notify_one();
     }
+
+    /// Push an unsolicited event message over the socket, like real mpv.
+    pub async fn emit_event(&self, event: Value) {
+        self.state.lock().await.pending_events.push(event);
+        self.emit.notify_one();
+    }
+
+    /// Emit an `end-file` event with `reason` (e.g. `"eof"`, `"stop"`).
+    pub async fn emit_end_file(&self, reason: &str) {
+        self.emit_event(json!({ "event": "end-file", "reason": reason }))
+            .await;
+    }
 }
 
 async fn handle_connection(
     stream: UnixStream,
     state: Arc<Mutex<FakeMpvState>>,
     changed: Arc<Notify>,
+    emit: Arc<Notify>,
 ) {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
     loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => break,
-            Ok(_) => {}
-            Err(_) => break,
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let req: Value = match serde_json::from_str(trimmed) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let command = req
-            .get("command")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let request_id = req.get("request_id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let (error, data) = process_command(&state, &command).await;
-        changed.notify_one();
-        let resp = match data {
-            Some(d) => json!({ "request_id": request_id, "error": error, "data": d }),
-            None => json!({ "request_id": request_id, "error": error }),
-        };
-        let mut bytes = serde_json::to_vec(&resp).expect("serialize fake mpv response");
-        bytes.push(b'\n');
-        if writer.write_all(&bytes).await.is_err() {
-            break;
+        tokio::select! {
+            // read_line appends; if this branch is cancelled by an emit, the
+            // partial line is retained and the next read continues it.
+            res = reader.read_line(&mut line) => {
+                match res {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+                let trimmed = line.trim().to_string();
+                line.clear();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let Ok(req) = serde_json::from_str::<Value>(&trimmed) else {
+                    continue;
+                };
+                let command = req
+                    .get("command")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let request_id = req.get("request_id").and_then(|v| v.as_u64()).unwrap_or(0);
+                let (error, data) = process_command(&state, &command).await;
+                changed.notify_one();
+                let resp = match data {
+                    Some(d) => json!({ "request_id": request_id, "error": error, "data": d }),
+                    None => json!({ "request_id": request_id, "error": error }),
+                };
+                let mut bytes = serde_json::to_vec(&resp).expect("serialize fake mpv response");
+                bytes.push(b'\n');
+                if writer.write_all(&bytes).await.is_err() {
+                    break;
+                }
+            }
+            () = emit.notified() => {
+                let events = {
+                    let mut s = state.lock().await;
+                    std::mem::take(&mut s.pending_events)
+                };
+                for ev in events {
+                    let mut bytes = serde_json::to_vec(&ev).expect("serialize fake mpv event");
+                    bytes.push(b'\n');
+                    if writer.write_all(&bytes).await.is_err() {
+                        return;
+                    }
+                }
+            }
         }
     }
 }
