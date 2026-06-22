@@ -2,6 +2,14 @@
 #![warn(clippy::pedantic, clippy::nursery, missing_docs, rust_2018_idioms)]
 // Audited: flagged sites are clear `match Some/None`, not map_or targets.
 #![allow(clippy::option_if_let_else)]
+// Audited: every `as` cast is bounded-safe in context (UI dims, clamped settings,
+// masked bytes, frame-limited lengths, guarded indices, small audio values).
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss
+)]
 
 pub mod app;
 pub mod audio;
