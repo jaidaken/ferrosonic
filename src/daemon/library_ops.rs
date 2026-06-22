@@ -23,7 +23,7 @@ impl DaemonCore {
                     return;
                 }
                 let mut state = self.state.write().await;
-                state.library.starred_songs = songs.clone();
+                state.library.starred_songs.clone_from(&songs);
                 state.library.rebuild_starred_index();
                 drop(state);
                 self.emit(DaemonEvent::StarredChanged(songs));
@@ -52,7 +52,7 @@ impl DaemonCore {
                     return;
                 }
                 let mut state = self.state.write().await;
-                state.library.random_songs = songs.clone();
+                state.library.random_songs.clone_from(&songs);
                 drop(state);
                 self.emit(DaemonEvent::RandomChanged(songs));
                 self.bump_library_version();
@@ -84,7 +84,7 @@ impl DaemonCore {
                 }
                 let mut state = self.state.write().await;
                 let count = artists.len();
-                state.library.artists = artists.clone();
+                state.library.artists.clone_from(&artists);
                 drop(state);
                 info!("Loaded {} artists", count);
                 self.emit(DaemonEvent::ArtistsChanged(artists));
@@ -114,7 +114,7 @@ impl DaemonCore {
                 }
                 let mut state = self.state.write().await;
                 let count = playlists.len();
-                state.library.playlists = playlists.clone();
+                state.library.playlists.clone_from(&playlists);
                 drop(state);
                 info!("Loaded {} playlists", count);
                 self.emit(DaemonEvent::PlaylistsChanged(playlists));
@@ -142,7 +142,7 @@ impl DaemonCore {
         };
         let default_to = {
             let mut state = self.state.write().await;
-            state.library.music_folders = folders.clone();
+            state.library.music_folders.clone_from(&folders);
             if state.config.music_folder_chosen {
                 None
             } else {
@@ -341,7 +341,7 @@ impl DaemonCore {
             let mut state = self.state.write().await;
             if let Some(list) = refreshed.as_ref() {
                 if !stale {
-                    state.library.starred_songs = list.clone();
+                    state.library.starred_songs.clone_from(&list);
                     state.library.rebuild_starred_index();
                 }
             }
@@ -403,7 +403,7 @@ impl DaemonCore {
         match client.get_all_albums().await {
             Ok(albums) => {
                 let mut state = self.state.write().await;
-                state.library.all_albums = albums.clone();
+                state.library.all_albums.clone_from(&albums);
                 drop(state);
                 info!("Loaded {} albums (flat list)", albums.len());
                 albums
@@ -443,27 +443,27 @@ fn apply_star_to_cached(daemon: &mut DaemonState, song_id: &str, starred: bool) 
     for list in lists {
         for song in list.iter_mut() {
             if song.id == song_id {
-                song.starred = marker.clone();
+                song.starred.clone_from(&marker);
             }
         }
     }
     for list in daemon.library.album_songs_cache.values_mut() {
         for song in list.iter_mut() {
             if song.id == song_id {
-                song.starred = marker.clone();
+                song.starred.clone_from(&marker);
             }
         }
     }
     for list in daemon.library.playlist_songs_cache.values_mut() {
         for song in list.iter_mut() {
             if song.id == song_id {
-                song.starred = marker.clone();
+                song.starred.clone_from(&marker);
             }
         }
     }
     if let Some(np) = daemon.now_playing.song.as_mut() {
         if np.id == song_id {
-            np.starred = marker.clone();
+            np.starred.clone_from(&marker);
         }
     }
     sync_starred_songs(daemon, song_id, starred, marker);
@@ -481,7 +481,7 @@ fn sync_starred_songs(
         if already {
             for s in &mut daemon.library.starred_songs {
                 if s.id == song_id {
-                    s.starred = marker.clone();
+                    s.starred.clone_from(&marker);
                 }
             }
         } else {

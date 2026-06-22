@@ -183,8 +183,8 @@ pub fn new_shared_daemon_state_with_restored_queue(config: Config) -> SharedDaem
 #[must_use]
 pub fn new_shared_client_state(config: &Config) -> SharedClientState {
     let mut client = crate::app::client_state::ClientState::default();
-    client.server_state.base_url = config.base_url.clone();
-    client.server_state.username = config.username.clone();
+    client.server_state.base_url.clone_from(&config.base_url);
+    client.server_state.username.clone_from(&config.username);
     client.server_state.password = config.password.clone();
     client.settings_state.cava_enabled = config.cava;
     client.settings_state.cava_size = config.cava_size.clamp(10, 80);

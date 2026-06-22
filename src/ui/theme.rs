@@ -106,7 +106,7 @@ fn hex_to_color(hex: &str) -> Color {
 fn parse_gradient(values: &[String], fallback: &[&str; 8]) -> [String; 8] {
     let mut result: [String; 8] = std::array::from_fn(|i| fallback[i].to_string());
     for (i, v) in values.iter().enumerate().take(8) {
-        result[i] = v.clone();
+        result[i].clone_from(&v);
     }
     result
 }

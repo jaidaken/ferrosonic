@@ -452,7 +452,7 @@ impl DaemonCore {
                 break;
             }
             if fallback.is_empty() {
-                fallback = batch.clone();
+                fallback.clone_from(&batch);
             }
             for song in batch {
                 if fresh.len() >= LOOKAHEAD {

@@ -110,7 +110,7 @@ impl App {
                                     client: &mut cs,
                                 };
                                 let count = songs.len();
-                                state.client.artists.songs = songs.clone();
+                                state.client.artists.songs.clone_from(&songs);
                                 state.client.artists.selected_song = Some(0);
                                 state.client.artists.focus = 1;
                                 state

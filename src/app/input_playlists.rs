@@ -285,7 +285,7 @@ impl App {
                     .selected_playlist
                     .and_then(|i| state.daemon.library.playlists.get(i))
                 {
-                    state.client.playlists.rename_buf = p.name.clone();
+                    state.client.playlists.rename_buf.clone_from(&p.name);
                     state.client.playlists.renaming = true;
                 }
             }

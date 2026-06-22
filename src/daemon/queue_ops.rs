@@ -125,8 +125,8 @@ impl DaemonCore {
         };
         {
             let mut state = self.state.write().await;
-            state.library.random_songs = songs.clone();
-            state.queue = songs.clone();
+            state.library.random_songs.clone_from(&songs);
+            state.queue.clone_from(&songs);
             state.queue_position = None;
         }
         self.clear_cover_cache().await;

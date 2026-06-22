@@ -123,7 +123,7 @@ pub async fn apply_event(
             let marker = if starred { Some("1".to_string()) } else { None };
             let update = |song: &mut crate::subsonic::models::Child| {
                 if song.id == id {
-                    song.starred = marker.clone();
+                    song.starred.clone_from(&marker);
                 }
             };
             {
@@ -146,7 +146,7 @@ pub async fn apply_event(
                 }
                 if let Some(np) = ds.now_playing.song.as_mut() {
                     if np.id == id {
-                        np.starred = marker.clone();
+                        np.starred.clone_from(&marker);
                     }
                 }
                 if starred {
