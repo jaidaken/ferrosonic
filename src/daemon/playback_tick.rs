@@ -64,6 +64,7 @@ impl DaemonCore {
             let state = self.state.read().await;
             let pl = state.now_playing.state == PlaybackState::Playing;
             let active = pl || state.now_playing.state == PlaybackState::Paused;
+            drop(state);
             (pl, active)
         };
 
@@ -103,6 +104,7 @@ impl DaemonCore {
             let c = mpv.get_playlist_count().await.ok();
             let p = mpv.get_playlist_pos().await.ok().flatten();
             let i = mpv.is_idle().await.ok();
+            drop(mpv);
             (c, p, i)
         };
 
@@ -202,6 +204,7 @@ impl DaemonCore {
                 // sample rates must not stay pinned to the previous track's rate.
                 state.now_playing.sample_rate = None;
                 state.now_playing.bit_depth = None;
+                drop(state);
                 Some(next_pos)
             } else {
                 None
@@ -216,6 +219,7 @@ impl DaemonCore {
             let pos_now = mpv.get_playlist_pos().await.ok().flatten();
             if matches!(pos_now, Some(1)) {
                 let _ = mpv.playlist_remove(0).await;
+                drop(mpv);
             } else {
                 warn!(
                     "playlist-pos shifted from 1 to {:?} before remove; skipping",

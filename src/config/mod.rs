@@ -150,8 +150,6 @@ pub struct Config {
 }
 
 // Serialization mirror of Config; same independent TOML setting keys.
-// ref_option_ref: serde serialize_with generates &Option<&T> for the password field (derive span).
-#[allow(clippy::ref_option_ref)]
 #[derive(Serialize)]
 #[allow(clippy::struct_excessive_bools)]
 struct ConfigOnDisk<'a> {
@@ -159,12 +157,8 @@ struct ConfigOnDisk<'a> {
     base_url: &'a str,
     #[serde(rename = "Username")]
     username: &'a str,
-    #[serde(
-        rename = "Password",
-        serialize_with = "serialize_revealed_opt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    password: Option<&'a Secret>,
+    #[serde(rename = "Password", skip_serializing_if = "Option::is_none")]
+    password: Option<RevealedSecret<'a>>,
     #[serde(rename = "PasswordFile", skip_serializing_if = "Option::is_none")]
     password_file: Option<&'a str>,
     #[serde(rename = "PasswordEval", skip_serializing_if = "Option::is_none")]
@@ -202,15 +196,13 @@ struct ConfigOnDisk<'a> {
     music_folder_chosen: bool,
 }
 
-// serde serialize_with calls this with &field, so &Option<&Secret> is forced by serde.
-#[allow(clippy::ref_option_ref, clippy::trivially_copy_pass_by_ref)]
-fn serialize_revealed_opt<S: serde::Serializer>(
-    s: &Option<&Secret>,
-    ser: S,
-) -> Result<S::Ok, S::Error> {
-    match s {
-        Some(sec) => serialize_revealed(sec, ser),
-        None => ser.serialize_str(""),
+// Serializes the revealed secret. Replaces a serialize_with fn whose
+// &Option<&Secret> tripped ref_option_ref in serde's generated wrapper.
+struct RevealedSecret<'a>(&'a Secret);
+
+impl serde::Serialize for RevealedSecret<'_> {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        serialize_revealed(self.0, ser)
     }
 }
 
@@ -226,7 +218,7 @@ impl Config {
             password: if secret_external || self.password.is_empty() {
                 None
             } else {
-                Some(&self.password)
+                Some(RevealedSecret(&self.password))
             },
             password_file: self.password_file.as_deref(),
             password_eval: self.password_eval.as_ref(),

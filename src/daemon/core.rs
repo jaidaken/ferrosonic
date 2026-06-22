@@ -282,6 +282,7 @@ impl DaemonCore {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(std::time::Instant::now());
+        drop(guard);
         self.loadfile_gen.fetch_add(1, Ordering::Release) + 1
     }
 
@@ -341,6 +342,8 @@ impl DaemonCore {
     }
 
     /// Flag shutdown and terminate the mpv process.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn quit_mpv(&self) {
         self.request_shutdown();
         let mut mpv = self.mpv.lock().await;
@@ -477,6 +480,8 @@ impl DaemonCore {
         }
     }
 
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub(super) async fn extend_with_random_and_play(self: &Arc<Self>) -> Result<bool, Error> {
         info!("Queue ended, auto-continuing with random songs");
         let Some(client) = self.subsonic.read().await.clone() else {
@@ -558,6 +563,8 @@ impl DaemonCore {
         Ok((song, url))
     }
 
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub(super) async fn dispatch_play(
         self: &Arc<Self>,
         stream_url: String,
@@ -730,6 +737,8 @@ impl DaemonCore {
     /// mpv treat the partial-file EOF as the track end and advance early.
     // Cohesive single match/render; splitting would fragment one logical unit.
     #[allow(clippy::too_many_lines)]
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     async fn prebuffer_and_load(
         self: &Arc<Self>,
         url: String,
@@ -888,6 +897,8 @@ impl DaemonCore {
     /// if available, write them into state, drive the `PipeWire` rate
     /// switch, and emit `NowPlayingChanged`. Returns `true` when audio
     /// properties were populated this call.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub(super) async fn fetch_audio_properties(self: &Arc<Self>) -> bool {
         let (sr, bd, fmt, ch) = {
             let mut mpv = self.mpv.lock().await;
@@ -930,6 +941,8 @@ impl DaemonCore {
     /// Invariant: the caller loaded the track paused; this fn starts it. Bails
     /// at each step if a newer load has superseded `gen`, so it never unpauses
     /// or re-clocks for a track that is no longer current.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub(super) async fn settle_rate_then_unpause(
         self: &Arc<Self>,
         gen: u64,
@@ -1000,6 +1013,8 @@ impl DaemonCore {
     /// rate populates, bounded so a stream that never reports still unblocks
     /// playback (the 500ms tick re-pins it). Bails early if load `gen` is
     /// superseded. Returns `(rate, bit_depth, format, channels)` once known.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     async fn probe_audio_params(
         self: &Arc<Self>,
         gen: u64,

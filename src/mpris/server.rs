@@ -85,6 +85,7 @@ impl MprisPlayer {
         let now_playing = ds.now_playing.clone();
         let current_song = ds.current_song().cloned();
         let config = ds.config.clone();
+        drop(ds);
         (now_playing, current_song, config)
     }
 }
@@ -97,6 +98,7 @@ impl RootInterface for MprisPlayer {
     async fn quit(&self) -> fdo::Result<()> {
         let mut cs = self.client_state.write().await;
         cs.should_quit = true;
+        drop(cs);
         Ok(())
     }
 

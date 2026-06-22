@@ -168,6 +168,8 @@ impl App {
     }
 
     /// Test seam: start mpv inside the daemon core, notify on error.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn start_mpv_with_notification(&self) {
         if let Some(ref core) = self.core {
             if let Err(e) = core.start_mpv().await {
@@ -500,6 +502,8 @@ impl App {
     ///
     /// # Errors
     /// Returns an `Error` if the daemon request fails.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn draw_once<B: ratatui::backend::Backend>(
         &mut self,
         terminal: &mut Terminal<B>,

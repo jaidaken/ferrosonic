@@ -323,6 +323,8 @@ impl DaemonCore {
     ///
     /// # Errors
     /// Returns an `Error` if the server request fails.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Err(Error::Subsonic(crate::error::SubsonicError::Api {

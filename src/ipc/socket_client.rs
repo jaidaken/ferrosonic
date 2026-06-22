@@ -153,8 +153,8 @@ impl DaemonClient for SocketClient {
             .await
             .is_err()
         {
-            let mut map = self.pending.lock().await;
-            map.remove(&id);
+            self.pending.lock().await.remove(&id);
+
             return Err(IpcError::Disconnected);
         }
         match rx.await {

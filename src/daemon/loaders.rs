@@ -9,6 +9,8 @@ use crate::ipc::protocol::DaemonEvent;
 
 impl DaemonCore {
     /// Fetch an album's songs into the cache; empty Vec on failure.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn load_album_songs(
         self: &Arc<Self>,
         album_id: &str,
@@ -82,6 +84,8 @@ impl DaemonCore {
     }
 
     /// Fetch a playlist's songs into the cache; empty Vec on failure.
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn load_playlist_songs(
         self: &Arc<Self>,
         playlist_id: &str,

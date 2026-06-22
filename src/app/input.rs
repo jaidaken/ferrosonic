@@ -48,6 +48,8 @@ impl App {
     /// Returns an `Error` if the daemon request fails.
     // Cohesive single match/render; splitting would fragment one logical unit.
     #[allow(clippy::too_many_lines)]
+    // significant_drop_tightening: guards here are borrow-bound (used via &mut field); the suggested early-drop fails to compile.
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;

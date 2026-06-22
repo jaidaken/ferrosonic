@@ -115,6 +115,7 @@ mod linux {
                     .ok();
             }
             let path = guard.as_ref()?.path().to_path_buf();
+            drop(guard);
             // Atomic write off the async worker (atomic_write_bytes fsyncs);
             // the lock spans the await so concurrent writes to the path serialize.
             let dest = path.clone();
