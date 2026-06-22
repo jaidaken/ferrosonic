@@ -34,24 +34,25 @@ scope = localhost single-user Unix socket; the threat model these guard against 
 
 ## build hygiene (clippy backlog)
 
-clippy pedantic + nursery at the crate root (`#![warn(pedantic, nursery, missing_docs)]`). 2026-06-22 cleanup pass took lib+bins 897 -> ~131. gating clippy job compiles (no `-D`); `unwrap_used`/`expect_used` denied on lib+bins (`unwrap_check` CI job).
+clippy pedantic + nursery at the crate root (`#![warn(pedantic, nursery, missing_docs)]`). 2026-06-22 cleanup took lib+bins 897 -> **0**. gating clippy job compiles (no `-D`); `unwrap_used`/`expect_used` denied on lib+bins (`unwrap_check` CI job).
 
-NO GLOBAL SILENCES. `src/lib.rs` carries only `#![warn(...)]` (zero crate `#![allow]`); `Cargo.toml [lints.clippy]` has no `allow`; `clippy.toml` has no `too-many-lines-threshold` override (default 100). Every suppression is a real fix or a per-site inline `#[allow]` with a one-line rationale at the marker. A future regression of any of these lints surfaces again instead of passing silently.
+NO GLOBAL SILENCES. `src/lib.rs` carries only `#![warn(...)]` (zero crate `#![allow]`); `Cargo.toml [lints.clippy]` has no `allow`; `clippy.toml` has no `too-many-lines-threshold` override (default 100). Every former warning is a real fix or a per-site inline `#[allow]` with a one-line rationale at the marker. A future regression of any lint surfaces again instead of passing silently.
 
-FIXED (not suppressed): all 114 `missing_errors_doc`; `uninlined_format_args` (446); input handlers -> `&self` (12 fns); `assigning_clones` -> `clone_from` (24); 10 unused imports; `manual_let_else`. 2026-06-22 de-silencing pass added: `drop_non_drop` (72) -> `let _ = state` borrow-release (no-op `drop()` removed); int->int narrowing casts -> saturating `try_from` helpers in `src/num.rs` (`u16_sat`/`u32_sat`/`usize_sat`/`i32_sat`/`u8_sat`); list-index math -> `usize::checked_add_signed`; `option_if_let_else` (9 of 17) -> `map_or`/`map_or_else`.
+FIXED (not suppressed): `missing_errors_doc` (114); `uninlined_format_args` (446); input handlers -> `&self` (12 fns); `assigning_clones` -> `clone_from` (24); unused imports; `manual_let_else` (10); `drop_non_drop` (72, `drop(state)` -> `let _ = state`); int->int narrowing casts -> saturating `try_from` helpers in `src/num.rs`; list-index math -> `usize::checked_add_signed`; `option_if_let_else` (9 of 17) -> `map_or`/`map_or_else`; `large_enum_variant` (3, `NowPlaying` boxed at `DaemonEvent::NowPlayingChanged`); `format_push_string` (3, `write!`); `too_long_first_doc_paragraph` (6); `disallowed_methods` (theme seed -> `io_util::atomic_write_bytes`); `significant_drop_in_scrutinee`; `len_without_is_empty`/`new_without_default` (+impls); `ref_option_ref` (dropped `serialize_with` for a `RevealedSecret` newtype); plus `explicit_counter_loop`, `manual_clamp`, `items_after_statements`, `unreadable_literal`, `similar_names` (stale->is_stale), `match_same_arms` (1, merged `mpv is_running` duplicate arms).
+
+`significant_drop_tightening` (79): `await_holding_lock = deny` proves none cross an await, so all are sync-only. 10 free-standing guards got an early `drop()`; the other 69 are borrow-bound (guard used via `&mut field` through its scope) where the suggested early-drop fails to compile (verified by a per-site compile gate) -> fn-level allow on 36 functions.
 
 SUPPRESSED per-site (inline `#[allow]` + rationale at each marker, no global allow):
-- float->int casts (`as` is saturating since Rust 1.45): scrobble/state durations, mpris volume/position/seek, footer/widget kHz + progress. each a per-site allow.
-- `frame.rs` length prefix: exact value, guarded `<= MAX_FRAME_BYTES` directly above; per-site allow.
-- `chafa_ext::argb_to_color`: const fn, bytes masked `& 0xff`, `try_from` not const-stable; per-fn allow.
-- `option_if_let_else` (8 of 17): side-effecting arms, nested `map_or_else`, parser/iterator-state, or label-fallback where the explicit `None` arm reads clearer; per-site allows.
-- `struct_excessive_bools` (5): `Config`/`ConfigOnDisk`/`ClientState`/`SettingsState`/`PlaybackTickInputs` -- independent orthogonal flags, not state machines; per-struct allows.
-- `match_same_arms` (4 fn-scoped allows): arms intentionally explicit / structurally unmergeable.
-- `too_many_lines` (16 fns >100 lines): cohesive key/mouse dispatchers + page renders; per-fn allows. the 4 >250 (`handle_library_key` 685, `handle_playlists_key` 349, ipc client `dispatch` 320, `apply_event` 258) remain split-candidates, allowed-with-reason rather than silently under a raised threshold.
+- float->int casts (`as` saturating since Rust 1.45); `frame.rs` length prefix (guarded `<= MAX_FRAME_BYTES`); `chafa_ext::argb_to_color` (const fn, masked `& 0xff`).
+- `option_if_let_else` (8 of 17): side-effecting arms / nested `map_or_else` / parser-iterator state / label fallback.
+- `struct_excessive_bools` (5): orthogonal-flag structs, not state machines.
+- `match_same_arms` (3 fn-scoped): arms kept explicit per enum-variant / recv-outcome / setting.
+- `too_many_lines` (16 fns): cohesive dispatchers/renders; the 4 >250 are tracked split-candidates.
+- `needless_pass_by_value` (by-value constructors + a `map_err` fn-item); `too_many_arguments` (freedesktop `Notify` D-Bus signature); `implicit_hasher`/`map_entry` (transitional shim); `float_cmp` (exact integer-value test); `significant_drop_tightening` (36 fns, above).
 
-DEFERRED (per-case review queued, still warning - NOT silenced):
-- `significant_drop_tightening` (79): nursery lock-guard tightening; mix of genuine contention wins and false-positives where the guard must live; needs a per-site pass, not a bulk change.
-- minor pedantic tail (~50: `first_doc_paragraph_too_long`, `large_enum_variant`, `needless_pass_by_value`, float `==`, `similar_names`, `format_push_string`, etc.): low value, fix opportunistically. NOT noise to bulk-silence per `CLAUDE.md` rule 0; quiet selectively only when a suggestion is genuinely wrong.
+TEST TREE: 6 dead `zombie_processes` crate-allows removed; `sigterm_graceful_exit` keeps a per-fn allow (child reaped on all paths, clippy can't prove it through the loop); `cava_drain` `ReadEnd::Eof` now exercised (was dead); `tests/common` keeps a module `#![allow(dead_code, unused_imports)]` (shared-harness idiom, structural). Warn-level `unwrap`/`expect`/`panic` in tests are accepted (gate is lib+bins only).
+
+DEFERRED: none. backlog cleared.
 
 ## CI carve-outs
 
