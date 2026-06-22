@@ -32,6 +32,9 @@ pub struct SubsonicClient {
 
 impl SubsonicClient {
     /// Build a client for `base_url` with token-auth credentials.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub fn new(base_url: &str, username: &str, password: &Secret) -> Result<Self, SubsonicError> {
         let base_url = Url::parse(base_url)?;
 
@@ -110,6 +113,9 @@ impl SubsonicClient {
     }
 
     /// Server-side search across artists, albums, and songs.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn search3(
         &self,
         query: &str,
@@ -129,18 +135,27 @@ impl SubsonicClient {
     }
 
     /// Star the song with `id`.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn star_song(&self, id: &str) -> Result<(), SubsonicError> {
         self.request_action(&format!("star?id={}", urlencoding::encode(id)))
             .await
     }
 
     /// Remove the star from the song with `id`.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn unstar_song(&self, id: &str) -> Result<(), SubsonicError> {
         self.request_action(&format!("unstar?id={}", urlencoding::encode(id)))
             .await
     }
 
     /// Create a new server-side playlist `name` containing `song_ids`, in order.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn create_playlist(
         &self,
         name: &str,
@@ -154,6 +169,9 @@ impl SubsonicClient {
     }
 
     /// Rename the playlist `id` to `name`.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn rename_playlist(&self, id: &str, name: &str) -> Result<(), SubsonicError> {
         let endpoint = format!(
             "updatePlaylist?playlistId={}&name={}",
@@ -164,12 +182,18 @@ impl SubsonicClient {
     }
 
     /// Delete the playlist `id`.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn delete_playlist(&self, id: &str) -> Result<(), SubsonicError> {
         let endpoint = format!("deletePlaylist?id={}", urlencoding::encode(id));
         self.request_action(&endpoint).await
     }
 
     /// Append `song_id` to the end of playlist `id`.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn playlist_add_song(&self, id: &str, song_id: &str) -> Result<(), SubsonicError> {
         let endpoint = format!(
             "updatePlaylist?playlistId={}&songIdToAdd={}",
@@ -180,6 +204,9 @@ impl SubsonicClient {
     }
 
     /// Remove the song at zero-based `index` from playlist `id`.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn playlist_remove_index(&self, id: &str, index: usize) -> Result<(), SubsonicError> {
         let endpoint = format!(
             "updatePlaylist?playlistId={}&songIndexToRemove={index}",
@@ -191,6 +218,9 @@ impl SubsonicClient {
     /// Replace the entire song list of playlist `id` with `song_ids`, in order.
     /// `createPlaylist` with a `playlistId` overwrites the contents (verified
     /// against Navidrome), so this is the primitive for reordering.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn set_playlist_songs(
         &self,
         id: &str,
@@ -204,6 +234,9 @@ impl SubsonicClient {
     }
 
     /// List the `OpenSubsonic` extensions the server advertises, by name.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_open_subsonic_extensions(&self) -> Result<Vec<String>, SubsonicError> {
         let data: OpenSubsonicExtensionsData = self.request("getOpenSubsonicExtensions").await?;
         Ok(data.extensions.into_iter().map(|e| e.name).collect())
@@ -211,6 +244,9 @@ impl SubsonicClient {
 
     /// Classic Subsonic scrobble. `submission=false` is now-playing only;
     /// `submission=true` records a played track. `time_ms` backdates the play.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn scrobble(
         &self,
         id: &str,
@@ -229,6 +265,9 @@ impl SubsonicClient {
 
     /// `OpenSubsonic` `reportPlayback` (extension `playbackReport`). Reports a
     /// playback-timeline state; the server owns the scrobble decision.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn report_playback(
         &self,
         media_id: &str,
@@ -280,6 +319,9 @@ impl SubsonicClient {
     }
 
     /// Probe connectivity and credentials via the `ping` endpoint.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn ping(&self) -> Result<(), SubsonicError> {
         let url = self.build_url("ping")?;
         debug!("Pinging server");
@@ -303,6 +345,9 @@ impl SubsonicClient {
     }
 
     /// Fetch the account's starred songs.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_starred_songs(&self) -> Result<Vec<Child>, SubsonicError> {
         let data: StarredSongsData = self.request("getStarred2").await?;
         let songs = data.starred_songs.song;
@@ -312,12 +357,18 @@ impl SubsonicClient {
     }
 
     /// List the server's configured music folders (libraries).
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_music_folders(&self) -> Result<Vec<MusicFolder>, SubsonicError> {
         let data: MusicFoldersData = self.request("getMusicFolders").await?;
         Ok(data.music_folders.music_folder)
     }
 
     /// Fetch a batch of 500 random songs.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_random_songs(&self) -> Result<Vec<Child>, SubsonicError> {
         let data: RandomSongsData = self
             .request(&self.with_folder("getRandomSongs?size=500".into()))
@@ -329,6 +380,9 @@ impl SubsonicClient {
     }
 
     /// Fetch the full artist index, flattened across index letters.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_artists(&self) -> Result<Vec<Artist>, SubsonicError> {
         let data: ArtistsData = match self.request(&self.with_folder("getArtists".into())).await {
             Ok(d) => d,
@@ -393,6 +447,9 @@ impl SubsonicClient {
     }
 
     /// Fetch one artist and their albums.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_artist(&self, id: &str) -> Result<(Artist, Vec<Album>), SubsonicError> {
         let url = self.build_url(&format!("getArtist?id={id}"))?;
         debug!("Fetching artist: {}", id);
@@ -433,6 +490,9 @@ impl SubsonicClient {
     }
 
     /// Fetch one album and its songs.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_album(&self, id: &str) -> Result<(Album, Vec<Child>), SubsonicError> {
         let url = self.build_url(&format!("getAlbum?id={id}"))?;
         debug!("Fetching album: {}", id);
@@ -479,6 +539,9 @@ impl SubsonicClient {
     }
 
     /// Fetch all playlists visible to the account.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_playlists(&self) -> Result<Vec<Playlist>, SubsonicError> {
         let data: PlaylistsData = self.request("getPlaylists").await?;
         let playlists = data.playlists.playlist;
@@ -487,6 +550,9 @@ impl SubsonicClient {
     }
 
     /// Fetch one playlist and its songs.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_playlist(&self, id: &str) -> Result<(Playlist, Vec<Child>), SubsonicError> {
         let url = self.build_url(&format!("getPlaylist?id={id}"))?;
         debug!("Fetching playlist: {}", id);
@@ -531,6 +597,9 @@ impl SubsonicClient {
     }
 
     /// `size` is the longest-edge in pixels.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub async fn get_cover_art(&self, id: &str, size: u32) -> Result<Vec<u8>, SubsonicError> {
         let mut url = self.base_url.join("rest/getCoverArt")?;
         let (salt, token) = generate_auth_params(&self.password);
@@ -569,6 +638,9 @@ impl SubsonicClient {
     /// assert!(url.contains("&s="));
     /// assert!(url.contains("format=raw"));
     /// ```
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub fn get_stream_url(&self, song_id: &str) -> Result<String, SubsonicError> {
         let mut url = self.base_url.join("rest/stream")?;
 

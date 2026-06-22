@@ -33,6 +33,9 @@ pub fn socket_path() -> PathBuf {
 
 /// chmod 0700 only when we created the directory; `XDG_RUNTIME_DIR` is
 /// already restricted and /tmp must not be touched.
+///
+/// # Errors
+/// Returns an `io::Error` if the runtime directory cannot be prepared.
 pub fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let Some(parent) = path.parent() else {
@@ -52,6 +55,9 @@ pub fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
 }
 
 /// Poll until connect succeeds or `timeout` elapses.
+///
+/// # Errors
+/// Returns an `io::Error` if the runtime directory cannot be prepared.
 pub async fn wait_for_socket(path: &Path, timeout: Duration) -> std::io::Result<()> {
     let deadline = Instant::now() + timeout;
     let mut delay = Duration::from_millis(25);

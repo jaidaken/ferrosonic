@@ -317,6 +317,9 @@ impl PlayerInterface for MprisPlayer {
 }
 
 /// Register the MPRIS2 player on the session bus.
+///
+/// # Errors
+/// Returns an error if the D-Bus call fails.
 pub async fn start_mpris_server(
     daemon_state: SharedDaemonState,
     client_state: SharedClientState,
@@ -397,6 +400,9 @@ fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
 
 /// Releases the daemon read lock before the D-Bus await so a slow
 /// D-Bus doesn't block the render-path write lock.
+///
+/// # Errors
+/// Returns an error if the D-Bus call fails.
 pub async fn update_mpris_properties(
     server: &Server<MprisPlayer>,
     daemon_state: &SharedDaemonState,

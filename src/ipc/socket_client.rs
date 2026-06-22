@@ -35,6 +35,9 @@ pub struct SocketClient {
 
 impl SocketClient {
     /// Connect to the daemon socket and spawn the reader/writer tasks.
+    ///
+    /// # Errors
+    /// Returns an `IpcError` if the connection cannot be established.
     pub async fn connect(path: &Path) -> Result<Arc<Self>, IpcError> {
         let stream = UnixStream::connect(path).await?;
         let (read_half, mut write_half) = stream.into_split();

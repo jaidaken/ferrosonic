@@ -78,6 +78,9 @@ fn redact_in_value(v: &mut serde_json::Value) {
 }
 
 /// `Err` only on bind failure; per-connection errors are logged.
+///
+/// # Errors
+/// Returns an `io::Error` if binding or serving the socket fails.
 pub async fn serve(core: Arc<DaemonCore>, path: &Path) -> std::io::Result<()> {
     ensure_parent_dir(path)?;
     let _lock = acquire_socket_lock(path)?;

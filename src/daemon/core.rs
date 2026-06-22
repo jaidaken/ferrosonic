@@ -286,6 +286,9 @@ impl DaemonCore {
     }
 
     /// Idempotent — no-ops if mpv is already running.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the underlying operation fails.
     pub async fn start_mpv(&self) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         mpv.start().await.map_err(Into::into)

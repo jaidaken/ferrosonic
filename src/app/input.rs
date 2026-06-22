@@ -7,6 +7,9 @@ use super::{App, AppState, DaemonRequest, Page};
 impl App {
     /// Handle terminal events. Pub for integration tests; production
     /// callers use `App::run`.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the daemon request fails.
     pub async fn handle_event(&mut self, event: Event) -> Result<(), Error> {
         match event {
             Event::Key(key) => {
@@ -40,6 +43,9 @@ impl App {
     }
 
     /// Route one key event to the active page handler.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the daemon request fails.
     pub async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;

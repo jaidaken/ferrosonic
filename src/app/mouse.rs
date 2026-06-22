@@ -6,6 +6,9 @@ use super::{App, AppState, DaemonRequest, EnqueueMode, LayoutAreas, Page};
 
 impl App {
     /// Route one mouse event to header buttons or the active page.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the daemon request fails.
     pub async fn handle_mouse(&mut self, mouse: event::MouseEvent) -> Result<(), Error> {
         let x = mouse.column;
         let y = mouse.row;

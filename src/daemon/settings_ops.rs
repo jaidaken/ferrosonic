@@ -15,6 +15,9 @@ impl DaemonCore {
     /// or `PasswordFile` is honored, otherwise the OS keychain, falling back to
     /// an inline owner-only config write when no keychain is reachable. Returns
     /// where the password landed so the caller can inform the user.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn update_server_config(
         self: &Arc<Self>,
         base_url: &str,
@@ -95,6 +98,9 @@ impl DaemonCore {
     }
 
     /// Persist the scrobble toggle and broadcast the config change.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_scrobble(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -106,6 +112,9 @@ impl DaemonCore {
     }
 
     /// Persist the desktop-notifications toggle and broadcast the config change.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_notifications(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -133,6 +142,9 @@ impl DaemonCore {
     }
 
     /// Persist the theme choice and broadcast the config change.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_theme(self: &Arc<Self>, name: &str) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -144,6 +156,9 @@ impl DaemonCore {
     }
 
     /// Persist the cava on/off toggle and broadcast the config change.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_cava_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -155,6 +170,9 @@ impl DaemonCore {
     }
 
     /// Takes effect on the next TUI launch.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_daemon_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -166,6 +184,9 @@ impl DaemonCore {
     }
 
     /// Persist the auto-continue toggle and broadcast the config change.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_auto_continue(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -177,6 +198,9 @@ impl DaemonCore {
     }
 
     /// Re-preloads the new auto-advance target so gapless picks up the mode change at the next track boundary.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_repeat_mode(
         self: &Arc<Self>,
         mode: crate::config::RepeatMode,
@@ -203,6 +227,9 @@ impl DaemonCore {
     }
 
     /// Persist the cover art toggle and broadcast the config change.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_cover_art_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
@@ -214,6 +241,9 @@ impl DaemonCore {
     }
 
     /// Persist the cover art size, clamped to 8-24 rows.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_cover_art_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
         let clamped = size.clamp(8, 24);
         {
@@ -226,6 +256,9 @@ impl DaemonCore {
     }
 
     /// Persist the cava size, clamped to 10-80 rows.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_cava_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
         let clamped = size.clamp(10, 80);
         {

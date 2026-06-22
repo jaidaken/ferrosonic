@@ -177,6 +177,9 @@ impl App {
     }
 
     /// Run the TUI event loop until quit.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the daemon request fails.
     pub async fn run(&mut self) -> Result<(), Error> {
         // A remote daemon (core == None) outlives the TUI; gate the quit prompt.
         self.client_state.write().await.daemon_backed = self.core.is_none();
@@ -446,6 +449,9 @@ impl App {
     }
 
     /// Generic loop: any Backend + any `EventSource`. Tests use `TestBackend` + `ChannelEventSource`.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the daemon request fails.
     pub async fn run_with_source<B, E>(
         &mut self,
         terminal: &mut Terminal<B>,
@@ -487,6 +493,9 @@ impl App {
 
     /// Test seam: render one frame into any Backend (`TestBackend` in
     /// tests, `CrosstermBackend` in production).
+    ///
+    /// # Errors
+    /// Returns an `Error` if the daemon request fails.
     pub async fn draw_once<B: ratatui::backend::Backend>(
         &mut self,
         terminal: &mut Terminal<B>,

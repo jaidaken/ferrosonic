@@ -50,6 +50,9 @@ pub fn queue_file() -> Option<PathBuf> {
 }
 
 /// Create the config directory if missing and return it.
+///
+/// # Errors
+/// Returns an error if the config directory cannot be created.
 pub fn ensure_config_dir() -> std::io::Result<PathBuf> {
     let dir = config_dir().ok_or_else(|| {
         std::io::Error::new(

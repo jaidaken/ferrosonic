@@ -10,6 +10,9 @@ use crate::ipc::protocol::DaemonEvent;
 
 impl DaemonCore {
     /// Replace queue + play target under a single state write lock so the queue cannot be mutated between the swap and the play setup. If `play_from` is None, only the queue is replaced.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control fails.
     pub async fn replace_queue_and_play(
         self: &Arc<Self>,
         songs: Vec<crate::subsonic::models::Child>,
@@ -107,6 +110,9 @@ impl DaemonCore {
     }
 
     /// Replace the queue with a shuffled random-songs batch and start playing.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control fails.
     pub async fn shuffle_library(self: &Arc<Self>) -> Result<(), Error> {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Ok(());

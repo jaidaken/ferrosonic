@@ -191,11 +191,17 @@ impl<'de> Deserialize<'de> for Secret {
 }
 
 /// Wire-only serializer that writes the actual bytes; pair with `deserialize_secret`.
+///
+/// # Errors
+/// Returns an error if (de)serialization fails.
 pub fn serialize_revealed<S: Serializer>(s: &Secret, ser: S) -> Result<S::Ok, S::Error> {
     ser.serialize_str(s.reveal())
 }
 
 /// Pair with `serialize_revealed`; normal deserialize already accepts plaintext.
+///
+/// # Errors
+/// Returns an error if (de)serialization fails.
 pub fn deserialize_secret<'de, D: Deserializer<'de>>(de: D) -> Result<Secret, D::Error> {
     Secret::deserialize(de)
 }

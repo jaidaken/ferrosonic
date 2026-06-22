@@ -405,6 +405,9 @@ impl Config {
     }
 
     /// Load from the default config path, falling back to defaults when absent.
+    ///
+    /// # Errors
+    /// Returns a `ConfigError` if the file cannot be read, written, or parsed.
     pub fn load_default() -> Result<Self, ConfigError> {
         let path = paths::config_file().ok_or_else(|| ConfigError::NotFound {
             path: "default config location".to_string(),
@@ -429,6 +432,9 @@ impl Config {
     /// let c = Config::load_from_file(&p).unwrap();
     /// assert_eq!(c.base_url, "https://x");
     /// ```
+    ///
+    /// # Errors
+    /// Returns a `ConfigError` if the file cannot be read, written, or parsed.
     pub fn load_from_file(path: &Path) -> Result<Self, ConfigError> {
         debug!("Loading config from {}", path.display());
 
@@ -534,6 +540,9 @@ impl Config {
     }
 
     /// Save to the default config path.
+    ///
+    /// # Errors
+    /// Returns a `ConfigError` if the file cannot be read, written, or parsed.
     pub fn save_default(&self) -> Result<(), ConfigError> {
         let path = paths::config_file().ok_or_else(|| ConfigError::NotFound {
             path: "default config location".to_string(),
@@ -553,6 +562,9 @@ impl Config {
     /// c.save_to_file(&p).unwrap();
     /// assert_eq!(Config::load_from_file(&p).unwrap().base_url, "https://x");
     /// ```
+    ///
+    /// # Errors
+    /// Returns a `ConfigError` if the file cannot be read, written, or parsed.
     pub fn save_to_file(&self, path: &Path) -> Result<(), ConfigError> {
         debug!("Saving config to {}", path.display());
         // ConfigOnDisk uses the real password and obeys password_file indirection so neither the redacted-serializer nor a caller mistake can leak or omit the secret.
@@ -595,6 +607,9 @@ impl Config {
     /// c.base_url = "https://x".into();
     /// assert!(c.validate().is_ok());
     /// ```
+    ///
+    /// # Errors
+    /// Returns a `ConfigError` if the file cannot be read, written, or parsed.
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.base_url.is_empty() {
             return Err(ConfigError::MissingField {

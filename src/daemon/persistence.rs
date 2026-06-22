@@ -48,6 +48,9 @@ impl QueueSnapshot {
     }
 
     /// Atomic write via temp-file + rename. Returns the path written.
+    ///
+    /// # Errors
+    /// Returns an error if the queue path cannot be resolved.
     pub fn save(&self) -> std::io::Result<PathBuf> {
         let path = crate::config::paths::queue_file()
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no config dir"))?;

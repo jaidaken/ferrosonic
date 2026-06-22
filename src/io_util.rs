@@ -126,6 +126,9 @@ pub(crate) fn fsync_parent_dir_with_fs<F: FileSystem>(fs: &F, path: &Path) {
 /// atomic_write_bytes(&p, b"hello").unwrap();
 /// assert_eq!(std::fs::read(&p).unwrap(), b"hello");
 /// ```
+///
+/// # Errors
+/// Returns an `io::Error` if the write, rename, or fsync fails.
 pub fn atomic_write_bytes(path: &Path, body: &[u8]) -> std::io::Result<()> {
     atomic_write_bytes_with_fs_mode(&RealFs, path, body, None)
 }

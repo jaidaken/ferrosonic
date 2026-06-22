@@ -160,6 +160,9 @@ impl DaemonCore {
 
     /// Select the library to browse (`None` = all); persist, re-scope the live
     /// client, and refetch the library so the UI reflects the new folder.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
     pub async fn set_music_folder(self: &Arc<Self>, id: Option<i64>) -> Result<(), Error> {
         self.apply_music_folder(id, true).await
     }
@@ -199,6 +202,9 @@ impl DaemonCore {
 
     /// Create playlist `name` from `song_ids`, then refresh so the new playlist
     /// lands in `state.library.playlists` and a `PlaylistsChanged` event fires.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
     pub async fn create_playlist(
         self: &Arc<Self>,
         name: &str,
@@ -229,6 +235,9 @@ impl DaemonCore {
     }
 
     /// Rename playlist `id` to `name`, then refresh so `PlaylistsChanged` fires.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
     pub async fn rename_playlist(self: &Arc<Self>, id: &str, name: &str) -> Result<(), Error> {
         self.subsonic_client()
             .await?
@@ -240,6 +249,9 @@ impl DaemonCore {
     }
 
     /// Delete playlist `id`, then refresh so `PlaylistsChanged` fires.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
     pub async fn delete_playlist(self: &Arc<Self>, id: &str) -> Result<(), Error> {
         self.subsonic_client()
             .await?
@@ -251,6 +263,9 @@ impl DaemonCore {
     }
 
     /// Append `song_id` to playlist `playlist_id`; returns the refreshed songs.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
     pub async fn playlist_add_song(
         self: &Arc<Self>,
         playlist_id: &str,
@@ -267,6 +282,9 @@ impl DaemonCore {
     }
 
     /// Remove the song at `index` from playlist `playlist_id`; returns the refreshed songs.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
     pub async fn playlist_remove_song(
         self: &Arc<Self>,
         playlist_id: &str,
@@ -283,6 +301,9 @@ impl DaemonCore {
     }
 
     /// Replace playlist `playlist_id`'s songs with `song_ids`, in order; returns the refreshed songs.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
     pub async fn playlist_reorder(
         self: &Arc<Self>,
         playlist_id: &str,
@@ -299,6 +320,9 @@ impl DaemonCore {
     }
 
     /// Star or unstar `song_id`; returns the new starred state.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Err(Error::Subsonic(crate::error::SubsonicError::Api {

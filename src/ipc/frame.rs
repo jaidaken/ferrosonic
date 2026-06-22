@@ -101,6 +101,9 @@ pub enum FrameError {
 ///     }
 /// });
 /// ```
+///
+/// # Errors
+/// Returns a `FrameError` if the frame is malformed or exceeds the size limit.
 pub async fn read_frame<R>(reader: &mut R) -> Result<Frame, FrameError>
 where
     R: AsyncReadExt + Unpin,
@@ -128,6 +131,9 @@ where
 ///     }
 /// });
 /// ```
+///
+/// # Errors
+/// Returns a `FrameError` if the frame is malformed or exceeds the size limit.
 pub async fn read_frame_lenient<R>(reader: &mut R) -> Result<FrameRead, FrameError>
 where
     R: AsyncReadExt + Unpin,
@@ -149,6 +155,9 @@ where
 ///     assert!(matches!(err, FrameError::TooLarge(n) if n == oversized_len as usize));
 /// });
 /// ```
+///
+/// # Errors
+/// Returns a `FrameError` if the frame is malformed or exceeds the size limit.
 pub async fn read_frame_lenient_with_cap<R>(
     reader: &mut R,
     cap: usize,
@@ -219,6 +228,9 @@ where
 }
 
 /// Single combined write so partial frames never reach the wire.
+///
+/// # Errors
+/// Returns a `FrameError` if the frame is malformed or exceeds the size limit.
 pub async fn write_frame<W>(writer: &mut W, frame: &Frame) -> Result<(), FrameError>
 where
     W: AsyncWriteExt + Unpin,

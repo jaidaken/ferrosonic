@@ -9,6 +9,9 @@ use crate::error::Error;
 
 impl DaemonCore {
     /// Toggle pause by current state: `Playing` pauses, `Paused` resumes, `Stopped` with a queued position starts playback. Delegates so the `PipeWire` pin release/re-apply lives in one place per direction.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn toggle_pause(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         let (playback_state, queue_pos) = {
@@ -31,6 +34,9 @@ impl DaemonCore {
     /// `now_playing.position`; resume re-pins the known rate then reloads and
     /// seeks back. Commits `Paused` before the stop so the idle tick (gated on
     /// `is_playing`) cannot read the stop as a track-end and auto-advance.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn pause_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         let was_playing = {
@@ -57,6 +63,9 @@ impl DaemonCore {
     }
 
     /// Resume from pause by reloading the current track and seeking back to the saved position (mpv was stopped on pause to free the audio device). Before audio, compares the device's current rate to the track's known rate; if they differ it switches and waits the settle delay so the re-clock finishes in silence, never in the music. From `Stopped` with a queued position, starts that track from the top.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn resume_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         let (playback_state, queue_pos, resume_at, known_rate, settle_ms) = {
@@ -107,6 +116,9 @@ impl DaemonCore {
     }
 
     /// Manual skip. Ignores `repeat=One` (user wants to move).
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
@@ -137,6 +149,9 @@ impl DaemonCore {
     }
 
     /// Auto-end advance. Honours `repeat=One` and `repeat=All`.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn advance_auto(self: &Arc<Self>) -> Result<(), Error> {
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
@@ -167,6 +182,9 @@ impl DaemonCore {
     }
 
     /// Restarts current track if more than 3s in, else goes back one.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn prev_track(self: &Arc<Self>) -> Result<(), Error> {
         let (queue_len, current_pos, position, repeat) = {
             let state = self.state.read().await;
@@ -211,6 +229,9 @@ impl DaemonCore {
     }
 
     /// Load and play the queue entry at `pos` from the start; drives the `PipeWire` rate switch.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn play_queue_position(
         self: &Arc<Self>,
         pos: usize,
@@ -348,6 +369,9 @@ impl DaemonCore {
     }
 
     /// Stop playback, unload the track, and broadcast the state change.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn stop_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         {
@@ -375,6 +399,9 @@ impl DaemonCore {
     }
 
     /// MPRIS / Stop-button semantics: halt playback but keep the queue and current selection intact so Play can resume the same track.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn stop_keep_queue(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
         {
@@ -418,6 +445,9 @@ impl DaemonCore {
     }
 
     /// Seek to an absolute position in seconds.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn seek(self: &Arc<Self>, pos: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         if let Err(e) = mpv.seek(pos).await {
@@ -431,6 +461,9 @@ impl DaemonCore {
     }
 
     /// Seek by a signed offset in seconds.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn seek_relative(self: &Arc<Self>, offset: f64) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.seek_relative(offset).await;
@@ -438,6 +471,9 @@ impl DaemonCore {
     }
 
     /// Set mpv volume as a percentage.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
     pub async fn set_volume(self: &Arc<Self>, vol: i32) -> Result<(), Error> {
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.set_volume(vol).await;

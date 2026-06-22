@@ -10,6 +10,9 @@ use tracing::{info, warn};
 /// Spawn the daemon by re-running the current binary with `--daemon`, detached
 /// via `setsid` so it survives SIGHUP when the parent terminal closes. The
 /// parent never reaps it; the daemon outlives the TUI.
+///
+/// # Errors
+/// Returns an error if the daemon process cannot be spawned.
 pub fn spawn_daemon() -> std::io::Result<u32> {
     let exe = std::env::current_exe()?;
     spawn_daemon_exe(&exe)
@@ -17,6 +20,9 @@ pub fn spawn_daemon() -> std::io::Result<u32> {
 
 /// Test seam: spawn a specific binary as the daemon. Production passes
 /// `current_exe()`; tests pass the real `ferrosonic` binary.
+///
+/// # Errors
+/// Returns an error if the daemon process cannot be spawned.
 pub fn spawn_daemon_exe(exe: &Path) -> std::io::Result<u32> {
     info!("Auto-spawning daemon: {} --daemon", exe.display());
 
@@ -69,6 +75,9 @@ pub fn spawn_daemon_exe(exe: &Path) -> std::io::Result<u32> {
 }
 
 /// Spawn the daemon detached and wait until its socket accepts connections.
+///
+/// # Errors
+/// Returns an error if the daemon process cannot be spawned.
 pub async fn spawn_and_wait(socket: &Path, timeout: std::time::Duration) -> std::io::Result<()> {
     let pid = spawn_daemon()?;
     info!(

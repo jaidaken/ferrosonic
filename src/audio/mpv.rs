@@ -155,6 +155,9 @@ impl MpvController {
     }
 
     /// Test seam: connect to an mpv socket that's already listening.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn connect_to_existing(&mut self) -> Result<(), AudioError> {
         if !self.socket_path.exists() {
             return Err(AudioError::MpvIpc(format!(
@@ -166,6 +169,9 @@ impl MpvController {
     }
 
     /// Spawn mpv (if not already alive) and connect to its IPC socket.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn start(&mut self) -> Result<(), AudioError> {
         // Reap an exited child so a fresh mpv can be spawned. Without
         // this, an mpv crash leaves self.process = Some(<exited Child>)
@@ -368,6 +374,9 @@ impl MpvController {
     }
 
     /// Replace the playlist with `path` and start playing it.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn loadfile(&mut self, path: &str) -> Result<(), AudioError> {
         info!("Loading: {}", path.split('?').next().unwrap_or(path));
         // mpv keeps `pause` across loadfile; clear it so this is the
@@ -450,6 +459,9 @@ impl MpvController {
     }
 
     /// Append `path` to the playlist without interrupting playback.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn loadfile_append(&mut self, path: &str) -> Result<(), AudioError> {
         debug!(
             "Appending to playlist: {}",
@@ -461,6 +473,9 @@ impl MpvController {
     }
 
     /// Remove the playlist entry at `index`.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn playlist_remove(&mut self, index: usize) -> Result<(), AudioError> {
         debug!("Removing playlist entry {}", index);
         self.send_command(vec![json!("playlist-remove"), json!(index)])
@@ -469,6 +484,9 @@ impl MpvController {
     }
 
     /// Advance to the next playlist entry, forcing past the last one.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn playlist_next(&mut self) -> Result<(), AudioError> {
         debug!("Advancing to next playlist entry");
         // `force` advances even at the last entry; we always control
@@ -479,6 +497,9 @@ impl MpvController {
     }
 
     /// Current playlist position, or `None` when nothing is loaded.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn get_playlist_pos(&mut self) -> Result<Option<i64>, AudioError> {
         let data = self
             .send_command(vec![json!("get_property"), json!("playlist-pos")])
@@ -487,6 +508,9 @@ impl MpvController {
     }
 
     /// Number of playlist entries; 0 when unavailable.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn get_playlist_count(&mut self) -> Result<usize, AudioError> {
         let data = self
             .send_command(vec![json!("get_property"), json!("playlist-count")])
@@ -495,6 +519,9 @@ impl MpvController {
     }
 
     /// Pause playback. Idempotent if already paused.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn pause(&mut self) -> Result<(), AudioError> {
         debug!("Pausing playback");
         self.send_command(vec![json!("set_property"), json!("pause"), json!(true)])
@@ -503,6 +530,9 @@ impl MpvController {
     }
 
     /// Resume playback. Idempotent if already playing.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn resume(&mut self) -> Result<(), AudioError> {
         debug!("Resuming playback");
         self.send_command(vec![json!("set_property"), json!("pause"), json!(false)])
@@ -511,6 +541,9 @@ impl MpvController {
     }
 
     /// Flip the pause state; returns `true` when playback is now paused.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn toggle_pause(&mut self) -> Result<bool, AudioError> {
         let paused = self.is_paused().await?;
         if paused {
@@ -522,6 +555,9 @@ impl MpvController {
     }
 
     /// Whether playback is currently paused; `false` when unknown.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn is_paused(&mut self) -> Result<bool, AudioError> {
         let data = self
             .send_command(vec![json!("get_property"), json!("pause")])
@@ -530,6 +566,9 @@ impl MpvController {
     }
 
     /// Stop playback and unload the current file.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn stop(&mut self) -> Result<(), AudioError> {
         debug!("Stopping playback");
         self.send_command(vec![json!("stop")]).await?;
@@ -537,6 +576,9 @@ impl MpvController {
     }
 
     /// Seek to an absolute position in seconds.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn seek(&mut self, position: f64) -> Result<(), AudioError> {
         debug!("Seeking to {:.1}s", position);
         self.send_command(vec![json!("seek"), json!(position), json!("absolute")])
@@ -545,6 +587,9 @@ impl MpvController {
     }
 
     /// Seek by a signed offset in seconds from the current position.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn seek_relative(&mut self, offset: f64) -> Result<(), AudioError> {
         debug!("Seeking {:+.1}s", offset);
         self.send_command(vec![json!("seek"), json!(offset), json!("relative")])
@@ -553,6 +598,9 @@ impl MpvController {
     }
 
     /// Playback position in seconds; 0.0 when unknown.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn get_time_pos(&mut self) -> Result<f64, AudioError> {
         let data = self
             .send_command(vec![json!("get_property"), json!("time-pos")])
@@ -561,6 +609,9 @@ impl MpvController {
     }
 
     /// Track duration in seconds; 0.0 when unknown.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn get_duration(&mut self) -> Result<f64, AudioError> {
         let data = self
             .send_command(vec![json!("get_property"), json!("duration")])
@@ -569,6 +620,9 @@ impl MpvController {
     }
 
     /// Set playback volume, clamped to 0-100.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn set_volume(&mut self, volume: i32) -> Result<(), AudioError> {
         debug!("Setting volume to {}", volume);
         self.send_command(vec![
@@ -581,6 +635,9 @@ impl MpvController {
     }
 
     /// Decoded sample rate in Hz of the playing track.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn get_sample_rate(&mut self) -> Result<Option<u32>, AudioError> {
         let data = self
             .send_command(vec![
@@ -592,6 +649,9 @@ impl MpvController {
     }
 
     /// Bit depth inferred from mpv's audio format string.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn get_bit_depth(&mut self) -> Result<Option<u32>, AudioError> {
         let data = self
             .send_command(vec![json!("get_property"), json!("audio-params/format")])
@@ -613,6 +673,9 @@ impl MpvController {
     }
 
     /// Raw mpv audio format string, e.g. `"s32"` or `"floatp"`.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn get_audio_format(&mut self) -> Result<Option<String>, AudioError> {
         let data = self
             .send_command(vec![json!("get_property"), json!("audio-params/format")])
@@ -621,6 +684,9 @@ impl MpvController {
     }
 
     /// Channel layout label, e.g. `"Stereo"` or `"5ch"`.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn get_channels(&mut self) -> Result<Option<String>, AudioError> {
         let data = self
             .send_command(vec![
@@ -637,6 +703,9 @@ impl MpvController {
     }
 
     /// Whether mpv reports idle (nothing loaded); `true` when unknown.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn is_idle(&mut self) -> Result<bool, AudioError> {
         let data = self
             .send_command(vec![json!("get_property"), json!("idle-active")])
@@ -659,6 +728,9 @@ impl MpvController {
     }
 
     /// Ask mpv to quit gracefully, then force-kill and clean up.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
     pub async fn quit(&mut self) -> Result<(), AudioError> {
         if self.writer.is_some() {
             let _ = self.send_command(vec![json!("quit")]).await;

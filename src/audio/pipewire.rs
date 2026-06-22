@@ -16,6 +16,9 @@ pub trait CommandRunner: Send + Sync {
     /// Run `pw-metadata` with `args` asynchronously.
     async fn run(&self, args: &[&str]) -> Result<Output, AudioError>;
     /// Run `pw-metadata` with `args`, blocking the calling thread.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the PipeWire command fails.
     fn run_blocking(&self, args: &[&str]) -> Result<Output, AudioError>;
 }
 
@@ -114,6 +117,9 @@ impl PipeWireController {
     }
 
     /// Pin the graph to `rate` Hz via `clock.force-rate`.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the PipeWire command fails.
     pub async fn set_rate(&mut self, rate: u32) -> Result<(), AudioError> {
         // No cache short-circuit: external pw-metadata changes would
         // make the cache stale and bit-perfect would silently break.
@@ -134,6 +140,9 @@ impl PipeWireController {
     }
 
     /// Release the rate pin so the graph follows streams again.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the PipeWire command fails.
     pub async fn clear_forced_rate(&mut self) -> Result<(), AudioError> {
         info!("Clearing PipeWire forced sample rate");
         let output = self
