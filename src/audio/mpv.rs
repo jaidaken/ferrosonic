@@ -515,7 +515,9 @@ impl MpvController {
         let data = self
             .send_command(vec![json!("get_property"), json!("playlist-count")])
             .await?;
-        Ok(data.and_then(|v| v.as_u64()).unwrap_or(0) as usize)
+        Ok(crate::num::usize_sat(
+            data.and_then(|v| v.as_u64()).unwrap_or(0),
+        ))
     }
 
     /// Pause playback. Idempotent if already paused.
@@ -645,7 +647,7 @@ impl MpvController {
                 json!("audio-params/samplerate"),
             ])
             .await?;
-        Ok(data.and_then(|v| v.as_u64()).map(|v| v as u32))
+        Ok(data.and_then(|v| v.as_u64()).map(crate::num::u32_sat))
     }
 
     /// Bit depth inferred from mpv's audio format string.
@@ -694,7 +696,7 @@ impl MpvController {
                 json!("audio-params/channel-count"),
             ])
             .await?;
-        let count = data.and_then(|v| v.as_u64()).map(|v| v as u32);
+        let count = data.and_then(|v| v.as_u64()).map(crate::num::u32_sat);
         Ok(count.map(|c| match c {
             1 => "Mono".to_string(),
             2 => "Stereo".to_string(),

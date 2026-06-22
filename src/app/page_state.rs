@@ -179,6 +179,8 @@ pub struct ServerState {
 
 /// UI state of the Settings page.
 #[derive(Debug, Clone)]
+// Independent settings toggles mirroring the config; orthogonal on/off flags.
+#[allow(clippy::struct_excessive_bools)]
 pub struct SettingsState {
     /// Index of the focused settings row.
     pub selected_field: usize,

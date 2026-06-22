@@ -5,6 +5,8 @@ use crate::error::Error;
 use super::{App, AppState, DaemonRequest};
 
 impl App {
+    // Cohesive single match/render; splitting would fragment one logical unit.
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_queue_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -44,7 +46,7 @@ impl App {
                     state
                         .client
                         .notify(format!("Saved playlist: {name} ({count} songs)"));
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     let _ = self
@@ -81,7 +83,7 @@ impl App {
             KeyCode::Enter => {
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx < state.daemon.queue.len() {
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         return self
@@ -109,7 +111,7 @@ impl App {
                             state.client.queue_state.selected = Some(queue_len - 2);
                         }
                         state.client.notify(format!("Removed: {removed_title}"));
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         let _ = self
@@ -124,7 +126,7 @@ impl App {
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx + 1 < state.daemon.queue.len() {
                         state.client.queue_state.selected = Some(idx + 1);
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         let _ = self
@@ -142,7 +144,7 @@ impl App {
                 if let Some(idx) = state.client.queue_state.selected {
                     if idx > 0 {
                         state.client.queue_state.selected = Some(idx - 1);
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         let _ = self
@@ -158,7 +160,7 @@ impl App {
             }
             KeyCode::Char('t') => {
                 state.client.notify("Queue shuffled");
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 let _ = self.client.request(DaemonRequest::ShuffleQueue).await;
@@ -175,7 +177,7 @@ impl App {
             KeyCode::Char('c') => {
                 let pos = state.daemon.queue_position;
                 let sel_before = state.client.queue_state.selected;
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 if let Ok(crate::ipc::DaemonResponse::HistoryCleared(removed)) =
@@ -207,7 +209,7 @@ impl App {
                     .queue_state
                     .selected
                     .and_then(|idx| state.daemon.queue.get(idx).map(|s| s.id.clone()));
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 if let Some(id) = song_id {

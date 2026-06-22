@@ -68,6 +68,8 @@ impl DaemonCore {
         }
         let song = state.queue.remove(from);
         state.queue.insert(to, song);
+        // The Some branch mutates queue_position; if-let is clearer than a mutating map_or_else closure.
+        #[allow(clippy::option_if_let_else)]
         let next_maybe_changed = if let Some(cur) = state.queue_position {
             let new_cur = if cur == from {
                 to

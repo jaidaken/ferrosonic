@@ -435,9 +435,9 @@ impl SubsonicClient {
             let page = self
                 .get_album_list2("alphabeticalByName", PAGE, offset)
                 .await?;
-            let got = page.len() as u32;
+            let got = page.len();
             all.extend(page);
-            if got < PAGE {
+            if got < PAGE as usize {
                 break;
             }
             offset += PAGE;
@@ -477,7 +477,7 @@ impl SubsonicClient {
         let artist = Artist {
             id: detail.id,
             name: detail.name.clone(),
-            album_count: Some(detail.album.len() as i32),
+            album_count: Some(crate::num::i32_sat(detail.album.len())),
             cover_art: None,
         };
 
@@ -523,7 +523,7 @@ impl SubsonicClient {
             artist: detail.artist,
             artist_id: detail.artist_id,
             cover_art: None,
-            song_count: Some(detail.song.len() as i32),
+            song_count: Some(crate::num::i32_sat(detail.song.len())),
             duration: None,
             year: detail.year,
             original_release_date: None,

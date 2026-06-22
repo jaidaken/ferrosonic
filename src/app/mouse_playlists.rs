@@ -36,7 +36,7 @@ impl App {
                     let playlist = state.daemon.library.playlists[item_index].clone();
                     let playlist_id = playlist.id.clone();
                     let playlist_name = playlist.name.clone();
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
 
@@ -78,7 +78,7 @@ impl App {
 
                 if is_second_click {
                     let songs = state.client.playlists.songs.clone();
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     self.last_click = Some((x, y, std::time::Instant::now()));

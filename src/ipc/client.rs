@@ -39,6 +39,8 @@ impl InProcessClient {
 
 #[async_trait]
 impl DaemonClient for InProcessClient {
+    // Cohesive dispatcher over the 250 split threshold; tracked split-candidate (docs/KNOWN-ISSUES).
+    #[allow(clippy::too_many_lines)]
     async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError> {
         match req {
             DaemonRequest::Pause => {
@@ -408,6 +410,8 @@ impl InProcessClient {
                 }
             }
             EnqueueMode::InsertAfter(pos) => {
+                // The Some arm updates queue_position in place; if-let reads clearer than map_or_else.
+                #[allow(clippy::option_if_let_else)]
                 let resync = {
                     let mut state = self.core.state.write().await;
                     let insert_at = (pos + 1).min(state.queue.len());

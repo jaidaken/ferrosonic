@@ -21,6 +21,8 @@ enum SettingChange {
 const SETTINGS_FIELD_COUNT: usize = 10;
 
 impl App {
+    // Cohesive single match/render; splitting would fragment one logical unit.
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_settings_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let mut change: Option<SettingChange> = None;
 
@@ -179,7 +181,7 @@ fn adjust_setting(
         }
         2 if cava_ok => {
             let cur = i32::from(s.cava_size);
-            let new = (cur + step * 5).clamp(10, 80) as u8;
+            let new = crate::num::u8_sat((cur + step * 5).clamp(10, 80));
             if new == s.cava_size {
                 None
             } else {
@@ -193,7 +195,7 @@ fn adjust_setting(
         }
         4 => {
             let cur = i32::from(s.cover_art_size);
-            let new = (cur + step * 2).clamp(8, 24) as u8;
+            let new = crate::num::u8_sat((cur + step * 2).clamp(8, 24));
             if new == s.cover_art_size {
                 None
             } else {

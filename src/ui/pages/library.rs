@@ -461,6 +461,8 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
 }
 
 /// Library-pane label for the active music folder: the folder name, or "All".
+// Converting nests map_or_else inside map_or_else; one match level is clearer.
+#[allow(clippy::option_if_let_else)]
 fn library_label(id: Option<i64>, folders: &[crate::subsonic::models::MusicFolder]) -> String {
     match id {
         None => "Library: All".to_string(),

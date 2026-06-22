@@ -48,6 +48,8 @@ pub enum PasswordEval {
 
 /// User configuration, persisted as TOML at the path from [`paths::config_file`].
 #[derive(Clone, Serialize, Deserialize, Debug)]
+// Each bool is an independent persisted TOML setting key; an enum would not serialize as separate keys.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Config {
     /// Subsonic server base URL, scheme included.
     #[serde(rename = "BaseURL", default)]
@@ -148,6 +150,8 @@ pub struct Config {
 }
 
 #[derive(Serialize)]
+// Serialization mirror of Config; same independent TOML setting keys.
+#[allow(clippy::struct_excessive_bools)]
 struct ConfigOnDisk<'a> {
     #[serde(rename = "BaseURL")]
     base_url: &'a str,
@@ -656,6 +660,8 @@ fn expand_env_tilde(arg: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'$' && i + 1 < bytes.len() {
+            // Parser byte-range arithmetic; explicit Some/None arms clearer than map_or_else.
+            #[allow(clippy::option_if_let_else)]
             let (name, next) = if bytes[i + 1] == b'{' {
                 let end = expanded[i + 2..].find('}').map(|p| i + 2 + p);
                 match end {
@@ -731,7 +737,7 @@ fn run_password_eval_timeout(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("PasswordEval failed to start: {e}"))?;
-    let pid = child.id() as libc::pid_t;
+    let pid: libc::pid_t = crate::num::i32_sat(child.id());
     let mut stdout = child.stdout.take().ok_or("PasswordEval: no stdout pipe")?;
     let mut stderr = child.stderr.take().ok_or("PasswordEval: no stderr pipe")?;
 

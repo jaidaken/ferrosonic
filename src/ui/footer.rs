@@ -167,11 +167,19 @@ impl Widget for Footer<'_> {
         if let Some(rate) = self.sample_rate {
             let khz = f64::from(rate) / 1000.0;
             let rate_str = if khz == khz.floor() {
-                format!("{}kHz", khz as u32)
+                {
+                    // f64->u32 `as` saturates; khz is a positive sample-rate/1000.
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let khz_int = khz as u32;
+                    format!("{khz_int}kHz")
+                }
             } else {
                 format!("{khz:.1}kHz")
             };
-            let x = right.x + right.width.saturating_sub(rate_str.len() as u16);
+            let x = right.x
+                + right
+                    .width
+                    .saturating_sub(crate::num::u16_sat(rate_str.len()));
             buf.set_string(
                 x,
                 right.y,
@@ -191,7 +199,7 @@ impl Widget for Footer<'_> {
                     Style::default().fg(self.colors.success)
                 };
                 let msg: String = notif.message.chars().take(right.width as usize).collect();
-                let msg_len = msg.chars().count() as u16;
+                let msg_len = crate::num::u16_sat(msg.chars().count());
                 let x = right.x + right.width.saturating_sub(msg_len);
                 buf.set_string(x, right.y + 1, &msg, style);
             }

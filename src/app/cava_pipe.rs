@@ -24,7 +24,7 @@ impl App {
         );
 
         let (term_w, term_h) = crossterm::terminal::size().unwrap_or((80, 24));
-        let cava_h = (u32::from(term_h) * cava_size / 100).max(4) as u16;
+        let cava_h = crate::num::u16_sat((u32::from(term_h) * cava_size / 100).max(4));
         let cava_w = term_w;
 
         let mut master: libc::c_int = 0;

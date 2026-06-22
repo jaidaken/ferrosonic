@@ -240,7 +240,10 @@ where
         return Err(FrameError::TooLarge(body.len()));
     }
     let mut buf = Vec::with_capacity(4 + body.len());
-    buf.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    // body.len() is checked <= MAX_FRAME_BYTES (16 MiB) above, so it fits u32 exactly.
+    #[allow(clippy::cast_possible_truncation)]
+    let len_prefix = (body.len() as u32).to_le_bytes();
+    buf.extend_from_slice(&len_prefix);
     buf.extend_from_slice(&body);
     writer.write_all(&buf).await?;
     writer.flush().await?;

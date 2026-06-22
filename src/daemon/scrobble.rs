@@ -45,6 +45,8 @@ fn classic_reached(position: f64, duration: f64) -> bool {
     position >= threshold
 }
 
+// f64->u64 `as` saturates (Rust >=1.45); position is non-negative and bounded.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn position_ms(position: f64) -> u64 {
     (position.max(0.0) * 1000.0) as u64
 }

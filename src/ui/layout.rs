@@ -18,6 +18,8 @@ use super::{widget_cava::CavaWidget, widget_now_playing, widget_now_playing::Now
 const NOW_PLAYING_BASE: u16 = 7;
 
 /// Draw one full frame: header, page content, now-playing, footer.
+// Cohesive single match/render; splitting would fragment one logical unit.
+#[allow(clippy::too_many_lines)]
 pub fn draw(
     frame: &mut Frame<'_>,
     state: &mut AppState<'_>,

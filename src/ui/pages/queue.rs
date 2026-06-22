@@ -11,6 +11,8 @@ use ratatui::{
 use crate::app::state::AppState;
 
 /// Render the Queue page.
+// Cohesive single match/render; splitting would fragment one logical unit.
+#[allow(clippy::too_many_lines)]
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 

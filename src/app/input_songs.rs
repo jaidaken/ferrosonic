@@ -8,6 +8,8 @@ use super::{App, AppState, DaemonRequest, EnqueueMode};
 impl App {
     // Arms intentionally explicit / structurally unmergeable (audited).
     #[allow(clippy::match_same_arms)]
+    // Cohesive single match/render; splitting would fragment one logical unit.
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_songs_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -21,7 +23,7 @@ impl App {
                     Some(SongOption::Starred) => {}
                     Some(SongOption::Random) => {
                         state.client.songs.selected_option = Some(SongOption::Starred);
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         let _ = self.client.request(DaemonRequest::RefreshStarred).await;
@@ -43,7 +45,7 @@ impl App {
                 0 => match state.client.songs.selected_option {
                     Some(SongOption::Starred) => {
                         state.client.songs.selected_option = Some(SongOption::Random);
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         let _ = self.client.request(DaemonRequest::RefreshRandom).await;
@@ -75,7 +77,7 @@ impl App {
                 };
 
                 let songs = state.songs_list().to_vec();
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
 
@@ -109,7 +111,7 @@ impl App {
                     .songs
                     .selected_index
                     .and_then(|idx| state.songs_list().get(idx).map(|s| s.id.clone()));
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 if let Some(id) = song_id {

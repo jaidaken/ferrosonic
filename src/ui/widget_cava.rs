@@ -40,7 +40,7 @@ impl Widget for CavaWidget<'_> {
             if row_idx >= area.height as usize {
                 break;
             }
-            let y = area.y + row_idx as u16;
+            let y = area.y + crate::num::u16_sat(row_idx);
             let mut x = area.x;
 
             for span in &cava_row.spans {

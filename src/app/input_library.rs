@@ -11,6 +11,8 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 impl App {
+    // Cohesive dispatcher over the 250 split threshold; tracked split-candidate (docs/KNOWN-ISSUES).
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_library_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         use crate::ui::pages::library::{build_tree_items, TreeItem};
 
@@ -30,14 +32,14 @@ impl App {
                     state.client.artists.filter_active = false;
                     state.client.artists.filter.clear();
                     state.client.artists.search_results = None;
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     return Ok(());
                 }
                 KeyCode::Enter => {
                     state.client.artists.filter_active = false;
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     return Ok(());
@@ -53,7 +55,7 @@ impl App {
                 _ => {}
             }
             if !scope_or_query_changed {
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 return Ok(());
@@ -61,7 +63,7 @@ impl App {
             state.client.artists.search_gen = state.client.artists.search_gen.wrapping_add(1);
             let gen = state.client.artists.search_gen;
             let query = state.client.artists.filter.clone();
-            drop(state);
+            let _ = state;
             drop(cs);
             drop(ds);
             if query.is_empty() {
@@ -102,7 +104,7 @@ impl App {
             };
             let need_load = to_album && state.client.artists.albums.is_empty();
             let sort = state.client.artists.album_sort;
-            drop(state);
+            let _ = state;
             drop(cs);
             drop(ds);
             if need_load {
@@ -140,7 +142,7 @@ impl App {
         if key.code == KeyCode::Char('f') {
             let folders = &state.daemon.library.music_folders;
             if folders.is_empty() {
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 return Ok(());
@@ -151,6 +153,8 @@ impl App {
             let cur = state.daemon.config.music_folder_id;
             let idx = options.iter().position(|o| *o == cur).unwrap_or(0);
             let next = options[(idx + 1) % options.len()];
+            // Label fallback; explicit None=>"All" reads clearer than map_or_else here.
+            #[allow(clippy::option_if_let_else)]
             let label = match next {
                 None => "All".to_string(),
                 Some(id) => folders
@@ -160,7 +164,7 @@ impl App {
                     .unwrap_or_default(),
             };
             state.client.notify(format!("Library: {label}"));
-            drop(state);
+            let _ = state;
             drop(cs);
             drop(ds);
             let _ = self
@@ -173,7 +177,7 @@ impl App {
         // Album-list view, left pane: dedicated album navigation. Right-pane
         // (focus == 1) song keys fall through to the shared match below.
         if state.client.artists.view == LibraryView::AlbumList && state.client.artists.focus == 0 {
-            drop(state);
+            let _ = state;
             drop(cs);
             drop(ds);
             return self.handle_album_list_key(key).await;
@@ -212,7 +216,7 @@ impl App {
                     );
                     state.client.artists.selected_index = sel;
                     let item = sel.and_then(|i| tree_items.get(i).cloned());
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     self.load_pane_for_tree_item(item).await;
@@ -232,7 +236,7 @@ impl App {
                         step_tree_selection(&tree_items, state.client.artists.selected_index, true);
                     state.client.artists.selected_index = sel;
                     let item = sel.and_then(|i| tree_items.get(i).cloned());
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     self.load_pane_for_tree_item(item).await;
@@ -260,7 +264,7 @@ impl App {
                                 let artist_id = artist.id.clone();
                                 let artist_name = artist.name.clone();
 
-                                drop(state);
+                                let _ = state;
                                 drop(cs);
                                 drop(ds);
 
@@ -322,7 +326,7 @@ impl App {
                                 let album_id = album.id.clone();
                                 let album_name = album.name.clone();
 
-                                drop(state);
+                                let _ = state;
                                 drop(cs);
                                 drop(ds);
 
@@ -364,7 +368,7 @@ impl App {
                             TreeItem::Song { song } => {
                                 let song = song.clone();
                                 let title = song.title.clone();
-                                drop(state);
+                                let _ = state;
                                 drop(cs);
                                 drop(ds);
                                 {
@@ -412,7 +416,7 @@ impl App {
                                         .albums_cache
                                         .contains_key(&artist_id)
                                     {
-                                        drop(state);
+                                        let _ = state;
                                         drop(cs);
                                         drop(ds);
                                         if let Ok(crate::ipc::DaemonResponse::ArtistAlbums(_)) =
@@ -448,7 +452,7 @@ impl App {
                                 TreeItem::Album { album } => {
                                     let album_id = album.id.clone();
                                     let album_name = album.name.clone();
-                                    drop(state);
+                                    let _ = state;
                                     drop(cs);
                                     drop(ds);
 
@@ -491,7 +495,7 @@ impl App {
                                 TreeItem::Song { song } => {
                                     let song = song.clone();
                                     let title = song.title.clone();
-                                    drop(state);
+                                    let _ = state;
                                     drop(cs);
                                     drop(ds);
                                     {
@@ -522,7 +526,7 @@ impl App {
                         if let Some(song) = songs.get(idx) {
                             state.client.notify(format!("Playing: {}", song.title));
                         }
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         let _ = self
@@ -547,7 +551,7 @@ impl App {
                         if let Some(song) = state.client.artists.songs.get(idx).cloned() {
                             let title = song.title.clone();
                             state.client.notify(format!("Added to queue: {title}"));
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
                             let _ = self
@@ -566,7 +570,7 @@ impl App {
                     let tree_items = build_tree_items(&state);
                     if let Some(idx) = state.client.artists.selected_index {
                         if let Some(item) = tree_items.get(idx).cloned() {
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
                             let songs = self.collect_songs_for(&item).await;
@@ -596,7 +600,7 @@ impl App {
                     let count = state.client.artists.songs.len();
                     let songs = state.client.artists.songs.clone();
                     state.client.notify(format!("Added {count} songs to queue"));
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     let _ = self
@@ -615,13 +619,11 @@ impl App {
                         if let Some(song) = state.client.artists.songs.get(idx).cloned() {
                             let title = song.title.clone();
                             state.client.notify(format!("Playing next: {title}"));
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
-                            let mode = match cur_pos {
-                                Some(pos) => EnqueueMode::InsertAfter(pos),
-                                None => EnqueueMode::Append,
-                            };
+                            let mode =
+                                cur_pos.map_or(EnqueueMode::Append, EnqueueMode::InsertAfter);
                             let _ = self
                                 .client
                                 .request(DaemonRequest::EnqueueSongs {
@@ -638,7 +640,7 @@ impl App {
                     let tree_items = build_tree_items(&state);
                     if let Some(idx) = state.client.artists.selected_index {
                         if let Some(item) = tree_items.get(idx).cloned() {
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
                             let songs = self.collect_songs_for(&item).await;
@@ -653,10 +655,8 @@ impl App {
                                     };
                                     state.client.notify(format!("Playing {count} songs next"));
                                 }
-                                let mode = match cur_pos {
-                                    Some(pos) => EnqueueMode::InsertAfter(pos),
-                                    None => EnqueueMode::Append,
-                                };
+                                let mode =
+                                    cur_pos.map_or(EnqueueMode::Append, EnqueueMode::InsertAfter);
                                 let _ = self
                                     .client
                                     .request(DaemonRequest::EnqueueSongs { songs, mode })
@@ -669,13 +669,10 @@ impl App {
                     let count = state.client.artists.songs.len();
                     let songs = state.client.artists.songs.clone();
                     state.client.notify(format!("Playing {count} songs next"));
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
-                    let mode = match cur_pos {
-                        Some(pos) => EnqueueMode::InsertAfter(pos),
-                        None => EnqueueMode::Append,
-                    };
+                    let mode = cur_pos.map_or(EnqueueMode::Append, EnqueueMode::InsertAfter);
                     let _ = self
                         .client
                         .request(DaemonRequest::EnqueueSongs { songs, mode })
@@ -688,7 +685,7 @@ impl App {
                     .artists
                     .selected_song
                     .and_then(|idx| state.client.artists.songs.get(idx).map(|s| s.id.clone()));
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 if let Some(id) = song_id {
@@ -722,7 +719,7 @@ impl App {
                         TreeItem::Song { song } => Some(song.id.clone()),
                         _ => None,
                     });
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 if let Some(id) = song_id {

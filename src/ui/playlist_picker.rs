@@ -17,7 +17,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, colors: &
     let picker = &state.client.playlist_picker;
 
     let w = 60.min(area.width);
-    let rows = (playlists.len() as u16).clamp(1, 14);
+    let rows = crate::num::u16_sat(playlists.len()).clamp(1, 14);
     let h = (rows + 2).min(area.height);
     if w < 4 || h < 4 {
         return;

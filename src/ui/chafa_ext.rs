@@ -219,9 +219,9 @@ pub fn encode(img: &DynamicImage, width: u16, height: u16) -> Option<Vec<Encoded
             canvas,
             CHAFA_PIXEL_RGB8,
             rgb.as_ptr(),
-            w as i32,
-            h as i32,
-            (w * 3) as i32,
+            crate::num::i32_sat(w),
+            crate::num::i32_sat(h),
+            crate::num::i32_sat(w * 3),
         );
 
         let mut cells = Vec::with_capacity((width as usize) * (height as usize));
@@ -253,6 +253,8 @@ pub fn encode(img: &DynamicImage, width: u16, height: u16) -> Option<Vec<Encoded
     }
 }
 
+// Bytes masked to 0xff (0..=255); try_from is not const-stable, so `as u8` is exact here.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 const fn argb_to_color(c: i32) -> Color {
     Color::Rgb(
         ((c >> 16) & 0xff) as u8,

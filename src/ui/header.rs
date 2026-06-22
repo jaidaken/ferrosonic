@@ -140,7 +140,7 @@ impl Header {
             let mut cursor: u16 = 0;
             for (i, page) in pages.iter().enumerate() {
                 let label = format!("{} {}", page.shortcut(), page.label());
-                let tab_width = padding + label.len() as u16 + padding;
+                let tab_width = padding + crate::num::u16_sat(label.len()) + padding;
                 if rel_x >= cursor && rel_x < cursor + tab_width {
                     return Some(HeaderRegion::Tab(*page));
                 }

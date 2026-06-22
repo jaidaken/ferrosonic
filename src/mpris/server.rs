@@ -178,12 +178,16 @@ impl PlayerInterface for MprisPlayer {
         Ok(())
     }
 
+    // i64 micros->f64: precision loss only past 2^52us (~142yr); irrelevant for a seek offset.
+    #[allow(clippy::cast_precision_loss)]
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
         let offset_secs = offset.as_micros() as f64 / 1_000_000.0;
         self.fire(DaemonRequest::SeekRelative(offset_secs));
         Ok(())
     }
 
+    // i64 micros->f64: precision loss only past 2^52us (~142yr); irrelevant for a track position.
+    #[allow(clippy::cast_precision_loss)]
     async fn set_position(&self, _track_id: TrackId, position: Time) -> fdo::Result<()> {
         let position_secs = position.as_micros() as f64 / 1_000_000.0;
         self.fire(DaemonRequest::Seek(position_secs));
@@ -267,12 +271,16 @@ impl PlayerInterface for MprisPlayer {
         Ok(1.0)
     }
 
+    // f64->i32 `as` saturates; volume is the 0.0..=1.0 MPRIS range, so 0..=100.
+    #[allow(clippy::cast_possible_truncation)]
     async fn set_volume(&self, volume: Volume) -> Result<()> {
         let volume_int = (volume * 100.0) as i32;
         self.fire(DaemonRequest::SetVolume(volume_int));
         Ok(())
     }
 
+    // f64->i64 `as` saturates; position*1e6 micros is bounded by track length.
+    #[allow(clippy::cast_possible_truncation)]
     async fn position(&self) -> fdo::Result<Time> {
         let (now_playing, _, _) = self.get_state().await;
         Ok(Time::from_micros(

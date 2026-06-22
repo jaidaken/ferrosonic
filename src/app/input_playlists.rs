@@ -5,6 +5,8 @@ use crate::error::Error;
 use super::{App, AppState, DaemonRequest, EnqueueMode};
 
 impl App {
+    // Cohesive dispatcher over the 250 split threshold; tracked split-candidate (docs/KNOWN-ISSUES).
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_playlists_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -42,7 +44,7 @@ impl App {
                     }
                     let Some(id) = id else { return Ok(()) };
                     state.client.notify(format!("Renamed playlist to: {name}"));
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     let _ = self
@@ -71,7 +73,7 @@ impl App {
                     state.client.playlists.songs.clear();
                     state.client.playlists.selected_song = None;
                     state.client.notify("Deleted playlist");
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     let _ = self
@@ -145,7 +147,7 @@ impl App {
                         if let Some(playlist) = state.daemon.library.playlists.get(idx) {
                             let playlist_id = playlist.id.clone();
                             let playlist_name = playlist.name.clone();
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
 
@@ -170,7 +172,7 @@ impl App {
                 } else if let Some(idx) = state.client.playlists.selected_song {
                     if idx < state.client.playlists.songs.len() {
                         let songs = state.client.playlists.songs.clone();
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         return self
@@ -193,7 +195,7 @@ impl App {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
                             let title = song.title.clone();
                             state.client.notify(format!("Added to queue: {title}"));
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
                             let _ = self
@@ -209,7 +211,7 @@ impl App {
                     let count = state.client.playlists.songs.len();
                     let songs = state.client.playlists.songs.clone();
                     state.client.notify(format!("Added {count} songs to queue"));
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     let _ = self
@@ -228,13 +230,11 @@ impl App {
                         if let Some(song) = state.client.playlists.songs.get(idx).cloned() {
                             let title = song.title.clone();
                             state.client.notify(format!("Playing next: {title}"));
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
-                            let mode = match insert_pos {
-                                Some(pos) => EnqueueMode::InsertAfter(pos),
-                                None => EnqueueMode::Append,
-                            };
+                            let mode =
+                                insert_pos.map_or(EnqueueMode::Append, EnqueueMode::InsertAfter);
                             let _ = self
                                 .client
                                 .request(DaemonRequest::EnqueueSongs {
@@ -251,7 +251,7 @@ impl App {
                 if !state.client.playlists.songs.is_empty() {
                     let mut songs = state.client.playlists.songs.clone();
                     songs.shuffle(&mut rand::thread_rng());
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     return self
@@ -270,7 +270,7 @@ impl App {
                     state.client.playlists.selected_song.and_then(|idx| {
                         state.client.playlists.songs.get(idx).map(|s| s.id.clone())
                     });
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 if let Some(id) = song_id {
@@ -317,7 +317,7 @@ impl App {
                             _ => Some(index.min(len - 1)),
                         };
                         state.client.notify("Removed song from playlist");
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
                         if let Ok(crate::ipc::DaemonResponse::PlaylistSongs(songs)) = self
@@ -332,13 +332,13 @@ impl App {
                 }
             }
             KeyCode::Char('J') if state.client.playlists.focus == 1 => {
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 return self.move_playlist_song(1).await;
             }
             KeyCode::Char('K') if state.client.playlists.focus == 1 => {
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 return self.move_playlist_song(-1).await;
@@ -424,11 +424,12 @@ impl App {
         let Some(i) = cs.playlists.selected_song else {
             return Ok(());
         };
-        let j = i as isize + delta;
-        if j < 0 || j as usize >= len {
+        let Some(j) = i.checked_add_signed(delta) else {
+            return Ok(());
+        };
+        if j >= len {
             return Ok(());
         }
-        let j = j as usize;
         let playlist_id = cs
             .playlists
             .selected_playlist

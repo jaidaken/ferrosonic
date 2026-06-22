@@ -73,8 +73,8 @@ pub fn art_rect(area: Rect, cover_art_cols: u16, cell_size: (u16, u16)) -> Optio
     if art_w == 0 || art_h == 0 {
         return None;
     }
-    let art_w = art_w as u16;
-    let art_h = art_h as u16;
+    let art_w = crate::num::u16_sat(art_w);
+    let art_h = crate::num::u16_sat(art_h);
     let pad_x = (right_w - art_w) / 2;
     let pad_y = (right_h - art_h) / 2;
     Some(Rect::new(right_x + pad_x, inner.y + pad_y, art_w, art_h))
@@ -154,7 +154,10 @@ fn build_quality_string(np: &NowPlaying) -> String {
     if let Some(rate) = np.sample_rate {
         let khz = f64::from(rate) / 1000.0;
         if khz == khz.floor() {
-            parts.push(format!("{}kHz", khz as u32));
+            // f64->u32 `as` saturates; khz is a positive sample-rate/1000.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let khz_int = khz as u32;
+            parts.push(format!("{khz_int}kHz"));
         } else {
             parts.push(format!("{khz:.1}kHz"));
         }
@@ -224,10 +227,10 @@ fn render_info(
         )
     };
 
-    let n = lines.len() as u16;
+    let n = crate::num::u16_sat(lines.len());
     let pad = area.height.saturating_sub(n) / 2;
     for (i, (text, style)) in lines.iter().zip(styles.iter()).enumerate() {
-        let y = area.y + pad + i as u16;
+        let y = area.y + pad + crate::num::u16_sat(i);
         if y >= area.y + area.height {
             break;
         }
@@ -252,7 +255,7 @@ pub fn render_progress_bar(
     }
 
     let time_str = format!("{pos} / {dur}");
-    let time_width = time_str.len() as u16;
+    let time_width = crate::num::u16_sat(time_str.len());
 
     let bar_width = area.width.saturating_sub(time_width + 3);
     let total_width = time_width + 2 + bar_width;
@@ -267,6 +270,8 @@ pub fn render_progress_bar(
 
     let bar_start = start_x + time_width + 2;
     if bar_width > 0 {
+        // f64->u16 `as` saturates; bar_width*progress(0.0..=1.0) is bounded by bar_width.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let filled = (f64::from(bar_width) * progress) as u16;
 
         for x in bar_start..(bar_start + filled) {

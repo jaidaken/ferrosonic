@@ -3,6 +3,8 @@ use crate::error::Error;
 use super::{App, AppState, DaemonRequest, EnqueueMode, LayoutAreas};
 
 impl App {
+    // Cohesive single match/render; splitting would fragment one logical unit.
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_library_click(
         &mut self,
         x: u16,
@@ -49,7 +51,7 @@ impl App {
                             if was_expanded {
                                 state.client.artists.expanded.remove(&artist_id);
                             } else if !state.daemon.library.albums_cache.contains_key(&artist_id) {
-                                drop(state);
+                                let _ = state;
                                 drop(cs);
                                 drop(ds);
                                 let albums_resp = self
@@ -85,7 +87,7 @@ impl App {
                         TreeItem::Album { album } => {
                             let album_id = album.id.clone();
                             let album_name = album.name.clone();
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
 
@@ -130,7 +132,7 @@ impl App {
                         TreeItem::Song { song } => {
                             let song = song.clone();
                             let title = song.title.clone();
-                            drop(state);
+                            let _ = state;
                             drop(cs);
                             drop(ds);
                             {
@@ -156,7 +158,7 @@ impl App {
                     }
                 } else if let TreeItem::Album { album } = &tree_items[item_index] {
                     let album_id = album.id.clone();
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     let songs = self.load_album(&album_id).await;
@@ -197,7 +199,7 @@ impl App {
                     if let Some(song) = songs.get(item_index) {
                         state.client.notify(format!("Playing: {}", song.title));
                     }
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     let _ = self

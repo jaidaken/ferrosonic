@@ -139,6 +139,7 @@ impl SocketClient {
 
 #[async_trait]
 impl DaemonClient for SocketClient {
+    #[allow(clippy::option_if_let_else)] // recv result -> Disconnected; explicit arms clearer.
     async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();

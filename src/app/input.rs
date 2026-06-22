@@ -46,6 +46,8 @@ impl App {
     ///
     /// # Errors
     /// Returns an `Error` if the daemon request fails.
+    // Cohesive single match/render; splitting would fragment one logical unit.
+    #[allow(clippy::too_many_lines)]
     pub async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -62,7 +64,7 @@ impl App {
                 KeyCode::Char('y' | 'Y') => {
                     state.client.quit_prompt = false;
                     state.client.should_quit = true;
-                    drop(state);
+                    let _ = state;
                     drop(cs);
                     drop(ds);
                     let _ = self.client.request(DaemonRequest::Shutdown).await;
@@ -83,7 +85,7 @@ impl App {
 
         // Add-to-playlist picker: while open, the overlay owns every key.
         if state.client.playlist_picker.active {
-            drop(state);
+            let _ = state;
             drop(cs);
             drop(ds);
             return self.handle_playlist_picker_key(key).await;
@@ -123,7 +125,7 @@ impl App {
 
             if is_server_text_field || is_filtering || is_naming_playlist || is_editing_playlist {
                 let page = state.client.page;
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 return match page {
@@ -177,7 +179,7 @@ impl App {
                 return Ok(());
             }
             (KeyCode::Char('p' | ' '), KeyModifiers::NONE) => {
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 return self
@@ -188,7 +190,7 @@ impl App {
                     .map_err(Error::from);
             }
             (KeyCode::Char('l'), KeyModifiers::NONE) => {
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 return self
@@ -199,7 +201,7 @@ impl App {
                     .map_err(Error::from);
             }
             (KeyCode::Char('h'), KeyModifiers::NONE) => {
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 return self
@@ -211,7 +213,7 @@ impl App {
             }
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 let song_id = state.daemon.now_playing.song.as_ref().map(|s| s.id.clone());
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 if let Some(id) = song_id {
@@ -221,7 +223,7 @@ impl App {
             }
             (KeyCode::Char('T'), _) => {
                 state.client.notify("Shuffling library...");
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 let _ = self.client.request(DaemonRequest::ShuffleLibrary).await;
@@ -231,7 +233,7 @@ impl App {
                 let new_mode = state.client.settings_state.repeat_mode.cycle();
                 state.client.settings_state.repeat_mode = new_mode;
                 state.client.notify(format!("Repeat: {}", new_mode.label()));
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 let _ = self
@@ -242,7 +244,7 @@ impl App {
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 state.client.notify("Refreshing...");
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 self.load_initial_data().await;
@@ -259,7 +261,7 @@ impl App {
         }
 
         let page = state.client.page;
-        drop(state);
+        let _ = state;
         drop(cs);
         drop(ds);
         match page {

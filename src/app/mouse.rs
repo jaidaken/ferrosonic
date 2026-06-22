@@ -21,6 +21,8 @@ impl App {
         }
     }
 
+    // Cohesive single match/render; splitting would fragment one logical unit.
+    #[allow(clippy::too_many_lines)]
     async fn handle_mouse_click(&mut self, x: u16, y: u16) -> Result<(), Error> {
         use crate::ui::header::{Header, HeaderRegion};
 
@@ -35,7 +37,7 @@ impl App {
         let layout = state.client.layout.clone();
         let page = state.client.page;
         let duration = state.daemon.now_playing.duration;
-        drop(state);
+        let _ = state;
         drop(cs);
         drop(ds);
 
@@ -221,7 +223,7 @@ impl App {
 
         if is_second_click {
             let songs = state.songs_list().to_vec();
-            drop(state);
+            let _ = state;
             drop(cs);
             drop(ds);
             self.last_click = Some((x, y, std::time::Instant::now()));
@@ -264,7 +266,7 @@ impl App {
                     .is_some_and(|(_, ly, t)| ly == y && t.elapsed().as_millis() < 500);
 
             if is_second_click {
-                drop(state);
+                let _ = state;
                 drop(cs);
                 drop(ds);
                 self.last_click = Some((0, y, std::time::Instant::now()));

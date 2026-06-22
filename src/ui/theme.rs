@@ -143,14 +143,16 @@ impl ThemeData {
         ];
 
         let cava = file.cava.as_ref();
-        let cava_gradient = match cava.and_then(|c| c.gradient.as_ref()) {
-            Some(g) => parse_gradient(g, &default_g),
-            None => std::array::from_fn(|i| default_g[i].to_string()),
-        };
-        let cava_horizontal_gradient = match cava.and_then(|c| c.horizontal_gradient.as_ref()) {
-            Some(h) => parse_gradient(h, &default_h),
-            None => std::array::from_fn(|i| default_h[i].to_string()),
-        };
+        let cava_gradient = cava.and_then(|c| c.gradient.as_ref()).map_or_else(
+            || std::array::from_fn(|i| default_g[i].to_string()),
+            |g| parse_gradient(g, &default_g),
+        );
+        let cava_horizontal_gradient = cava
+            .and_then(|c| c.horizontal_gradient.as_ref())
+            .map_or_else(
+                || std::array::from_fn(|i| default_h[i].to_string()),
+                |h| parse_gradient(h, &default_h),
+            );
 
         Ok(Self {
             name: name.to_string(),
@@ -246,6 +248,8 @@ pub fn load_themes() -> Vec<ThemeData> {
 }
 
 /// `tokyo-night` → `Tokyo Night`, `rose_pine` → `Rose Pine`.
+// The Some arm depends on iterator state from chars.next(); match keeps the borrow flow clear.
+#[allow(clippy::option_if_let_else)]
 fn titlecase_filename(s: &str) -> String {
     s.split(['-', '_'])
         .filter(|w| !w.is_empty())

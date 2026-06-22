@@ -10,6 +10,8 @@ use crate::ipc::protocol::DaemonEvent;
 
 /// Owned snapshot of every read the playback tick needs to decide an action.
 #[derive(Debug, Clone, Copy, PartialEq)]
+// Snapshot of distinct simultaneous runtime conditions; orthogonal, not a state machine.
+#[allow(clippy::struct_excessive_bools)]
 struct PlaybackTickInputs {
     is_active: bool,
     is_playing: bool,

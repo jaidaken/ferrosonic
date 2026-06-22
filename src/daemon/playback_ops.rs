@@ -132,10 +132,8 @@ impl DaemonCore {
         if queue_len == 0 {
             return Ok(());
         }
-        let next_pos: Option<usize> = match current_pos {
-            Some(p) => repeat.next_manual(p, queue_len),
-            None => Some(0),
-        };
+        let next_pos: Option<usize> =
+            current_pos.map_or(Some(0), |p| repeat.next_manual(p, queue_len));
         if let Some(p) = next_pos {
             return self.play_queue_position(p, PlayMode::Direct).await;
         }
@@ -165,10 +163,8 @@ impl DaemonCore {
         if queue_len == 0 {
             return Ok(());
         }
-        let next_pos: Option<usize> = match current_pos {
-            Some(p) => repeat.next_auto(p, queue_len),
-            None => Some(0),
-        };
+        let next_pos: Option<usize> =
+            current_pos.map_or(Some(0), |p| repeat.next_auto(p, queue_len));
         if let Some(p) = next_pos {
             return self.play_queue_position(p, PlayMode::Direct).await;
         }

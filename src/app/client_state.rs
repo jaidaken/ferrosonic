@@ -9,6 +9,8 @@ use crate::app::state::{
 
 /// All client-local UI state; never leaves the TUI process.
 #[derive(Debug, Default)]
+// Independent UI flags (quit, daemon-backed, prompt, cava-available); orthogonal, not a state machine.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ClientState {
     /// Currently displayed page.
     pub page: Page,

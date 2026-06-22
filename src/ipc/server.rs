@@ -156,6 +156,8 @@ async fn handle_stale_socket(path: &Path) -> std::io::Result<()> {
     }
 }
 
+// Cohesive single match/render; splitting would fragment one logical unit.
+#[allow(clippy::too_many_lines)]
 async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<(), FrameError> {
     // Counts toward active_clients for the connection's lifetime; the idle-exit
     // monitor only shuts down when this reaches 0.

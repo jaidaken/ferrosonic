@@ -131,6 +131,8 @@ impl NowPlaying {
 /// assert_eq!(format_duration(3600.0), "01:00:00");
 /// ```
 #[must_use]
+// f64->u64 `as` saturates (Rust >=1.45); a duration in seconds is non-negative.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn format_duration(seconds: f64) -> String {
     let total_secs = seconds as u64;
     let hours = total_secs / 3600;

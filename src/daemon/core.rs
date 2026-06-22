@@ -728,6 +728,8 @@ impl DaemonCore {
     /// and run the rate-switch pre-roll. The whole file is fetched first so mpv
     /// reads the true track length; loading a still-growing file paused makes
     /// mpv treat the partial-file EOF as the track end and advance early.
+    // Cohesive single match/render; splitting would fragment one logical unit.
+    #[allow(clippy::too_many_lines)]
     async fn prebuffer_and_load(
         self: &Arc<Self>,
         url: String,

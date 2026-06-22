@@ -347,6 +347,8 @@ impl Child {
 
     /// Duration as `MM:SS`, or `--:--` when unknown.
     #[must_use]
+    // Named mins/secs in the Some arm read clearer than an inline map_or_else closure.
+    #[allow(clippy::option_if_let_else)]
     pub fn format_duration(&self) -> String {
         match self.duration {
             Some(d) => {

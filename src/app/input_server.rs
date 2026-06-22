@@ -10,6 +10,8 @@ use super::{App, AppState, DaemonRequest};
 const MAX_FIELD_LEN: usize = 1024;
 
 impl App {
+    // Cohesive single match/render; splitting would fragment one logical unit.
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_server_key(&self, key: event::KeyEvent) -> Result<(), Error> {
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
@@ -77,7 +79,7 @@ impl App {
                         }
                         state.client.server_state.status =
                             Some("Testing connection...".to_string());
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
 
@@ -143,7 +145,7 @@ impl App {
                             return Ok(());
                         }
                         state.client.server_state.status = Some("Saving...".to_string());
-                        drop(state);
+                        let _ = state;
                         drop(cs);
                         drop(ds);
 
