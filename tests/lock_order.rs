@@ -11,7 +11,9 @@ use ferrosonic::ipc::protocol::{DaemonRequest, EnqueueMode};
 use serial_test::serial;
 use tokio::time::timeout;
 
-const DEADLOCK_BUDGET: Duration = Duration::from_secs(10);
+// Deadlock detector, not a latency gate (a real deadlock never completes):
+// generous so CI parallel-load starvation of this ~0.5s-local workload does not false-fail.
+const DEADLOCK_BUDGET: Duration = Duration::from_secs(30);
 const ITERATIONS_PER_TASK: usize = 25;
 
 async fn seed_mocks(td: &TestDaemon) {
