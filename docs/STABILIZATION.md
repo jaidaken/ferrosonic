@@ -47,11 +47,11 @@ authoritative current status.
 
 ### New finding (not in the original audit)
 
-- **TEST-FIXTURE /tmp LEAK (latent, not currently accumulating).** Tests call `tempfile::tempdir()` producing `/tmp/.tmpXXXXXX/`; `TempDir`'s `Drop` is skipped on SIGKILL (nextest timeout, cargo-mutants group-kill, `panic=abort`), so a killed run can leave dirs behind. The 9,594 seen 2026-06-15 are gone (0 present 2026-06-22). The mechanism remains, so a future hard-killed run can re-leak; a swept-prefix test root or janitor pass would make it self-cleaning. The production mpv socket does not leak (fixed path, `paths.rs:27`).
+- **TEST-FIXTURE /tmp LEAK: CLOSED 2026-06-22.** Integration tests route every temp dir through `common::tempdir()`, which creates under a `ferrosonic-test` swept root and runs `sweep_stale_test_dirs` (remove dirs >1h old) once per test process. So a SIGKILL'd run's leftovers are reaped by the next run's first `tempdir()` call: self-cleaning. The last two direct `tempfile::tempdir()` bypassers (`keychain_credentials.rs`) now use the helper. Residual, negligible: 4 doc-test examples + 1 `io_util` unit test still call `tempfile::tempdir()` directly (doc/unit scope cannot reach `tests/common`; each is one fast dir). The production mpv socket does not leak (fixed path, `paths.rs:27`).
 
 ### Worth doing, value-ranked
 
-1. **Test-fixture /tmp leak self-cleaning.** Latent (0 now, but a hard-killed run re-leaks). Swept-prefix root or janitor pass. The only non-feature stabilization item left; everything else here is DONE (P8 KNOWN-ISSUES, P9 CI gates + clippy deny, P10 0.6.0 release).
+All non-feature stabilization items are DONE: P8 KNOWN-ISSUES, P9 CI gates + clippy deny, P10 0.6.0 release, and the test-fixture /tmp leak (now self-cleaning via the swept `common::tempdir()` root). Remaining open work is feature requests (`#25` ReplayGain, `#14` star/ratings, `#12` random album + keybinds, `#7` playback filters) and the documented mutation depth-pass items below.
 
 ### Low-value / defer (localhost single-user IPC; defense-in-depth)
 

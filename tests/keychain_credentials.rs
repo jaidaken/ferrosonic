@@ -83,7 +83,7 @@ fn resolution_reads_password_from_keychain_when_marker_set() {
     secret_store::install_test_store(Arc::new(InMemoryKeyStore::new()));
     secret_store::store("https://nav.example", "carol", &Secret::from("kcpass")).unwrap();
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let path = dir.path().join("config.toml");
     std::fs::write(
         &path,
@@ -101,7 +101,7 @@ fn resolution_reads_password_from_keychain_when_marker_set() {
 fn resolution_clears_password_when_marker_set_but_keychain_empty() {
     secret_store::install_test_store(Arc::new(InMemoryKeyStore::new()));
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let path = dir.path().join("config.toml");
     std::fs::write(
         &path,
