@@ -2,11 +2,31 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tracing::{debug, info, warn};
 
 use crate::daemon::core::DaemonCore;
 use crate::ipc::protocol::DaemonEvent;
+
+/// Window after a loadfile during which mpv may still report a stale
+/// idle-active; the tick ignores idle within it.
+const JUST_LOADED_WINDOW: Duration = Duration::from_millis(1500);
+
+/// Minimum spacing between preload attempts while the network keeps failing.
+const PRELOAD_BACKOFF: Duration = Duration::from_secs(5);
+
+/// Whether a loadfile stamped at `last` is still within the just-loaded window
+/// as of `now`. Pure so the 1500ms edge is mutation-testable without a clock.
+fn within_just_loaded_window(last: Option<Instant>, now: Instant) -> bool {
+    last.is_some_and(|t| now.duration_since(t) < JUST_LOADED_WINDOW)
+}
+
+/// Whether a preload attempt is due: never attempted, or the backoff elapsed
+/// since `last` as of `now`. Pure so the 5s edge is mutation-testable.
+fn preload_due(last: Option<Instant>, now: Instant) -> bool {
+    last.is_none_or(|t| now.duration_since(t) >= PRELOAD_BACKOFF)
+}
 
 /// Owned snapshot of every read the playback tick needs to decide an action.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -115,12 +135,13 @@ impl DaemonCore {
             .as_ref()
             .is_some_and(|a| a.load(Ordering::Acquire));
 
-        let just_loaded = self
-            .last_loadfile
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .map(|t| t.elapsed() < std::time::Duration::from_millis(1500))
-            .unwrap_or(false);
+        let just_loaded = within_just_loaded_window(
+            *self
+                .last_loadfile
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            Instant::now(),
+        );
 
         PlaybackTickInputs {
             is_active,
@@ -242,11 +263,9 @@ impl DaemonCore {
             .last_preload_attempt
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let due = last
-            .map(|t| t.elapsed() >= std::time::Duration::from_secs(5))
-            .unwrap_or(true);
+        let due = preload_due(*last, Instant::now());
         if due {
-            *last = Some(std::time::Instant::now());
+            *last = Some(Instant::now());
         }
         due
     }
@@ -626,6 +645,49 @@ mod playback_tick_tests {
         assert_ne!(TickContinuation::Stop, TickContinuation::Continue);
         assert_eq!(GaplessOutcome::Advanced, GaplessOutcome::Advanced);
         assert_ne!(GaplessOutcome::Advanced, GaplessOutcome::QueueRanOut);
+    }
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::{preload_due, within_just_loaded_window, PRELOAD_BACKOFF};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn just_loaded_window_edge_is_exclusive_at_1500ms() {
+        let base = Instant::now();
+        assert!(
+            within_just_loaded_window(Some(base), base + Duration::from_millis(1499)),
+            "1499ms after a loadfile is still inside the just-loaded window"
+        );
+        assert!(
+            !within_just_loaded_window(Some(base), base + Duration::from_millis(1500)),
+            "1500ms after a loadfile is outside the window (idle-advance allowed)"
+        );
+        assert!(
+            !within_just_loaded_window(None, base),
+            "no loadfile recorded is never within the window"
+        );
+    }
+
+    #[test]
+    fn preload_due_edge_is_inclusive_at_backoff() {
+        let base = Instant::now();
+        assert!(
+            !preload_due(
+                Some(base),
+                base + PRELOAD_BACKOFF - Duration::from_millis(1)
+            ),
+            "just under the backoff is not yet due"
+        );
+        assert!(
+            preload_due(Some(base), base + PRELOAD_BACKOFF),
+            "exactly at the backoff is due"
+        );
+        assert!(
+            preload_due(None, base),
+            "never-attempted preload is always due"
+        );
     }
 }
 
