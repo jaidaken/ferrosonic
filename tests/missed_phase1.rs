@@ -2,8 +2,6 @@
 //! edges, daemon mpv-loadfile errors, cache-hit paths, repeat-One gapless,
 //! --verbose flag, --config bad file.
 
-#![allow(clippy::zombie_processes)]
-
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ferrosonic::app::state::Page;
 use ferrosonic::app::App;

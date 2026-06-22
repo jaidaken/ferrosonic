@@ -1,7 +1,5 @@
 //! Final stretch coverage: panic hook, argv permutations, edge subsonic states.
 
-#![allow(clippy::zombie_processes)]
-
 mod common;
 
 use std::sync::atomic::{AtomicBool, Ordering};

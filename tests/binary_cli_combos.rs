@@ -1,7 +1,5 @@
 //! CLI flag combinations + missing-config-dir edge cases.
 
-#![allow(clippy::zombie_processes)]
-
 mod common;
 use serial_test::serial;
 use std::process::Command;

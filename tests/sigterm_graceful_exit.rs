@@ -1,11 +1,11 @@
 //! Real-process SIGTERM delivery to ferrosonicd.
 
-#![allow(clippy::zombie_processes)]
-
 mod common;
 use std::time::Duration;
 
 #[tokio::test]
+// Child reaped on every path (try_wait in the loop, or kill+wait on timeout); clippy can't prove it through the loop.
+#[allow(clippy::zombie_processes)]
 async fn ferrosonicd_exits_cleanly_on_sigterm() {
     let config_dir = common::tempdir();
     let runtime_dir = common::tempdir();
@@ -65,6 +65,8 @@ async fn ferrosonicd_exits_cleanly_on_sigterm() {
 }
 
 #[tokio::test]
+// Child reaped on every path (try_wait in the loop, or kill+wait on timeout); clippy can't prove it through the loop.
+#[allow(clippy::zombie_processes)]
 async fn ferrosonicd_exits_cleanly_on_sigint() {
     let config_dir = common::tempdir();
     let runtime_dir = common::tempdir();

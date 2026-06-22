@@ -1,7 +1,5 @@
 //! Every realistic clap flag permutation on both binaries.
 
-#![allow(clippy::zombie_processes)]
-
 use serial_test::serial;
 use std::process::Command;
 

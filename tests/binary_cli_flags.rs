@@ -1,7 +1,5 @@
 //! Binary CLI flag handling: --help, --version, --config, --verbose.
 
-#![allow(clippy::zombie_processes)]
-
 mod common;
 use assert_cmd::Command;
 use predicates::{str::contains, Predicate};

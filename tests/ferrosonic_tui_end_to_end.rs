@@ -1,14 +1,11 @@
 //! Spawn the ferrosonic binary attached to a real PTY, hit it with
 //! SIGTERM, assert clean exit. Exercises the event_loop wrapper.
 
-#![allow(clippy::zombie_processes)]
-
 mod common;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::process::CommandExt;
 use std::time::Duration;
 
-#[allow(dead_code)]
 fn open_pty() -> (std::fs::File, libc::c_int) {
     let mut master: libc::c_int = 0;
     let mut slave: libc::c_int = 0;

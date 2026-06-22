@@ -1,5 +1,7 @@
 //! Shared test harness. Imported via `mod common;` in each test.
 
+// Each integration-test binary compiles this whole harness but uses only a
+// subset of its helpers; dead_code/unused_imports here are structural, not real.
 #![allow(dead_code, unused_imports)]
 
 pub mod fake_mpv;
