@@ -59,11 +59,14 @@ DEFERRED: none. backlog cleared.
 - coverage job = report-only, best-effort: nextest `coverage` profile (`.config/nextest.toml`) drops the 11 real-binary e2e test files (they exec a separate process -> no in-process coverage, and the instrumented child races profile-write vs signal-exit); collect step is `continue-on-error`. coverage is not a gate.
 - subprocess/PTY tests flaky under parallel CI: the gating nextest job runs the `ci` profile (`retries=2`) so a known-flaky timing test retries instead of reddening the gate. a real break still fails all attempts.
 
-## mutation known-open seams (deferred depth pass)
+## mutation known-open seams
 
-real (behaviour-changing) survivors that need a test seam not yet built; NOT provably-equivalent (those live in [mutants_exclusions](mutants_exclusions.md)). detail in [TESTING](TESTING.md) CURRENT section.
+real (behaviour-changing) survivors; NOT provably-equivalent (those live in [mutants_exclusions](mutants_exclusions.md)). detail in [TESTING](TESTING.md) CURRENT section.
 
-- `core.rs` RAII guards (LoadingFlagOwner/PrebufferGate/CancelSlotCleaner disarm+drop): track-switch cancel race; needs a concurrent rapid-switch harness (loom or staged Buffered plays).
-- `core.rs` mpv EOF event listener (`reason != "eof"`, `count >= 2`): gapless auto-advance gating; needs a FakeMpv unsolicited-event injection seam.
-- `core.rs` prebuffer streaming thresholds: perf-timing, loads the same song; low correctness value.
-- `playback_tick.rs` 1500ms / 5s debounce boundaries: `std::time::Instant`, tokio fake-time can't reach; needs a clock-injection seam.
+CLOSED 2026-06-22:
+- `core.rs` mpv EOF event listener (`reason != "eof"`, `count >= 2`): `FakeMpv::emit_end_file` injection seam + `tests/mpv_eof_advance.rs`. Mutant-verified (the `!=`-flip and the `>= 2` boundary both fail the tests).
+- `playback_tick.rs` 1500ms / 5s debounce boundaries: extracted to pure `within_just_loaded_window` / `preload_due` (parameterized on `now`); boundary tests in the `boundary_tests` module. Mutant-verified (`<`->`<=`, `>=`->`>` both fail).
+
+OPEN:
+- `core.rs` RAII guards (LoadingFlagOwner/PrebufferGate/CancelSlotCleaner disarm+drop): track-switch cancel race. The hard one: needs a `FakeSubsonic` controllable/blocking-stream seam so a Buffered prebuffer can be held mid-flight and superseded deterministically, then assert the superseded task's Drop clears only its own flag. Not built yet; deferred to avoid a flaky concurrent test.
+- `core.rs` prebuffer streaming thresholds: perf-timing, loads the same song; low correctness value, left alone.
