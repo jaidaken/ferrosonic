@@ -19,77 +19,18 @@ impl App {
 
         // Rename box owns all keys while open.
         if state.client.playlists.renaming {
-            match key.code {
-                KeyCode::Esc => {
-                    state.client.playlists.renaming = false;
-                    state.client.playlists.rename_buf.clear();
-                }
-                KeyCode::Backspace => {
-                    state.client.playlists.rename_buf.pop();
-                }
-                KeyCode::Char(c) => {
-                    state.client.playlists.rename_buf.push(c);
-                }
-                KeyCode::Enter => {
-                    let name = state.client.playlists.rename_buf.trim().to_string();
-                    let id = state
-                        .client
-                        .playlists
-                        .selected_playlist
-                        .and_then(|i| state.daemon.library.playlists.get(i))
-                        .map(|p| p.id.clone());
-                    state.client.playlists.renaming = false;
-                    state.client.playlists.rename_buf.clear();
-                    if name.is_empty() {
-                        state.client.notify("Playlist name cannot be empty");
-                        return Ok(());
-                    }
-                    let Some(id) = id else { return Ok(()) };
-                    state.client.notify(format!("Renamed playlist to: {name}"));
-                    let _ = state;
-                    drop(cs);
-                    drop(ds);
-                    let _ = self
-                        .client
-                        .request(DaemonRequest::RenamePlaylist { id, name })
-                        .await;
-                    return Ok(());
-                }
-                _ => {}
-            }
-            return Ok(());
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            return self.handle_playlists_rename_key(key).await;
         }
 
         // Delete-confirmation prompt owns y/n/esc while open.
         if state.client.playlists.confirming_delete {
-            match key.code {
-                KeyCode::Char('y' | 'Y') => {
-                    let id = state
-                        .client
-                        .playlists
-                        .selected_playlist
-                        .and_then(|i| state.daemon.library.playlists.get(i))
-                        .map(|p| p.id.clone());
-                    state.client.playlists.confirming_delete = false;
-                    let Some(id) = id else { return Ok(()) };
-                    state.client.playlists.songs.clear();
-                    state.client.playlists.selected_song = None;
-                    state.client.notify("Deleted playlist");
-                    let _ = state;
-                    drop(cs);
-                    drop(ds);
-                    let _ = self
-                        .client
-                        .request(DaemonRequest::DeletePlaylist { id })
-                        .await;
-                    return Ok(());
-                }
-                KeyCode::Char('n' | 'N') | KeyCode::Esc => {
-                    state.client.playlists.confirming_delete = false;
-                }
-                _ => {}
-            }
-            return Ok(());
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            return self.handle_playlists_delete_confirm_key(key).await;
         }
 
         match key.code {
@@ -368,6 +309,91 @@ impl App {
 
     /// Key handler for the add-to-playlist picker overlay; owns all input
     /// while open. Enter adds the held song to the highlighted playlist.
+    async fn handle_playlists_rename_key(&self, key: event::KeyEvent) -> Result<(), Error> {
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
+        match key.code {
+            KeyCode::Esc => {
+                state.client.playlists.renaming = false;
+                state.client.playlists.rename_buf.clear();
+            }
+            KeyCode::Backspace => {
+                state.client.playlists.rename_buf.pop();
+            }
+            KeyCode::Char(c) => {
+                state.client.playlists.rename_buf.push(c);
+            }
+            KeyCode::Enter => {
+                let name = state.client.playlists.rename_buf.trim().to_string();
+                let id = state
+                    .client
+                    .playlists
+                    .selected_playlist
+                    .and_then(|i| state.daemon.library.playlists.get(i))
+                    .map(|p| p.id.clone());
+                state.client.playlists.renaming = false;
+                state.client.playlists.rename_buf.clear();
+                if name.is_empty() {
+                    state.client.notify("Playlist name cannot be empty");
+                    return Ok(());
+                }
+                let Some(id) = id else { return Ok(()) };
+                state.client.notify(format!("Renamed playlist to: {name}"));
+                let _ = state;
+                drop(cs);
+                drop(ds);
+                let _ = self
+                    .client
+                    .request(DaemonRequest::RenamePlaylist { id, name })
+                    .await;
+                return Ok(());
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_playlists_delete_confirm_key(&self, key: event::KeyEvent) -> Result<(), Error> {
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
+        match key.code {
+            KeyCode::Char('y' | 'Y') => {
+                let id = state
+                    .client
+                    .playlists
+                    .selected_playlist
+                    .and_then(|i| state.daemon.library.playlists.get(i))
+                    .map(|p| p.id.clone());
+                state.client.playlists.confirming_delete = false;
+                let Some(id) = id else { return Ok(()) };
+                state.client.playlists.songs.clear();
+                state.client.playlists.selected_song = None;
+                state.client.notify("Deleted playlist");
+                let _ = state;
+                drop(cs);
+                drop(ds);
+                let _ = self
+                    .client
+                    .request(DaemonRequest::DeletePlaylist { id })
+                    .await;
+                return Ok(());
+            }
+            KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                state.client.playlists.confirming_delete = false;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub(super) async fn handle_playlist_picker_key(
         &self,
         key: event::KeyEvent,
