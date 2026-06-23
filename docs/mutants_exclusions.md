@@ -30,3 +30,8 @@ survivors are real gaps and get a test (see [TESTING](TESTING.md)).
 ## ui
 
 - `queue.rs` (`< pos` -> `<= pos`) in queue render `is_played`. differs only at `i == pos`, which is the current track; `is_current` is checked FIRST in the style chain, so `is_played` is never consulted at `i == pos`.
+
+## app (input dispatch)
+
+- `input.rs` F-key-revert `&&` -> `||` at the `page == Page::Library && artists.filter_active` (106) and `page == Page::Queue && queue_state.naming_playlist` (109) guards. These run only inside the F-key branch, and each overlay flag is set ONLY while on its own page (the filter is a Library-only mode; the naming box a Queue-only mode). So whenever the flag is true, the page check is also true and `&&`/`||` agree; when the flag is false the mutant's extra "clear" hits an already-cleared overlay (idempotent). Same result for every reachable state. (The `==` -> `!=` variants at these sites ARE killed - they skip the clear and leave the overlay stale; see `tests/input_global_keys.rs`.)
+- `input.rs:24` delete `Event::Resize(_, _)` arm in `handle_event`. The arm body is wholly gated by `if self.cava_parser.is_some()` and only recomputes cava render dimensions; with no cava running (the default) it is a no-op, and with cava it changes only visualizer geometry, no app state or logic. Mouse dispatch (the sibling `Event::Mouse` arm) IS exercised via `handle_event` in `input_global_keys.rs`.
