@@ -47,7 +47,7 @@ SUPPRESSED per-site (inline `#[allow]` + rationale at each marker, no global all
 - `option_if_let_else` (8 of 17): side-effecting arms / nested `map_or_else` / parser-iterator state / label fallback.
 - `struct_excessive_bools` (5): orthogonal-flag structs, not state machines.
 - `match_same_arms` (3 fn-scoped): arms kept explicit per enum-variant / recv-outcome / setting.
-- `too_many_lines` (16 fns): cohesive dispatchers/renders; the 4 >250 are tracked split-candidates.
+- `too_many_lines` (cohesive dispatchers/renders): the four former >250 split-candidates are addressed. `apply_event` split into per-event helpers (allow removed); `InProcessClient::request` flattened to one-liner arms via an `ok_response` helper + four extracted method bodies (deliberately-flat ~50-command router keeps one allow); `handle_library_key` + `handle_playlists_key` route their modal overlays to focused sub-handlers (the cohesive tree/song key-match keeps one allow each).
 - `needless_pass_by_value` (by-value constructors + a `map_err` fn-item); `too_many_arguments` (freedesktop `Notify` D-Bus signature); `implicit_hasher`/`map_entry` (transitional shim); `float_cmp` (exact integer-value test); `significant_drop_tightening` (36 fns, above).
 
 TEST TREE: 6 dead `zombie_processes` crate-allows removed; `sigterm_graceful_exit` keeps a per-fn allow (child reaped on all paths, clippy can't prove it through the loop); `cava_drain` `ReadEnd::Eof` now exercised (was dead); `tests/common` keeps a module `#![allow(dead_code, unused_imports)]` (shared-harness idiom, structural). Warn-level `unwrap`/`expect`/`panic` in tests are accepted (gate is lib+bins only).

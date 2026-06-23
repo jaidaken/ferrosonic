@@ -11,7 +11,7 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 impl App {
-    // Cohesive dispatcher over the 250 split threshold; tracked split-candidate (docs/KNOWN-ISSUES).
+    // Cohesive tree/song key-match; the filter, view, folder, and album-list overlays already route out to sub-handlers. The remaining single match stays intact (splitting it adds per-arm allows, not clarity).
     #[allow(clippy::too_many_lines)]
     // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
