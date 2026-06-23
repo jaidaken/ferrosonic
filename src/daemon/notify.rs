@@ -97,6 +97,11 @@ mod linux {
         }
 
         async fn proxy(&self) -> Option<NotificationsProxy<'_>> {
+            // Test/headless guard: never touch the real session bus when set. The
+            // test harness sets it (tests/common) so the suite cannot spam the desktop.
+            if std::env::var_os("FERROSONIC_NO_DESKTOP_NOTIFY").is_some() {
+                return None;
+            }
             let conn = self
                 .conn
                 .get_or_init(|| async { Connection::session().await.ok() })
