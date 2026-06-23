@@ -39,338 +39,150 @@ impl InProcessClient {
 
 #[async_trait]
 impl DaemonClient for InProcessClient {
-    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
-    #[allow(clippy::significant_drop_tightening)]
-    // Cohesive dispatcher over the 250 split threshold; tracked split-candidate (docs/KNOWN-ISSUES).
+    // Exhaustive ~50-command router; one flat match compiles to a single jump table and reads clearer than nesting the wire-protocol enum.
     #[allow(clippy::too_many_lines)]
     async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError> {
+        let core = &self.core;
         match req {
-            DaemonRequest::Pause => {
-                self.core.pause_playback().await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::Resume => {
-                self.core.resume_playback().await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::TogglePause => {
-                self.core.toggle_pause().await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::Stop => {
-                self.core.stop_keep_queue().await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::Seek(pos) => {
-                self.core.seek(pos).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SeekRelative(off) => {
-                self.core.seek_relative(off).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::Next => {
-                self.core.next_track().await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::Previous => {
-                self.core.prev_track().await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SetVolume(v) => {
-                self.core.set_volume(v).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-
+            DaemonRequest::Pause => ok_response(core.pause_playback().await),
+            DaemonRequest::Resume => ok_response(core.resume_playback().await),
+            DaemonRequest::TogglePause => ok_response(core.toggle_pause().await),
+            DaemonRequest::Stop => ok_response(core.stop_keep_queue().await),
+            DaemonRequest::Seek(pos) => ok_response(core.seek(pos).await),
+            DaemonRequest::SeekRelative(off) => ok_response(core.seek_relative(off).await),
+            DaemonRequest::Next => ok_response(core.next_track().await),
+            DaemonRequest::Previous => ok_response(core.prev_track().await),
+            DaemonRequest::SetVolume(v) => ok_response(core.set_volume(v).await),
             DaemonRequest::EnqueueSongs { songs, mode } => self.enqueue_songs(songs, mode).await,
-            DaemonRequest::PlayQueueIndex(pos) => {
-                self.core
-                    .play_queue_position(pos, crate::daemon::core::PlayMode::Direct)
-                    .await
-                    .map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::RemoveFromQueue(pos) => {
-                // State.write block sets the queue_position+state.Stopped sentinel before mpv touches, so position-tick poll sees state=Stopped and bails; lock order stays state-then-mpv with no overlap.
-                let was_playing;
-                let new_len;
-                let must_stop;
-                let removed_next_up;
-                {
-                    let mut state = self.core.state.write().await;
-                    if pos >= state.queue.len() {
-                        return Ok(DaemonResponse::Ok);
-                    }
-                    was_playing = state.queue_position == Some(pos);
-                    // The gapless preload is stale only when the removed entry
-                    // was the next-up track (one past the current position).
-                    removed_next_up = pos > 0 && state.queue_position == Some(pos - 1);
-                    state.queue.remove(pos);
-                    new_len = state.queue.len();
-                    if let Some(cur) = state.queue_position {
-                        if pos < cur {
-                            state.queue_position = Some(cur - 1);
-                        } else if pos == cur {
-                            state.queue_position = None;
-                        }
-                    }
-                    must_stop = was_playing && pos >= new_len;
-                    if must_stop {
-                        state.now_playing.state = crate::daemon::state::PlaybackState::Stopped;
-                        state.now_playing.song = None;
-                        state.now_playing.position = 0.0;
-                        state.now_playing.duration = 0.0;
-                        state.now_playing.sample_rate = None;
-                        state.now_playing.bit_depth = None;
-                        state.now_playing.format = None;
-                        state.now_playing.channels = None;
-                    }
-                }
-                if must_stop {
-                    let mut mpv = self.core.mpv.lock().await;
-                    if let Err(e) = mpv.stop().await {
-                        tracing::error!("Failed to stop on remove: {}", e);
-                    }
-                }
-                if was_playing && !must_stop {
-                    self.core
-                        .play_queue_position(pos, crate::daemon::core::PlayMode::Direct)
-                        .await
-                        .map_err(err)?;
-                } else if must_stop {
-                    self.core.broadcast_now_playing().await;
-                    self.core.broadcast_queue_changed().await;
-                } else {
-                    self.core.broadcast_queue_changed().await;
-                    if removed_next_up {
-                        self.core.resync_gapless_preload().await;
-                    }
-                }
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::ClearQueue => {
-                self.core.stop_playback().await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
+            DaemonRequest::PlayQueueIndex(pos) => ok_response(
+                core.play_queue_position(pos, crate::daemon::core::PlayMode::Direct)
+                    .await,
+            ),
+            DaemonRequest::RemoveFromQueue(pos) => self.handle_remove_from_queue(pos).await,
+            DaemonRequest::ClearQueue => ok_response(core.stop_playback().await),
             DaemonRequest::ShuffleQueue => {
-                self.core.shuffle_queue().await;
+                core.shuffle_queue().await;
                 Ok(DaemonResponse::Ok)
             }
-            DaemonRequest::ShuffleLibrary => {
-                self.core.shuffle_library().await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
+            DaemonRequest::ShuffleLibrary => ok_response(core.shuffle_library().await),
             DaemonRequest::MoveQueueItem { from, to } => {
-                self.core.move_queue_item(from, to).await;
+                core.move_queue_item(from, to).await;
                 Ok(DaemonResponse::Ok)
             }
-            DaemonRequest::ClearQueueHistory => {
-                let removed = self.core.clear_queue_history().await;
-                Ok(DaemonResponse::HistoryCleared(removed))
-            }
-
+            DaemonRequest::ClearQueueHistory => Ok(DaemonResponse::HistoryCleared(
+                core.clear_queue_history().await,
+            )),
             DaemonRequest::RefreshStarred => {
-                self.core.refresh_starred().await;
+                core.refresh_starred().await;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::RefreshRandom => {
-                self.core.refresh_random().await;
+                core.refresh_random().await;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::RefreshArtists => {
-                self.core.refresh_artists().await;
-                self.core.refresh_music_folders().await;
+                core.refresh_artists().await;
+                core.refresh_music_folders().await;
                 Ok(DaemonResponse::Ok)
             }
-            DaemonRequest::SetMusicFolder(id) => {
-                self.core.set_music_folder(id).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
+            DaemonRequest::SetMusicFolder(id) => ok_response(core.set_music_folder(id).await),
             DaemonRequest::RefreshPlaylists => {
-                self.core.refresh_playlists().await;
+                core.refresh_playlists().await;
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::CreatePlaylist { name, song_ids } => {
-                self.core
-                    .create_playlist(&name, &song_ids)
-                    .await
-                    .map_err(err)?;
-                Ok(DaemonResponse::Ok)
+                ok_response(core.create_playlist(&name, &song_ids).await)
             }
             DaemonRequest::RenamePlaylist { id, name } => {
-                self.core.rename_playlist(&id, &name).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
+                ok_response(core.rename_playlist(&id, &name).await)
             }
-            DaemonRequest::DeletePlaylist { id } => {
-                self.core.delete_playlist(&id).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
+            DaemonRequest::DeletePlaylist { id } => ok_response(core.delete_playlist(&id).await),
             DaemonRequest::AddSongToPlaylist {
                 playlist_id,
                 song_id,
-            } => {
-                let songs = self
-                    .core
-                    .playlist_add_song(&playlist_id, &song_id)
+            } => Ok(DaemonResponse::PlaylistSongs(
+                core.playlist_add_song(&playlist_id, &song_id)
                     .await
-                    .map_err(err)?;
-                Ok(DaemonResponse::PlaylistSongs(songs))
-            }
+                    .map_err(err)?,
+            )),
             DaemonRequest::RemovePlaylistSong { playlist_id, index } => {
-                let songs = self
-                    .core
-                    .playlist_remove_song(&playlist_id, index)
-                    .await
-                    .map_err(err)?;
-                Ok(DaemonResponse::PlaylistSongs(songs))
+                Ok(DaemonResponse::PlaylistSongs(
+                    core.playlist_remove_song(&playlist_id, index)
+                        .await
+                        .map_err(err)?,
+                ))
             }
             DaemonRequest::ReorderPlaylist {
                 playlist_id,
                 song_ids,
-            } => {
-                let songs = self
-                    .core
-                    .playlist_reorder(&playlist_id, &song_ids)
+            } => Ok(DaemonResponse::PlaylistSongs(
+                core.playlist_reorder(&playlist_id, &song_ids)
                     .await
-                    .map_err(err)?;
-                Ok(DaemonResponse::PlaylistSongs(songs))
-            }
-            DaemonRequest::ToggleStarSong(id) => {
-                self.core.toggle_star_song(&id).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::LoadArtist(id) => {
-                self.core.load_artist(&id).await;
-                let state = self.core.state.read().await;
-                let albums = state
-                    .library
-                    .albums_cache
-                    .get(&id)
-                    .cloned()
-                    .unwrap_or_default();
-                Ok(DaemonResponse::ArtistAlbums(albums))
-            }
+                    .map_err(err)?,
+            )),
+            DaemonRequest::ToggleStarSong(id) => ok_response(core.toggle_star_song(&id).await),
+            DaemonRequest::LoadArtist(id) => self.handle_load_artist(&id).await,
             DaemonRequest::LoadAllAlbums => {
-                let albums = self.core.load_all_albums().await;
-                Ok(DaemonResponse::AllAlbums(albums))
+                Ok(DaemonResponse::AllAlbums(core.load_all_albums().await))
             }
             DaemonRequest::LoadAlbum(id) => {
-                let songs = self.core.load_album_songs(&id).await;
-                Ok(DaemonResponse::AlbumSongs(songs))
+                Ok(DaemonResponse::AlbumSongs(core.load_album_songs(&id).await))
             }
-            DaemonRequest::LoadPlaylist(id) => {
-                let songs = self.core.load_playlist_songs(&id).await;
-                Ok(DaemonResponse::PlaylistSongs(songs))
-            }
+            DaemonRequest::LoadPlaylist(id) => Ok(DaemonResponse::PlaylistSongs(
+                core.load_playlist_songs(&id).await,
+            )),
             DaemonRequest::Search {
                 query,
                 artist_count,
                 album_count,
                 song_count,
-            } => {
-                let results = self
-                    .core
-                    .search(&query, artist_count, album_count, song_count)
-                    .await;
-                Ok(DaemonResponse::SearchResults(results))
-            }
+            } => Ok(DaemonResponse::SearchResults(
+                core.search(&query, artist_count, album_count, song_count)
+                    .await,
+            )),
 
             DaemonRequest::UpdateServerConfig {
                 base_url,
                 username,
                 password,
-            } => {
-                let storage = self
-                    .core
-                    .update_server_config(&base_url, &username, &password)
+            } => Ok(DaemonResponse::ServerConfigSaved(
+                core.update_server_config(&base_url, &username, &password)
                     .await
-                    .map_err(err)?;
-                Ok(DaemonResponse::ServerConfigSaved(storage))
-            }
+                    .map_err(err)?,
+            )),
             DaemonRequest::TestServerConnection {
                 base_url,
                 username,
                 password,
             } => {
-                let (ok, message) = self
-                    .core
+                let (ok, message) = core
                     .test_server_connection(&base_url, &username, &password)
                     .await;
                 Ok(DaemonResponse::ConnectionTestResult { ok, message })
             }
-            DaemonRequest::SetTheme(name) => {
-                self.core.set_theme(&name).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SetCavaEnabled(on) => {
-                self.core.set_cava_enabled(on).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SetCavaSize(sz) => {
-                self.core.set_cava_size(sz).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SetDaemonEnabled(on) => {
-                self.core.set_daemon_enabled(on).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SetAutoContinue(on) => {
-                self.core.set_auto_continue(on).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SetScrobble(on) => {
-                self.core.set_scrobble(on).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SetNotifications(on) => {
-                self.core.set_notifications(on).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
-            DaemonRequest::SetRepeatMode(mode) => {
-                self.core.set_repeat_mode(mode).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
+            DaemonRequest::SetTheme(name) => ok_response(core.set_theme(&name).await),
+            DaemonRequest::SetCavaEnabled(on) => ok_response(core.set_cava_enabled(on).await),
+            DaemonRequest::SetCavaSize(sz) => ok_response(core.set_cava_size(sz).await),
+            DaemonRequest::SetDaemonEnabled(on) => ok_response(core.set_daemon_enabled(on).await),
+            DaemonRequest::SetAutoContinue(on) => ok_response(core.set_auto_continue(on).await),
+            DaemonRequest::SetScrobble(on) => ok_response(core.set_scrobble(on).await),
+            DaemonRequest::SetNotifications(on) => ok_response(core.set_notifications(on).await),
+            DaemonRequest::SetRepeatMode(mode) => ok_response(core.set_repeat_mode(mode).await),
             DaemonRequest::SetCoverArtEnabled(on) => {
-                self.core.set_cover_art_enabled(on).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
+                ok_response(core.set_cover_art_enabled(on).await)
             }
-            DaemonRequest::SetCoverArtSize(sz) => {
-                self.core.set_cover_art_size(sz).await.map_err(err)?;
-                Ok(DaemonResponse::Ok)
-            }
+            DaemonRequest::SetCoverArtSize(sz) => ok_response(core.set_cover_art_size(sz).await),
             DaemonRequest::FetchCoverArt { id, size } => {
-                const MAX_SIZE: u32 = 2048;
-                const MAX_ID_LEN: usize = 256;
-                if id.len() > MAX_ID_LEN
-                    || id
-                        .chars()
-                        .any(|c| matches!(c, '/' | '?' | '#' | '\\') || c.is_control())
-                {
-                    return Ok(DaemonResponse::CoverArt(Vec::new()));
-                }
-                let size = size.clamp(1, MAX_SIZE);
-                let bytes = self.core.get_cover_art(&id, size).await;
-                Ok(DaemonResponse::CoverArt(bytes))
+                self.handle_fetch_cover_art(&id, size).await
             }
-
             DaemonRequest::Subscribe => {
                 warn!("Subscribe sent as request; use DaemonClient::subscribe instead");
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::Snapshot => {
-                let snap = self.core.snapshot().await;
-                Ok(DaemonResponse::Snapshot(Box::new(snap)))
+                Ok(DaemonResponse::Snapshot(Box::new(core.snapshot().await)))
             }
-            DaemonRequest::Shutdown => {
-                let _ = self.core.event_tx.send(crate::ipc::DaemonEvent::Shutdown);
-                let _ =
-                    tokio::time::timeout(std::time::Duration::from_secs(3), self.core.quit_mpv())
-                        .await;
-                // Stop the IPC accept loop so the daemon process actually exits;
-                // without this it broadcasts Shutdown but keeps listening.
-                self.core.request_shutdown();
-                Ok(DaemonResponse::Ok)
-            }
+            DaemonRequest::Shutdown => self.handle_shutdown().await,
             DaemonRequest::Ping => Ok(DaemonResponse::Pong),
         }
     }
@@ -443,6 +255,114 @@ impl InProcessClient {
         }
         Ok(DaemonResponse::Ok)
     }
+
+    async fn handle_remove_from_queue(&self, pos: usize) -> Result<DaemonResponse, IpcError> {
+        // State.write block sets the queue_position+state.Stopped sentinel before mpv touches, so position-tick poll sees state=Stopped and bails; lock order stays state-then-mpv with no overlap.
+        let was_playing;
+        let new_len;
+        let must_stop;
+        let removed_next_up;
+        {
+            let mut state = self.core.state.write().await;
+            if pos >= state.queue.len() {
+                return Ok(DaemonResponse::Ok);
+            }
+            was_playing = state.queue_position == Some(pos);
+            // The gapless preload is stale only when the removed entry
+            // was the next-up track (one past the current position).
+            removed_next_up = pos > 0 && state.queue_position == Some(pos - 1);
+            state.queue.remove(pos);
+            new_len = state.queue.len();
+            if let Some(cur) = state.queue_position {
+                if pos < cur {
+                    state.queue_position = Some(cur - 1);
+                } else if pos == cur {
+                    state.queue_position = None;
+                }
+            }
+            must_stop = was_playing && pos >= new_len;
+            if must_stop {
+                state.now_playing.state = crate::daemon::state::PlaybackState::Stopped;
+                state.now_playing.song = None;
+                state.now_playing.position = 0.0;
+                state.now_playing.duration = 0.0;
+                state.now_playing.sample_rate = None;
+                state.now_playing.bit_depth = None;
+                state.now_playing.format = None;
+                state.now_playing.channels = None;
+            }
+        }
+        if must_stop {
+            let mut mpv = self.core.mpv.lock().await;
+            if let Err(e) = mpv.stop().await {
+                tracing::error!("Failed to stop on remove: {}", e);
+            }
+        }
+        if was_playing && !must_stop {
+            self.core
+                .play_queue_position(pos, crate::daemon::core::PlayMode::Direct)
+                .await
+                .map_err(err)?;
+        } else if must_stop {
+            self.core.broadcast_now_playing().await;
+            self.core.broadcast_queue_changed().await;
+        } else {
+            self.core.broadcast_queue_changed().await;
+            if removed_next_up {
+                self.core.resync_gapless_preload().await;
+            }
+        }
+        Ok(DaemonResponse::Ok)
+    }
+
+    async fn handle_load_artist(&self, id: &str) -> Result<DaemonResponse, IpcError> {
+        self.core.load_artist(id).await;
+        let albums = {
+            let state = self.core.state.read().await;
+            state
+                .library
+                .albums_cache
+                .get(id)
+                .cloned()
+                .unwrap_or_default()
+        };
+        Ok(DaemonResponse::ArtistAlbums(albums))
+    }
+
+    async fn handle_fetch_cover_art(
+        &self,
+        id: &str,
+        size: u32,
+    ) -> Result<DaemonResponse, IpcError> {
+        const MAX_SIZE: u32 = 2048;
+        const MAX_ID_LEN: usize = 256;
+        if id.len() > MAX_ID_LEN
+            || id
+                .chars()
+                .any(|c| matches!(c, '/' | '?' | '#' | '\\') || c.is_control())
+        {
+            return Ok(DaemonResponse::CoverArt(Vec::new()));
+        }
+        let size = size.clamp(1, MAX_SIZE);
+        let bytes = self.core.get_cover_art(id, size).await;
+        Ok(DaemonResponse::CoverArt(bytes))
+    }
+
+    async fn handle_shutdown(&self) -> Result<DaemonResponse, IpcError> {
+        let _ = self.core.event_tx.send(crate::ipc::DaemonEvent::Shutdown);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), self.core.quit_mpv()).await;
+        // Stop the IPC accept loop so the daemon process actually exits;
+        // without this it broadcasts Shutdown but keeps listening.
+        self.core.request_shutdown();
+        Ok(DaemonResponse::Ok)
+    }
+}
+
+// Collapse the common "run a fallible core call, reply Ok" dispatch arm. The
+// success value is discarded (these requests reply with a plain Ok).
+fn ok_response<T>(r: Result<T, crate::error::Error>) -> Result<DaemonResponse, IpcError> {
+    r.map_err(err)?;
+    Ok(DaemonResponse::Ok)
 }
 
 // Used as a map_err fn-item; map_err passes the owned error by value.
