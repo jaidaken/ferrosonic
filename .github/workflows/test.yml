@@ -7,6 +7,11 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      mutants_file:
+        description: "Scope cargo-mutants to one file (e.g. src/app/input_library.rs). Empty = whole crate."
+        required: false
+        default: ""
   schedule:
     - cron: '17 3 * * *'
 
@@ -85,10 +90,14 @@ jobs:
             -- -D clippy::unwrap_used -D clippy::expect_used
 
   mutants:
-    name: cargo-mutants (slow, nightly only)
+    name: cargo-mutants (shard ${{ matrix.shard }}/8)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -97,18 +106,24 @@ jobs:
         with:
           tool: cargo-mutants,cargo-nextest
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev pkg-config mpv
-      # Exclude stress_proptest: its ~44s property run blows the per-mutant
-      # timeout and aborts the whole baseline (weak per-mutant signal anyway,
-      # per docs/MUTATION-BASELINE.md). nextest backend matches the repo runner.
-      - name: Run cargo-mutants
+      # Sharded across 8 parallel jobs so the full crate fits the time budget
+      # (a single job times out). Optional mutants_file scopes a manual run to one
+      # file. Exclude stress_proptest: its ~44s property run blows the per-mutant
+      # timeout (weak signal anyway, per docs/MUTATION-BASELINE.md).
+      - name: Run cargo-mutants (shard ${{ matrix.shard }}/8)
         run: |
+          FILE_ARG=""
+          if [ -n "${{ github.event.inputs.mutants_file }}" ]; then
+            FILE_ARG="--file ${{ github.event.inputs.mutants_file }}"
+          fi
           cargo mutants --no-shuffle --test-tool nextest --timeout 120 \
+            --shard ${{ matrix.shard }}/8 $FILE_ARG \
             --cargo-test-arg '-E' --cargo-test-arg 'not binary(stress_proptest)'
       - name: Upload mutants report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mutants-report
+          name: mutants-report-shard-${{ matrix.shard }}
           path: mutants.out/
           retention-days: 30
 
