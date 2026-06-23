@@ -189,6 +189,59 @@ async fn enter_with_no_selection_is_noop() {
     assert!(fx.app.daemon_state.read().await.queue_position.is_none());
 }
 
+// Closes the input_queue Enter-guard seam: the `idx < len` -> `==` mutant skips
+// the play for any in-range index. Needs a TestDaemon (the App fixture lacks subsonic).
+#[tokio::test]
+#[serial]
+async fn enter_on_valid_index_actually_plays_that_index() {
+    let td = common::TestDaemon::new().await;
+    let cfg = td.state.read().await.config.clone();
+    let mut app = App::with_remote_client(
+        std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone())),
+        cfg,
+    );
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::Queue;
+        cs.queue_state.selected = Some(1);
+    }
+    // The bound check reads the TUI mirror; the play reads the core's queue.
+    let q = vec![song("a"), song("b"), song("c")];
+    app.daemon_state.write().await.queue.clone_from(&q);
+    td.state.write().await.queue = q;
+
+    app.handle_key(key(KeyCode::Enter)).await.unwrap();
+
+    assert_eq!(
+        td.state.read().await.queue_position,
+        Some(1),
+        "Enter on a valid queue index must play it"
+    );
+}
+
+// Closes the input_queue delete-guard seam: with a stale out-of-range selection
+// (idx == len), the `idx < len` -> `<=` mutant flips selected + fires a notify.
+#[tokio::test]
+#[serial]
+async fn d_with_out_of_range_selection_is_noop() {
+    let mut fx = build_app().await;
+    {
+        let mut ds = fx.app.daemon_state.write().await;
+        ds.queue = vec![song("a"), song("b")];
+    }
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.queue_state.selected = Some(2);
+    }
+    fx.app.handle_key(key(KeyCode::Char('d'))).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.queue_state.selected,
+        Some(2),
+        "delete on an out-of-range selection must not touch the selection"
+    );
+    assert_eq!(fx.app.daemon_state.read().await.queue.len(), 2);
+}
+
 #[tokio::test]
 #[serial]
 async fn d_removes_selected_song() {
