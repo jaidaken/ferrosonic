@@ -360,3 +360,114 @@ async fn unhandled_key_is_noop() {
     );
     assert!(!cs.should_quit);
 }
+
+fn playlist(id: &str, name: &str) -> ferrosonic::subsonic::models::Playlist {
+    ferrosonic::subsonic::models::Playlist {
+        id: id.into(),
+        name: name.into(),
+        comment: None,
+        owner: None,
+        public: None,
+        song_count: Some(1),
+        duration: Some(60),
+        cover_art: None,
+    }
+}
+
+// Closes input_songs Up-init seam: `else if !songs_list().is_empty()` (delete `!`
+// mutant) must still seed selection to 0 on a non-empty list with no selection.
+#[tokio::test]
+#[serial]
+async fn up_in_song_pane_with_no_selection_inits_to_zero() {
+    let mut fx = build_app().await;
+    {
+        let mut ds = fx.app.daemon_state.write().await;
+        ds.library.random_songs = vec![song("a"), song("b")];
+    }
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 1;
+        cs.songs.selected_option = Some(SongOption::Random);
+    }
+    fx.app.handle_key(key(KeyCode::Up)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.songs.selected_index,
+        Some(0)
+    );
+}
+
+// Closes input_songs Down-bound seam: `sel < max` (`< -> <=` mutant) must not
+// step past the last index.
+#[tokio::test]
+#[serial]
+async fn down_in_song_pane_at_last_index_stays() {
+    let mut fx = build_app().await;
+    {
+        let mut ds = fx.app.daemon_state.write().await;
+        ds.library.random_songs = vec![song("a"), song("b")];
+    }
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 1;
+        cs.songs.selected_option = Some(SongOption::Random);
+        cs.songs.selected_index = Some(1);
+    }
+    fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.songs.selected_index,
+        Some(1)
+    );
+}
+
+// Closes input_songs 'a'-arm seam (delete arm mutant): 'a' on a selected song
+// with playlists present opens the playlist picker.
+#[tokio::test]
+#[serial]
+async fn a_opens_playlist_picker_when_playlists_exist() {
+    let mut fx = build_app().await;
+    {
+        let mut ds = fx.app.daemon_state.write().await;
+        ds.library.random_songs = vec![song("a")];
+        ds.library.playlists = vec![playlist("p0", "Mine")];
+    }
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 1;
+        cs.songs.selected_option = Some(SongOption::Random);
+        cs.songs.selected_index = Some(0);
+    }
+    fx.app.handle_key(key(KeyCode::Char('a'))).await.unwrap();
+    assert!(
+        fx.app.client_state.read().await.playlist_picker.active,
+        "'a' must open the playlist picker"
+    );
+}
+
+// Closes input_songs Enter-filter seam: `idx < len` (`< -> <=` mutant) must reject
+// a stale out-of-range selection instead of enqueuing+playing it.
+#[tokio::test]
+#[serial]
+async fn enter_with_out_of_range_selection_does_not_enqueue() {
+    let td = common::TestDaemon::new().await;
+    let cfg = td.state.read().await.config.clone();
+    let mut app = App::with_remote_client(
+        std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone())),
+        cfg,
+    );
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.library.random_songs = vec![song("a"), song("b")];
+    }
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::QuickPlay;
+        cs.songs.focus = 1;
+        cs.songs.selected_option = Some(SongOption::Random);
+        cs.songs.selected_index = Some(2);
+    }
+    app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    assert!(
+        td.state.read().await.queue.is_empty(),
+        "Enter on an out-of-range selection must not enqueue"
+    );
+}
