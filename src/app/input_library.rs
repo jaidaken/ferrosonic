@@ -1,4 +1,4 @@
-//! Library page input. Single match in `handle_library_key` covers one tree-of-mixed-items view plus a filter overlay; splitting by key would fragment one match across files.
+//! Library page input. `handle_library_key` routes the overlay/mode keys (filter, view-toggle, folder-cycle, album-list) to focused sub-handlers, then runs one cohesive match over the tree-of-mixed-items view.
 use crossterm::event::{self, KeyCode};
 use tracing::info;
 
@@ -28,152 +28,27 @@ impl App {
         };
 
         if state.client.artists.filter_active {
-            let mut scope_or_query_changed = false;
-            match key.code {
-                KeyCode::Esc => {
-                    state.client.artists.filter_active = false;
-                    state.client.artists.filter.clear();
-                    state.client.artists.search_results = None;
-                    let _ = state;
-                    drop(cs);
-                    drop(ds);
-                    return Ok(());
-                }
-                KeyCode::Enter => {
-                    state.client.artists.filter_active = false;
-                    let _ = state;
-                    drop(cs);
-                    drop(ds);
-                    return Ok(());
-                }
-                KeyCode::Backspace => {
-                    state.client.artists.filter.pop();
-                    scope_or_query_changed = true;
-                }
-                KeyCode::Char(c) => {
-                    state.client.artists.filter.push(c);
-                    scope_or_query_changed = true;
-                }
-                _ => {}
-            }
-            if !scope_or_query_changed {
-                let _ = state;
-                drop(cs);
-                drop(ds);
-                return Ok(());
-            }
-            state.client.artists.search_gen = state.client.artists.search_gen.wrapping_add(1);
-            let gen = state.client.artists.search_gen;
-            let query = state.client.artists.filter.clone();
             let _ = state;
             drop(cs);
             drop(ds);
-            if query.is_empty() {
-                let mut cs = self.client_state.write().await;
-                cs.artists.search_results = None;
-                return Ok(());
-            }
-            let client = self.client.clone();
-            let client_state = self.client_state.clone();
-            tokio::spawn(async move {
-                let resp = client
-                    .request(DaemonRequest::Search {
-                        query,
-                        artist_count: 100,
-                        album_count: 100,
-                        song_count: 200,
-                    })
-                    .await;
-                if let Ok(crate::ipc::DaemonResponse::SearchResults(r)) = resp {
-                    let mut cs = client_state.write().await;
-                    // Stale: user typed again since this request was issued.
-                    if cs.artists.search_gen == gen {
-                        cs.artists.search_results = Some(r);
-                    }
-                }
-            });
-            return Ok(());
+            return self.handle_library_filter_key(key).await;
         }
 
         // 'v' toggles the left pane between the artist tree and the flat album
         // list; switching to the list loads it from the daemon on first use.
         if key.code == KeyCode::Char('v') {
-            let to_album = state.client.artists.view == LibraryView::ArtistTree;
-            state.client.artists.view = if to_album {
-                LibraryView::AlbumList
-            } else {
-                LibraryView::ArtistTree
-            };
-            let need_load = to_album && state.client.artists.albums.is_empty();
-            let sort = state.client.artists.album_sort;
             let _ = state;
             drop(cs);
             drop(ds);
-            if need_load {
-                // Fetch off the input path so a large library doesn't freeze the UI.
-                let client = self.client.clone();
-                let client_state = self.client_state.clone();
-                tokio::spawn(async move {
-                    let albums = match client.request(DaemonRequest::LoadAllAlbums).await {
-                        Ok(crate::ipc::DaemonResponse::AllAlbums(a)) => a,
-                        _ => Vec::new(),
-                    };
-                    let first_id = {
-                        let mut cs = client_state.write().await;
-                        cs.artists.albums = albums;
-                        sort_albums(&mut cs.artists.albums, sort);
-                        cs.artists.album_selected = (!cs.artists.albums.is_empty()).then_some(0);
-                        cs.artists.album_scroll_offset = 0;
-                        cs.artists.albums.first().map(|a| a.id.clone())
-                    };
-                    if let Some(id) = first_id {
-                        if let Ok(crate::ipc::DaemonResponse::AlbumSongs(songs)) =
-                            client.request(DaemonRequest::LoadAlbum(id)).await
-                        {
-                            let mut cs = client_state.write().await;
-                            cs.artists.selected_song = (!songs.is_empty()).then_some(0);
-                            cs.artists.songs = songs;
-                        }
-                    }
-                });
-            }
-            return Ok(());
+            return self.handle_library_view_toggle().await;
         }
 
         // 'f' cycles the active library (music folder): All, then each folder.
         if key.code == KeyCode::Char('f') {
-            let folders = &state.daemon.library.music_folders;
-            if folders.is_empty() {
-                let _ = state;
-                drop(cs);
-                drop(ds);
-                return Ok(());
-            }
-            let options: Vec<Option<i64>> = std::iter::once(None)
-                .chain(folders.iter().map(|f| Some(f.id)))
-                .collect();
-            let cur = state.daemon.config.music_folder_id;
-            let idx = options.iter().position(|o| *o == cur).unwrap_or(0);
-            let next = options[(idx + 1) % options.len()];
-            // Label fallback; explicit None=>"All" reads clearer than map_or_else here.
-            #[allow(clippy::option_if_let_else)]
-            let label = match next {
-                None => "All".to_string(),
-                Some(id) => folders
-                    .iter()
-                    .find(|f| f.id == id)
-                    .map(|f| f.name.clone())
-                    .unwrap_or_default(),
-            };
-            state.client.notify(format!("Library: {label}"));
             let _ = state;
             drop(cs);
             drop(ds);
-            let _ = self
-                .client
-                .request(DaemonRequest::SetMusicFolder(next))
-                .await;
-            return Ok(());
+            return self.handle_library_folder_cycle().await;
         }
 
         // Album-list view, left pane: dedicated album navigation. Right-pane
@@ -732,6 +607,172 @@ impl App {
             _ => {}
         }
 
+        Ok(())
+    }
+
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
+    #[allow(clippy::significant_drop_tightening)]
+    async fn handle_library_filter_key(&self, key: event::KeyEvent) -> Result<(), Error> {
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
+        let mut scope_or_query_changed = false;
+        match key.code {
+            KeyCode::Esc => {
+                state.client.artists.filter_active = false;
+                state.client.artists.filter.clear();
+                state.client.artists.search_results = None;
+                let _ = state;
+                drop(cs);
+                drop(ds);
+                return Ok(());
+            }
+            KeyCode::Enter => {
+                state.client.artists.filter_active = false;
+                let _ = state;
+                drop(cs);
+                drop(ds);
+                return Ok(());
+            }
+            KeyCode::Backspace => {
+                state.client.artists.filter.pop();
+                scope_or_query_changed = true;
+            }
+            KeyCode::Char(c) => {
+                state.client.artists.filter.push(c);
+                scope_or_query_changed = true;
+            }
+            _ => {}
+        }
+        if !scope_or_query_changed {
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            return Ok(());
+        }
+        state.client.artists.search_gen = state.client.artists.search_gen.wrapping_add(1);
+        let gen = state.client.artists.search_gen;
+        let query = state.client.artists.filter.clone();
+        let _ = state;
+        drop(cs);
+        drop(ds);
+        if query.is_empty() {
+            let mut cs = self.client_state.write().await;
+            cs.artists.search_results = None;
+            return Ok(());
+        }
+        let client = self.client.clone();
+        let client_state = self.client_state.clone();
+        tokio::spawn(async move {
+            let resp = client
+                .request(DaemonRequest::Search {
+                    query,
+                    artist_count: 100,
+                    album_count: 100,
+                    song_count: 200,
+                })
+                .await;
+            if let Ok(crate::ipc::DaemonResponse::SearchResults(r)) = resp {
+                let mut cs = client_state.write().await;
+                // Stale: user typed again since this request was issued.
+                if cs.artists.search_gen == gen {
+                    cs.artists.search_results = Some(r);
+                }
+            }
+        });
+        Ok(())
+    }
+
+    async fn handle_library_view_toggle(&self) -> Result<(), Error> {
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
+        let to_album = state.client.artists.view == LibraryView::ArtistTree;
+        state.client.artists.view = if to_album {
+            LibraryView::AlbumList
+        } else {
+            LibraryView::ArtistTree
+        };
+        let need_load = to_album && state.client.artists.albums.is_empty();
+        let sort = state.client.artists.album_sort;
+        let _ = state;
+        drop(cs);
+        drop(ds);
+        if need_load {
+            // Fetch off the input path so a large library doesn't freeze the UI.
+            let client = self.client.clone();
+            let client_state = self.client_state.clone();
+            tokio::spawn(async move {
+                let albums = match client.request(DaemonRequest::LoadAllAlbums).await {
+                    Ok(crate::ipc::DaemonResponse::AllAlbums(a)) => a,
+                    _ => Vec::new(),
+                };
+                let first_id = {
+                    let mut cs = client_state.write().await;
+                    cs.artists.albums = albums;
+                    sort_albums(&mut cs.artists.albums, sort);
+                    cs.artists.album_selected = (!cs.artists.albums.is_empty()).then_some(0);
+                    cs.artists.album_scroll_offset = 0;
+                    cs.artists.albums.first().map(|a| a.id.clone())
+                };
+                if let Some(id) = first_id {
+                    if let Ok(crate::ipc::DaemonResponse::AlbumSongs(songs)) =
+                        client.request(DaemonRequest::LoadAlbum(id)).await
+                    {
+                        let mut cs = client_state.write().await;
+                        cs.artists.selected_song = (!songs.is_empty()).then_some(0);
+                        cs.artists.songs = songs;
+                    }
+                }
+            });
+        }
+        Ok(())
+    }
+
+    async fn handle_library_folder_cycle(&self) -> Result<(), Error> {
+        let ds = self.daemon_state.read().await;
+        let mut cs = self.client_state.write().await;
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
+        let folders = &state.daemon.library.music_folders;
+        if folders.is_empty() {
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            return Ok(());
+        }
+        let options: Vec<Option<i64>> = std::iter::once(None)
+            .chain(folders.iter().map(|f| Some(f.id)))
+            .collect();
+        let cur = state.daemon.config.music_folder_id;
+        let idx = options.iter().position(|o| *o == cur).unwrap_or(0);
+        let next = options[(idx + 1) % options.len()];
+        // Label fallback; explicit None=>"All" reads clearer than map_or_else here.
+        #[allow(clippy::option_if_let_else)]
+        let label = match next {
+            None => "All".to_string(),
+            Some(id) => folders
+                .iter()
+                .find(|f| f.id == id)
+                .map(|f| f.name.clone())
+                .unwrap_or_default(),
+        };
+        state.client.notify(format!("Library: {label}"));
+        let _ = state;
+        drop(cs);
+        drop(ds);
+        let _ = self
+            .client
+            .request(DaemonRequest::SetMusicFolder(next))
+            .await;
         Ok(())
     }
 
