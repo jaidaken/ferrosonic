@@ -93,7 +93,9 @@ jobs:
     name: cargo-mutants (shard ${{ matrix.shard }}/8)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 90 min cancelled the full-crate scan mid-run (each shard needs ~1-4h);
+    # 360 is GitHub's job max and fits the sharded full crate. Free on public repos.
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
