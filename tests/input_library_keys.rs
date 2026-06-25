@@ -639,3 +639,135 @@ async fn t_on_artist_shuffles_its_songs() {
         .iter()
         .any(|r| matches!(r, DaemonRequest::EnqueueSongs { .. })));
 }
+
+// === CI mutation survivors: boundary + negative cases the positive-path tests miss ===
+
+fn artist(id: &str, name: &str) -> Artist {
+    Artist {
+        id: id.into(),
+        name: name.into(),
+        album_count: Some(1),
+        cover_art: None,
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn enter_song_pane_at_exact_len_does_not_play() {
+    // 401 `< -> <=`: selected_song == songs.len() is the off-by-one boundary the
+    // idx=5 out-of-range test never hit; at idx==len Enter must not enqueue.
+    let client = RecordingClient::new();
+    let app = song_pane_app(client.clone(), 1).await; // two songs
+    app.client_state.write().await.artists.selected_song = Some(2);
+    let mut app = app;
+    app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    assert!(!client
+        .requests()
+        .await
+        .iter()
+        .any(|r| matches!(r, DaemonRequest::EnqueueSongs { .. })));
+}
+
+#[tokio::test]
+#[serial]
+async fn t_in_song_pane_does_not_shuffle_the_tree() {
+    // 131 ('t' focus==0 guard `-> true`): in the song pane (focus==1) 't' must not
+    // run the tree-shuffle path. The positive test fires at focus==0 where both agree.
+    let client = RecordingClient::new();
+    let app = App::with_remote_client(client.clone(), Config::new());
+    app.daemon_state.write().await.library.artists = vec![artist("art0", "Artist Zero")];
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Library;
+        cs.artists.focus = 1;
+        cs.artists.selected_index = Some(0);
+    }
+    let mut app = app;
+    app.handle_key(key(KeyCode::Char('t'))).await.unwrap();
+    assert!(!client
+        .requests()
+        .await
+        .iter()
+        .any(|r| matches!(r, DaemonRequest::LoadArtist(_) | DaemonRequest::EnqueueSongs { .. })));
+}
+
+#[tokio::test]
+#[serial]
+async fn enter_on_uncached_collapsed_artist_loads_its_albums() {
+    // 290 (`delete !`): expanding a collapsed artist whose albums are NOT cached
+    // must fetch (LoadArtist); the mutant inverts the cache check and skips it.
+    let client = RecordingClient::new();
+    let app = App::with_remote_client(client.clone(), Config::new());
+    app.daemon_state.write().await.library.artists = vec![artist("art0", "Artist Zero")];
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Library;
+        cs.artists.focus = 0;
+        cs.artists.selected_index = Some(0);
+        cs.artists.expanded.clear();
+    }
+    let mut app = app;
+    app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    assert!(client
+        .requests()
+        .await
+        .iter()
+        .any(|r| matches!(r, DaemonRequest::LoadArtist(id) if id == "art0")));
+}
+
+#[tokio::test]
+#[serial]
+async fn e_in_name_filter_without_results_does_not_append_tree_item() {
+    // 445 (outer `&& -> ||`): name filter set but search_results None; the mutant
+    // `(focus==0 && !filter.is_empty()) || search.is_some()` wrongly appends here.
+    let client = RecordingClient::new();
+    let app = App::with_remote_client(client.clone(), Config::new());
+    app.daemon_state.write().await.library.artists = vec![artist("art0", "Artist Zero")];
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Library;
+        cs.artists.focus = 0;
+        cs.artists.filter = "art".into();
+        cs.artists.filter_active = false;
+        cs.artists.search_results = None;
+        cs.artists.selected_index = Some(0);
+        cs.artists.songs.clear();
+    }
+    let mut app = app;
+    app.handle_key(key(KeyCode::Char('e'))).await.unwrap();
+    assert!(client.requests().await.is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn i_in_name_filter_without_results_does_not_insert_tree_item() {
+    // 515 (outer `&& -> ||`): same as the 'e' case for the 'i' insert-next branch.
+    let client = RecordingClient::new();
+    let app = App::with_remote_client(client.clone(), Config::new());
+    app.daemon_state.write().await.library.artists = vec![artist("art0", "Artist Zero")];
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Library;
+        cs.artists.focus = 0;
+        cs.artists.filter = "art".into();
+        cs.artists.filter_active = false;
+        cs.artists.search_results = None;
+        cs.artists.selected_index = Some(0);
+        cs.artists.songs.clear();
+    }
+    let mut app = app;
+    app.handle_key(key(KeyCode::Char('i'))).await.unwrap();
+    assert!(client.requests().await.is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn a_in_tree_pane_with_playlists_does_not_open_picker() {
+    // 573 ('a' focus==1 guard `-> true`): 'a' in the tree pane (focus==0) must not
+    // open the picker even with playlists present (existing test left them empty).
+    let app = song_pane_app(RecordingClient::new(), 0).await;
+    app.daemon_state.write().await.library.playlists = vec![pl("p0")];
+    let mut app = app;
+    app.handle_key(key(KeyCode::Char('a'))).await.unwrap();
+    assert!(!app.client_state.read().await.playlist_picker.active);
+}
