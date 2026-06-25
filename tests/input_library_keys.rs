@@ -579,3 +579,63 @@ async fn v_loads_albums_into_the_album_list_view() {
     assert_eq!(cs.artists.album_selected, Some(0));
     assert_eq!(cs.artists.selected_song, Some(0));
 }
+
+// Records requests + serves an artist's albums/songs, for the 't'-on-artist path.
+struct ArtistShuffleClient {
+    albums: Vec<Album>,
+    songs: Vec<Child>,
+    recorded: tokio::sync::Mutex<Vec<DaemonRequest>>,
+    event_tx: tokio::sync::broadcast::Sender<DaemonEvent>,
+}
+#[async_trait::async_trait]
+impl DaemonClient for ArtistShuffleClient {
+    async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError> {
+        let resp = match &req {
+            DaemonRequest::LoadArtist(_) => DaemonResponse::ArtistAlbums(self.albums.clone()),
+            DaemonRequest::LoadAlbum(_) => DaemonResponse::AlbumSongs(self.songs.clone()),
+            _ => DaemonResponse::Ok,
+        };
+        self.recorded.lock().await.push(req);
+        Ok(resp)
+    }
+    fn subscribe(&self) -> tokio::sync::broadcast::Receiver<DaemonEvent> {
+        self.event_tx.subscribe()
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn t_on_artist_shuffles_its_songs() {
+    // 156 `delete !`: 't' on an artist with albums must enqueue its songs.
+    let (event_tx, _) = tokio::sync::broadcast::channel(16);
+    let client = Arc::new(ArtistShuffleClient {
+        albums: vec![album("alb0", "Alb")],
+        songs: vec![common::song("s0", "S0"), common::song("s1", "S1")],
+        recorded: tokio::sync::Mutex::new(Vec::new()),
+        event_tx,
+    });
+    let app = App::with_remote_client(client.clone(), Config::new());
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.library.artists = vec![Artist {
+            id: "art0".into(),
+            name: "Artist Zero".into(),
+            album_count: Some(1),
+            cover_art: None,
+        }];
+    }
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Library;
+        cs.artists.focus = 0;
+        cs.artists.selected_index = Some(0);
+    }
+    let mut app = app;
+    app.handle_key(key(KeyCode::Char('t'))).await.unwrap();
+    assert!(client
+        .recorded
+        .lock()
+        .await
+        .iter()
+        .any(|r| matches!(r, DaemonRequest::EnqueueSongs { .. })));
+}
