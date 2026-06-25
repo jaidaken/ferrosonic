@@ -684,11 +684,10 @@ async fn t_in_song_pane_does_not_shuffle_the_tree() {
     }
     let mut app = app;
     app.handle_key(key(KeyCode::Char('t'))).await.unwrap();
-    assert!(!client
-        .requests()
-        .await
-        .iter()
-        .any(|r| matches!(r, DaemonRequest::LoadArtist(_) | DaemonRequest::EnqueueSongs { .. })));
+    assert!(!client.requests().await.iter().any(|r| matches!(
+        r,
+        DaemonRequest::LoadArtist(_) | DaemonRequest::EnqueueSongs { .. }
+    )));
 }
 
 #[tokio::test]
