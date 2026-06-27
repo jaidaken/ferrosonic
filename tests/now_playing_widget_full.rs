@@ -129,7 +129,7 @@ fn render_with_height_one_renders_title_only() {
 fn focused_widget_uses_focused_border_color() {
     let np = np_with_song(song("a", "T"));
     let theme = colors();
-    let widget = NowPlayingWidget::new(&np, theme.clone()).focused(true);
+    let widget = NowPlayingWidget::new(&np, theme).focused(true);
     let mut buf = Buffer::empty(Rect::new(0, 0, 80, 7));
     widget.render(buf.area, &mut buf);
     let top_left_fg = buf[(0, 0)].fg;

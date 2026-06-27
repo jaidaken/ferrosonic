@@ -110,7 +110,7 @@ fn record_public_fsync_call() {
 #[cfg(test)]
 pub(crate) mod public_fsync_calls {
     use std::sync::atomic::AtomicUsize;
-    pub(crate) static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+    pub static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
 }
 
 pub(crate) fn fsync_parent_dir_with_fs<F: FileSystem>(fs: &F, path: &Path) {
@@ -247,7 +247,7 @@ mod fault_injection_tests {
                 .create_dir_all
                 .push(path.to_path_buf());
             if self.fail_create_dir_all {
-                Err(io::Error::new(ErrorKind::Other, "synthetic create_dir_all"))
+                Err(io::Error::other("synthetic create_dir_all"))
             } else {
                 Ok(())
             }
@@ -262,8 +262,7 @@ mod fault_injection_tests {
                 .write_then_sync
                 .push((path.to_path_buf(), body.to_vec()));
             if self.fail_write_then_sync {
-                Err(io::Error::new(
-                    ErrorKind::Other,
+                Err(io::Error::other(
                     "synthetic write_then_sync",
                 ))
             } else {
@@ -276,7 +275,7 @@ mod fault_injection_tests {
                 .rename
                 .push((from.to_path_buf(), to.to_path_buf()));
             if self.fail_rename {
-                Err(io::Error::new(ErrorKind::Other, "synthetic rename"))
+                Err(io::Error::other("synthetic rename"))
             } else {
                 Ok(())
             }
@@ -287,7 +286,7 @@ mod fault_injection_tests {
                 .remove_file_if_exists
                 .push(path.to_path_buf());
             if self.fail_remove_file {
-                Err(io::Error::new(ErrorKind::Other, "synthetic remove"))
+                Err(io::Error::other("synthetic remove"))
             } else {
                 Ok(())
             }
@@ -298,7 +297,7 @@ mod fault_injection_tests {
                 .open_and_sync_dir
                 .push(path.to_path_buf());
             if self.fail_open_and_sync_dir {
-                Err(io::Error::new(ErrorKind::Other, "synthetic fsync"))
+                Err(io::Error::other("synthetic fsync"))
             } else {
                 Ok(())
             }

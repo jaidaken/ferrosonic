@@ -17,7 +17,7 @@ fn salt_is_sixteen_lowercase_alphanumeric_chars_spanning_the_full_range() {
         assert_eq!(salt.len(), 16, "salt must be 16 chars");
         for c in salt.chars() {
             assert!(
-                c.is_ascii_digit() || ('a'..='z').contains(&c),
+                c.is_ascii_digit() || c.is_ascii_lowercase(),
                 "salt char {c:?} must be a digit or lowercase letter"
             );
             seen.insert(c);

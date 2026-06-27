@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn debug_masks_nonempty() {
         let s = Secret::from_string("hunter2".to_string());
-        let d = format!("{:?}", s);
+        let d = format!("{s:?}");
         assert!(!d.contains("hunter2"));
         assert!(d.contains("***"));
     }
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn debug_empty_does_not_say_stars() {
         let s = Secret::new();
-        let d = format!("{:?}", s);
+        let d = format!("{s:?}");
         assert!(!d.contains("***"));
     }
 

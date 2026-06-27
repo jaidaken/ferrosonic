@@ -17,7 +17,7 @@ fn dead_or_zombie(pid: i32) -> bool {
             .rsplit(')')
             .next()
             .and_then(|rest| rest.split_whitespace().next())
-            .map_or(true, |state| state == "Z"),
+            .is_none_or(|state| state == "Z"),
     }
 }
 

@@ -268,7 +268,7 @@ mod tests {
         let decoded = read_frame(&mut reader).await.unwrap();
         match decoded {
             Frame::Request { id, req: _ } => assert_eq!(id, 42),
-            _ => panic!("expected Request, got {:?}", decoded),
+            _ => panic!("expected Request, got {decoded:?}"),
         }
     }
 
@@ -284,7 +284,7 @@ mod tests {
         let decoded = read_frame(&mut reader).await.unwrap();
         match decoded {
             Frame::Response { id, payload: Ok(_) } => assert_eq!(id, 7),
-            _ => panic!("expected Response Ok, got {:?}", decoded),
+            _ => panic!("expected Response Ok, got {decoded:?}"),
         }
     }
 
@@ -306,7 +306,7 @@ mod tests {
                 assert_eq!(id, 9);
                 assert_eq!(msg, "boom");
             }
-            _ => panic!("expected Response Err, got {:?}", decoded),
+            _ => panic!("expected Response Err, got {decoded:?}"),
         }
     }
 
@@ -320,7 +320,8 @@ mod tests {
     #[tokio::test]
     async fn frame_too_large_rejected() {
         let mut buf: Vec<u8> = Vec::new();
-        buf.extend_from_slice(&((MAX_FRAME_BYTES as u32 + 1).to_le_bytes()));
+        let over_max = u32::try_from(MAX_FRAME_BYTES).expect("MAX_FRAME_BYTES fits u32") + 1;
+        buf.extend_from_slice(&over_max.to_le_bytes());
         let mut reader = buf.as_slice();
         let err = read_frame(&mut reader).await.unwrap_err();
         assert!(matches!(err, FrameError::TooLarge(_)));
@@ -335,14 +336,14 @@ mod tests {
             }
         })
         .to_string();
-        let len = (body.len() as u32).to_le_bytes();
+        let len = u32::try_from(body.len()).expect("test body fits u32").to_le_bytes();
         let mut buf = Vec::new();
         buf.extend_from_slice(&len);
         buf.extend_from_slice(body.as_bytes());
         let mut reader = buf.as_slice();
         match read_frame_lenient(&mut reader).await.unwrap() {
             FrameRead::UnknownRequest { id, .. } => assert_eq!(id, 99),
-            other => panic!("expected UnknownRequest, got {:?}", other),
+            other => panic!("expected UnknownRequest, got {other:?}"),
         }
     }
 }

@@ -371,8 +371,7 @@ mod tests {
         let colors: Vec<CavaColor> = row.spans.iter().map(|s| s.fg).collect();
         assert!(
             colors.windows(2).any(|w| w[0] != w[1]),
-            "expected at least one color change across spans; got {:?}",
-            colors
+            "expected at least one color change across spans; got {colors:?}"
         );
     }
 

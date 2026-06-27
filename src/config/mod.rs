@@ -831,10 +831,12 @@ mod tests {
 
     #[test]
     fn every_serialized_config_key_is_known() {
-        let mut c = Config::default();
-        c.base_url = "https://x".into();
-        c.username = "u".into();
-        c.password = "p".into();
+        let c = Config {
+            base_url: "https://x".into(),
+            username: "u".into(),
+            password: "p".into(),
+            ..Default::default()
+        };
         let toml = toml::to_string(&c.as_on_disk()).expect("serialize config");
         for line in toml.lines() {
             if let Some(key) = line.split('=').next().map(str::trim) {
@@ -918,10 +920,12 @@ mod tests {
 
     #[test]
     fn save_preserves_password_eval_and_omits_inline_password() {
-        let mut c = Config::default();
-        c.base_url = "https://x".into();
-        c.password = "resolved-secret".into();
-        c.password_eval = Some(PasswordEval::Shell("printf x".into()));
+        let c = Config {
+            base_url: "https://x".into(),
+            password: "resolved-secret".into(),
+            password_eval: Some(PasswordEval::Shell("printf x".into())),
+            ..Default::default()
+        };
         let f = NamedTempFile::new().unwrap();
         c.save_to_file(f.path()).unwrap();
         let written = std::fs::read_to_string(f.path()).unwrap();
@@ -937,11 +941,13 @@ mod tests {
 
     #[test]
     fn save_with_keyring_marker_omits_inline_password() {
-        let mut c = Config::default();
-        c.base_url = "https://x".into();
-        c.username = "u".into();
-        c.password = "resolved-secret".into();
-        c.password_keyring = true;
+        let c = Config {
+            base_url: "https://x".into(),
+            username: "u".into(),
+            password: "resolved-secret".into(),
+            password_keyring: true,
+            ..Default::default()
+        };
         let f = NamedTempFile::new().unwrap();
         c.save_to_file(f.path()).unwrap();
         let written = std::fs::read_to_string(f.path()).unwrap();
@@ -1036,9 +1042,7 @@ Password = "testpass"
             assert_eq!(
                 s.to_string(),
                 expected,
-                "{:?} serializes as {}",
-                mode,
-                expected
+                "{mode:?} serializes as {expected}"
             );
         }
     }
@@ -1144,10 +1148,9 @@ Password = "testpass"
             assert_eq!(
                 mode.next_manual(0, 0),
                 None,
-                "{:?} manual on empty queue",
-                mode
+                "{mode:?} manual on empty queue"
             );
-            assert_eq!(mode.next_auto(0, 0), None, "{:?} auto on empty queue", mode);
+            assert_eq!(mode.next_auto(0, 0), None, "{mode:?} auto on empty queue");
         }
     }
 
