@@ -259,6 +259,10 @@ impl PlayerInterface for MprisPlayer {
                 metadata.set_disc_number(Some(disc));
             }
 
+            // Remote (authenticated) URL only. The local file:// swap happens in
+            // `update_mpris_properties`, which runs on the tokio runtime; doing
+            // the fetch here would run on zbus's executor where daemon I/O has
+            // no reactor (the same reason `fire` exists).
             if let Some(ref cover_art_id) = song.cover_art {
                 if let Some(cover_url) = build_cover_art_url(&config, cover_art_id) {
                     metadata.set_art_url(Some(cover_url));
@@ -357,13 +361,17 @@ pub struct MprisPropertySnapshot {
     pub can_go_next: bool,
     /// Whether a previous track exists.
     pub can_go_prev: bool,
+    /// Whether playback is possible (queue non-empty). Event-driven MPRIS
+    /// consumers (e.g. GNOME Shell) cache `CanPlay` from the initial read
+    /// and only refresh it via `PropertiesChanged`, so it must be pushed.
+    pub can_play: bool,
     /// Track metadata, when a song is loaded.
     pub metadata: Option<Metadata>,
 }
 
 /// Pure: builds the property snapshot from daemon state.
 pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisPropertySnapshot {
-    let (playback, can_go_next, can_go_prev, current_song, config) = {
+    let (playback, can_go_next, can_go_prev, can_play, current_song, config) = {
         let ds = daemon_state.read().await;
         let pb = match ds.now_playing.state {
             PlaybackState::Playing => PlaybackStatus::Playing,
@@ -372,7 +380,15 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
         };
         let cgn = ds.queue_position.is_some_and(|p| p + 1 < ds.queue.len());
         let cgp = ds.queue_position.is_some_and(|p| p > 0);
-        (pb, cgn, cgp, ds.current_song().cloned(), ds.config.clone())
+        let cp = !ds.queue.is_empty();
+        (
+            pb,
+            cgn,
+            cgp,
+            cp,
+            ds.current_song().cloned(),
+            ds.config.clone(),
+        )
     };
 
     let metadata = current_song.map(|song| build_metadata_for(&song, &config));
@@ -381,6 +397,7 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
         playback,
         can_go_next,
         can_go_prev,
+        can_play,
         metadata,
     }
 }
@@ -424,6 +441,7 @@ pub async fn update_mpris_properties(
             Property::PlaybackStatus(snap.playback),
             Property::CanGoNext(snap.can_go_next),
             Property::CanGoPrevious(snap.can_go_prev),
+            Property::CanPlay(snap.can_play),
         ])
         .await?;
 

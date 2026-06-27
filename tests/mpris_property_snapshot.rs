@@ -191,6 +191,27 @@ async fn metadata_includes_artist_and_album_when_set() {
 
 #[tokio::test]
 #[serial]
+async fn can_play_false_when_queue_empty() {
+    let ds = new_shared_daemon_state(Config::new());
+    let snap = build_property_snapshot(&ds).await;
+    assert!(!snap.can_play);
+}
+
+#[tokio::test]
+#[serial]
+async fn can_play_true_when_queue_non_empty() {
+    let ds = new_shared_daemon_state(Config::new());
+    {
+        let mut s = ds.write().await;
+        s.queue = vec![song("a", "A")];
+        s.queue_position = Some(0);
+    }
+    let snap = build_property_snapshot(&ds).await;
+    assert!(snap.can_play);
+}
+
+#[tokio::test]
+#[serial]
 async fn last_position_in_queue_has_no_next_but_has_prev() {
     let ds = new_shared_daemon_state(Config::new());
     {
