@@ -41,7 +41,7 @@ authoritative current status.
   - false-positive: mpv `send_command` multi-lock on `pending` is safe; request ids are unique (`AtomicU64`), so no wrong-oneshot demux. No fix.
 - **P8 MEDIUM/LOW TRIAGE** DONE. `docs/KNOWN-ISSUES.md` now exists (accepted/deferred items). The pedantic/nursery clippy backlog was cleared to **0** on lib+bins (2026-06-22 de-silencing pass: real fixes + per-site allows, zero global silences; see KNOWN-ISSUES build-hygiene).
 - **P9 CI GATES** DONE.
-  - `test.yml` gates on every push to `master` and on PRs (`on: push/pull_request`), plus a nightly cron for the slow mutants job; `release.yml` fires on tag push; `deny.toml` (cargo-deny); `unwrap_check` CI job denies `unwrap_used`/`expect_used` on lib+bins (machine-enforced, not just the grep backstop).
+  - `test.yml` gates on every push to `master` and on PRs (`on: push/pull_request`); `release.yml` fires on tag push; `deny.toml` (cargo-deny); `unwrap_check` CI job denies `unwrap_used`/`expect_used` on lib+bins (machine-enforced, not just the grep backstop). Mutation testing stays local (`cargo mutants --file <path>`), not a CI gate: the full-crate scan never fit GitHub's 6h job ceiling even sharded, and per rule 8 it is a discovery tool, not a gate.
   - residual nit (not a gap): the `[lints.clippy]` table still declares `unwrap_used`/`expect_used` as `warn` (the deny lives in the CI job, not the crate manifest).
 - **P10 RELEASE** DONE: 0.5.x then 0.6.0 shipped (tag-triggered `release.yml`, musl binary attached).
 
