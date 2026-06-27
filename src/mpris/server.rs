@@ -7,18 +7,23 @@ use mpris_server::{
     LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface, Property, RootInterface,
     Server, Time, TrackId, Volume,
 };
+use tempfile::NamedTempFile;
+use tokio::sync::Mutex;
 use tracing::info;
 use url::Url;
 
 use crate::app::state::{SharedClientState, SharedDaemonState};
 use crate::config::Config;
 use crate::daemon::state::{NowPlaying, PlaybackState};
-use crate::ipc::{DaemonClient, DaemonRequest};
+use crate::ipc::{DaemonClient, DaemonRequest, DaemonResponse};
 use crate::subsonic::auth::generate_auth_params;
 use crate::subsonic::models::Child;
 
 const API_VERSION: &str = "1.16.1";
 const CLIENT_NAME: &str = "ferrosonic";
+
+/// Edge length, in pixels, of the cover art fetched for MPRIS metadata.
+const MPRIS_COVER_SIZE: u32 = 512;
 
 /// Authenticated getCoverArt URL for MPRIS metadata; None when unconfigured.
 #[must_use]
@@ -43,6 +48,15 @@ pub fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String
 
 const PLAYER_NAME: &str = "ferrosonic";
 
+/// Locally cached cover for one art id, kept so the `file://` URL handed to
+/// MPRIS consumers stays valid until the track (and thus its art) changes.
+struct CoverCache {
+    /// Cover art id the file currently holds.
+    cover_id: String,
+    /// Tempfile backing the `file://` URL; deletes itself when replaced.
+    file: NamedTempFile,
+}
+
 /// MPRIS2 player implementation bridging D-Bus to the daemon client.
 pub struct MprisPlayer {
     daemon_state: SharedDaemonState,
@@ -53,6 +67,10 @@ pub struct MprisPlayer {
     /// panics with "no reactor"; spawning through this handle runs the
     /// daemon request (which needs tokio I/O) on a real tokio worker.
     rt: tokio::runtime::Handle,
+    /// Cover art mirrored to a local file. GNOME Shell's media-controls
+    /// widget won't fetch the remote authenticated Subsonic URL, but it
+    /// loads a `file://` reliably (same as our desktop notifications).
+    cover_cache: Mutex<Option<CoverCache>>,
 }
 
 impl MprisPlayer {
@@ -67,7 +85,51 @@ impl MprisPlayer {
             client_state,
             client,
             rt: tokio::runtime::Handle::current(),
+            cover_cache: Mutex::new(None),
         }
+    }
+
+    /// Mirror the cover for `cover_id` to a local file and return its
+    /// `file://` URL, reusing the cached file when the id is unchanged.
+    /// Returns `None` if the fetch yields no bytes or the write fails;
+    /// callers then fall back to the remote art URL.
+    ///
+    /// The lock spans the fetch+write so concurrent metadata pushes for the
+    /// same track don't double-fetch or race on the shared tempfile.
+    #[allow(clippy::significant_drop_tightening)]
+    async fn cover_file_uri(&self, cover_id: &str) -> Option<String> {
+        let mut guard = self.cover_cache.lock().await;
+        if let Some(cache) = guard.as_ref() {
+            if cache.cover_id == cover_id {
+                return Some(format!("file://{}", cache.file.path().display()));
+            }
+        }
+
+        let bytes = match self
+            .client
+            .request(DaemonRequest::FetchCoverArt {
+                id: cover_id.to_string(),
+                size: MPRIS_COVER_SIZE,
+            })
+            .await
+        {
+            Ok(DaemonResponse::CoverArt(bytes)) if !bytes.is_empty() => bytes,
+            _ => return None,
+        };
+
+        let file = NamedTempFile::with_prefix("ferrosonic-mpris-").ok()?;
+        let path = file.path().to_path_buf();
+        tokio::task::spawn_blocking(move || crate::io_util::atomic_write_bytes(&path, &bytes))
+            .await
+            .ok()?
+            .ok()?;
+
+        let uri = format!("file://{}", file.path().display());
+        *guard = Some(CoverCache {
+            cover_id: cover_id.to_string(),
+            file,
+        });
+        Some(uri)
     }
 
     /// Dispatch a fire-and-forget daemon request onto the captured tokio runtime. Errors are logged, not propagated, since D-Bus media keys expect no reply.
@@ -365,6 +427,9 @@ pub struct MprisPropertySnapshot {
     /// consumers (e.g. GNOME Shell) cache `CanPlay` from the initial read
     /// and only refresh it via `PropertiesChanged`, so it must be pushed.
     pub can_play: bool,
+    /// Cover art id of the current song, if any. Used to mirror the art to a
+    /// local file so the pushed `Metadata` carries a loadable `file://` URL.
+    pub cover_id: Option<String>,
     /// Track metadata, when a song is loaded.
     pub metadata: Option<Metadata>,
 }
@@ -391,6 +456,7 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
         )
     };
 
+    let cover_id = current_song.as_ref().and_then(Child::cover_id);
     let metadata = current_song.map(|song| build_metadata_for(&song, &config));
 
     MprisPropertySnapshot {
@@ -398,6 +464,7 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
         can_go_next,
         can_go_prev,
         can_play,
+        cover_id,
         metadata,
     }
 }
@@ -445,7 +512,13 @@ pub async fn update_mpris_properties(
         ])
         .await?;
 
-    if let Some(metadata) = snap.metadata {
+    if let Some(mut metadata) = snap.metadata {
+        // Swap the remote art URL for a local file:// the widget can load.
+        if let Some(cid) = &snap.cover_id {
+            if let Some(file_url) = server.imp().cover_file_uri(cid).await {
+                metadata.set_art_url(Some(file_url));
+            }
+        }
         server
             .properties_changed([Property::Metadata(metadata)])
             .await?;

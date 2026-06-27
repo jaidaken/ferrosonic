@@ -212,6 +212,37 @@ async fn can_play_true_when_queue_non_empty() {
 
 #[tokio::test]
 #[serial]
+async fn cover_id_none_when_song_has_no_cover_art() {
+    let ds = new_shared_daemon_state(Config::new());
+    {
+        let mut s = ds.write().await;
+        let sng = song("a", "Track");
+        s.queue.push(sng.clone());
+        s.queue_position = Some(0);
+        s.now_playing.song = Some(sng);
+    }
+    let snap = build_property_snapshot(&ds).await;
+    assert!(snap.cover_id.is_none());
+}
+
+#[tokio::test]
+#[serial]
+async fn cover_id_set_from_current_song_cover_art() {
+    let ds = new_shared_daemon_state(Config::new());
+    {
+        let mut s = ds.write().await;
+        let mut sng = song("a", "Track");
+        sng.cover_art = Some("art-7".into());
+        s.queue.push(sng.clone());
+        s.queue_position = Some(0);
+        s.now_playing.song = Some(sng);
+    }
+    let snap = build_property_snapshot(&ds).await;
+    assert_eq!(snap.cover_id.as_deref(), Some("art-7"));
+}
+
+#[tokio::test]
+#[serial]
 async fn last_position_in_queue_has_no_next_but_has_prev() {
     let ds = new_shared_daemon_state(Config::new());
     {
