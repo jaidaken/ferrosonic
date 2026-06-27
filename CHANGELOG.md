@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-06-27
+
+### Fixed
+
+- **MPRIS media controls on GNOME.** The GNOME Shell media-controls widget now
+  appears and shows cover art. Two bugs were behind it: `CanPlay` was never
+  pushed via `PropertiesChanged`, so spec-compliant caching consumers (GNOME)
+  kept it `false` forever and never showed the widget; and the cover art
+  pointed at a remote authenticated Subsonic URL the widget won't load. The
+  cover is now mirrored to a local `file://`, the same way the desktop
+  notifications already do. Thanks to @semsemyonoff.
+- **PipeWire stream name.** The audio stream now identifies as "ferrosonic" in
+  the mixer (pavucontrol and similar) instead of "mpv".
+
 ## [0.6.0] - 2026-06-21
 
 ### Added
