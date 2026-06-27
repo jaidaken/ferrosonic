@@ -199,6 +199,8 @@ impl MpvController {
         cmd.arg("--idle")
             .arg("--no-video")
             .arg("--no-terminal")
+            // Name the PipeWire stream so mixers don't match a foreign mpv .desktop entry.
+            .arg("--audio-client-name=ferrosonic")
             .arg("--gapless-audio=yes")
             .arg("--prefetch-playlist=yes")
             .arg("--cache=yes")
