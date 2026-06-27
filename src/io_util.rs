@@ -262,9 +262,7 @@ mod fault_injection_tests {
                 .write_then_sync
                 .push((path.to_path_buf(), body.to_vec()));
             if self.fail_write_then_sync {
-                Err(io::Error::other(
-                    "synthetic write_then_sync",
-                ))
+                Err(io::Error::other("synthetic write_then_sync"))
             } else {
                 Ok(())
             }

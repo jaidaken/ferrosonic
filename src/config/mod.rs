@@ -1039,11 +1039,7 @@ Password = "testpass"
             (RepeatMode::All, "\"All\""),
         ] {
             let s = toml::Value::try_from(mode).unwrap();
-            assert_eq!(
-                s.to_string(),
-                expected,
-                "{mode:?} serializes as {expected}"
-            );
+            assert_eq!(s.to_string(), expected, "{mode:?} serializes as {expected}");
         }
     }
 

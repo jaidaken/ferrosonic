@@ -336,7 +336,9 @@ mod tests {
             }
         })
         .to_string();
-        let len = u32::try_from(body.len()).expect("test body fits u32").to_le_bytes();
+        let len = u32::try_from(body.len())
+            .expect("test body fits u32")
+            .to_le_bytes();
         let mut buf = Vec::new();
         buf.extend_from_slice(&len);
         buf.extend_from_slice(body.as_bytes());

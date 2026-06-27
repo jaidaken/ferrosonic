@@ -676,7 +676,9 @@ mod boundary_tests {
         assert!(
             !preload_due(
                 Some(base),
-                (base + PRELOAD_BACKOFF).checked_sub(Duration::from_millis(1)).unwrap()
+                (base + PRELOAD_BACKOFF)
+                    .checked_sub(Duration::from_millis(1))
+                    .unwrap()
             ),
             "just under the backoff is not yet due"
         );
