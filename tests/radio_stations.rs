@@ -205,16 +205,8 @@ async fn tick_reports_stream_bitrate_and_download_speed_for_a_station() {
     td.core.update_playback_info().await;
 
     let np = td.state.read().await.now_playing.clone();
-    assert_eq!(
-        np.stream_bitrate_kbps,
-        Some(128),
-        "audio-bitrate b/s -> kbps"
-    );
-    assert_eq!(
-        np.stream_speed_bps,
-        Some(20_480),
-        "cache-speed bytes/s as-is"
-    );
+    assert_eq!(np.bitrate_kbps, Some(128), "audio-bitrate b/s -> kbps");
+    assert_eq!(np.download_bps, Some(20_480), "cache-speed bytes/s as-is");
 }
 
 #[test]
@@ -235,8 +227,8 @@ fn now_playing_widget_renders_a_live_row_instead_of_a_progress_bar() {
         state: PlaybackState::Playing,
         position: 65.0,
         duration: 0.0,
-        stream_bitrate_kbps: Some(128),
-        stream_speed_bps: Some(20_480),
+        bitrate_kbps: Some(128),
+        download_bps: Some(20_480),
         ..NowPlaying::default()
     };
     let widget = NowPlayingWidget::new(&np, ThemeData::default_theme().colors);

@@ -11,6 +11,7 @@ use ratatui::{
 };
 
 use crate::daemon::state::NowPlaying;
+use crate::subsonic::models::Child;
 use crate::ui::theme::ThemeColors;
 
 /// Now-playing strip: title, artist, format info, progress bar.
@@ -157,8 +158,8 @@ impl Widget for NowPlayingWidget<'_> {
 /// ```
 /// use ferrosonic::daemon::state::NowPlaying;
 /// use ferrosonic::ui::widget_now_playing::live_row_text;
-/// let np = NowPlaying { position: 65.0, stream_bitrate_kbps: Some(128),
-///     stream_speed_bps: Some(20_480), ..NowPlaying::default() };
+/// let np = NowPlaying { position: 65.0, bitrate_kbps: Some(128),
+///     download_bps: Some(20_480), ..NowPlaying::default() };
 /// assert_eq!(live_row_text(&np), "● LIVE  01:05  │ 128 kbps │ 20.0 KB/s");
 /// let bare = NowPlaying { position: 5.0, ..NowPlaying::default() };
 /// assert_eq!(live_row_text(&bare), "● LIVE  00:05");
@@ -166,14 +167,11 @@ impl Widget for NowPlayingWidget<'_> {
 #[must_use]
 pub fn live_row_text(np: &NowPlaying) -> String {
     let mut s = format!("● LIVE  {}", np.format_position());
-    if let Some(kbps) = np.stream_bitrate_kbps {
+    if let Some(kbps) = np.bitrate_kbps {
         let _ = write!(s, "  │ {kbps} kbps");
     }
-    if let Some(bps) = np.stream_speed_bps {
-        // Integer-precision `as` on a value already bounded by the stream rate.
-        #[allow(clippy::cast_precision_loss)]
-        let kib = bps as f64 / 1024.0;
-        let _ = write!(s, " │ {kib:.1} KB/s");
+    if let Some(bps) = np.download_bps {
+        let _ = write!(s, " │ {} KB/s", format_kib(bps));
     }
     s
 }
@@ -195,12 +193,39 @@ fn render_live_row(area: Rect, buf: &mut Buffer, np: &NowPlaying, colors: &Theme
     buf[(start_x, area.y)].set_style(Style::default().fg(colors.playing));
 }
 
-fn build_quality_string(np: &NowPlaying) -> String {
+/// Quality row under the title: `CODEC │ depth │ rate │ channels [│ kbps │ ↓ KB/s]`.
+///
+/// - Codec is mpv's `audio-codec-name` (the actual file/stream codec), falling
+///   back to the song's file suffix, then to mpv's decoded sample format.
+/// - Bit depth is dropped when mpv decodes to float: `32-bit` there describes
+///   the decoder, not the source (every lossy codec lands on `floatp`).
+/// - Bitrate is mpv's live measurement, else the server's nominal `bitRate`.
+/// - Bitrate and download speed are left to the LIVE row for radio stations.
+///
+/// ```
+/// use ferrosonic::daemon::state::NowPlaying;
+/// use ferrosonic::ui::widget_now_playing::build_quality_string;
+/// let np = NowPlaying { format: Some("s24".into()), bit_depth: Some(24),
+///     sample_rate: Some(96_000), channels: Some("Stereo".into()),
+///     codec: Some("flac".into()), bitrate_kbps: Some(2304),
+///     download_bps: Some(1_048_576), ..NowPlaying::default() };
+/// assert_eq!(build_quality_string(&np),
+///     "FLAC │ 24-bit │ 96kHz │ Stereo │ 2304 kbps │ ↓ 1024.0 KB/s");
+/// ```
+#[must_use]
+pub fn build_quality_string(np: &NowPlaying) -> String {
     let mut parts = Vec::new();
-    if let Some(ref fmt) = np.format {
-        parts.push(fmt.clone().to_uppercase());
+    let song = np.song.as_ref();
+    let codec = np
+        .codec
+        .clone()
+        .or_else(|| song.and_then(|s| s.suffix.clone()))
+        .or_else(|| np.format.clone());
+    if let Some(c) = codec {
+        parts.push(c.to_uppercase());
     }
-    if let Some(bits) = np.bit_depth {
+    let decoded_float = np.format.as_deref().is_some_and(|f| f.contains("float"));
+    if let Some(bits) = np.bit_depth.filter(|_| !decoded_float) {
         parts.push(format!("{bits}-bit"));
     }
     if let Some(rate) = np.sample_rate {
@@ -220,7 +245,28 @@ fn build_quality_string(np: &NowPlaying) -> String {
     if let Some(ref channels) = np.channels {
         parts.push(channels.clone());
     }
+    let is_radio = song.is_some_and(Child::is_radio);
+    if !is_radio {
+        let kbps = np.bitrate_kbps.or_else(|| {
+            song.and_then(|s| s.bit_rate)
+                .and_then(|b| u32::try_from(b).ok())
+        });
+        if let Some(k) = kbps {
+            parts.push(format!("{k} kbps"));
+        }
+        if let Some(bps) = np.download_bps {
+            parts.push(format!("↓ {} KB/s", format_kib(bps)));
+        }
+    }
     parts.join(" │ ")
+}
+
+/// Bytes/s as KiB/s with one decimal.
+fn format_kib(bps: u64) -> String {
+    // Integer-precision `as` on a value already bounded by the stream rate.
+    #[allow(clippy::cast_precision_loss)]
+    let kib = bps as f64 / 1024.0;
+    format!("{kib:.1}")
 }
 
 fn render_info(

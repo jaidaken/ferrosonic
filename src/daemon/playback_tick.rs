@@ -225,8 +225,9 @@ impl DaemonCore {
                 // sample rates must not stay pinned to the previous track's rate.
                 state.now_playing.sample_rate = None;
                 state.now_playing.bit_depth = None;
-                state.now_playing.stream_bitrate_kbps = None;
-                state.now_playing.stream_speed_bps = None;
+                state.now_playing.codec = None;
+                state.now_playing.bitrate_kbps = None;
+                state.now_playing.download_bps = None;
                 drop(state);
                 Some(next_pos)
             } else {
@@ -397,31 +398,52 @@ impl DaemonCore {
             .is_some_and(crate::subsonic::models::Child::is_radio)
     }
 
-    /// For a live radio stream, poll mpv's stream bitrate and network read
-    /// speed and publish them (via `NowPlayingChanged`) when they change.
+    /// Poll mpv's codec, measured bitrate and network read speed for the
+    /// playing track and broadcast `StreamStatsChanged` when any of them
+    /// moved. Runs only while Playing; a paused/stopped mpv reports nothing.
     // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     async fn tick_stream_stats(self: &Arc<Self>) {
-        if !self.now_playing_is_radio().await {
+        use crate::daemon::state::PlaybackState;
+        let (playing, known_codec) = {
+            let state = self.state.read().await;
+            (
+                state.now_playing.state == PlaybackState::Playing
+                    && state.now_playing.song.is_some(),
+                state.now_playing.codec.clone(),
+            )
+        };
+        if !playing {
             return;
         }
-        let (bitrate, speed) = {
+        let (codec, bitrate, speed) = {
             let mut mpv = self.mpv.lock().await;
+            // The codec is fixed per track: probe until known, then keep it.
+            let c = match known_codec {
+                Some(c) => Some(c),
+                None => mpv.get_audio_codec_name().await.ok().flatten(),
+            };
             let b = mpv.get_audio_bitrate().await.ok().flatten();
             let s = mpv.get_cache_speed().await.ok().flatten();
-            (b, s)
+            (c, b, s)
         };
         let bitrate_kbps = bitrate.map(|b| crate::num::u32_sat(b / 1000));
         let changed = {
             let mut state = self.state.write().await;
             let np = &mut state.now_playing;
-            let changed = np.stream_bitrate_kbps != bitrate_kbps || np.stream_speed_bps != speed;
-            np.stream_bitrate_kbps = bitrate_kbps;
-            np.stream_speed_bps = speed;
+            let changed =
+                np.codec != codec || np.bitrate_kbps != bitrate_kbps || np.download_bps != speed;
+            np.codec.clone_from(&codec);
+            np.bitrate_kbps = bitrate_kbps;
+            np.download_bps = speed;
             changed
         };
         if changed {
-            self.emit_now_playing().await;
+            self.emit(DaemonEvent::StreamStatsChanged {
+                codec,
+                bitrate_kbps,
+                download_bps: speed,
+            });
         }
     }
 

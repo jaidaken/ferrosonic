@@ -678,6 +678,20 @@ impl MpvController {
         Ok(data.and_then(|v| v.as_str().map(String::from)))
     }
 
+    /// Codec name of the current audio track (`audio-codec-name`), e.g.
+    /// `"flac"`, `"mp3"`; `None` before the track is probed.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
+    pub async fn get_audio_codec_name(&mut self) -> Result<Option<String>, AudioError> {
+        let data = self
+            .send_command(vec![json!("get_property"), json!("audio-codec-name")])
+            .await?;
+        Ok(data
+            .and_then(|v| v.as_str().map(String::from))
+            .filter(|s| !s.is_empty()))
+    }
+
     /// Demuxer-reported audio bitrate in bits per second (`audio-bitrate`);
     /// `None` when mpv has no estimate yet.
     ///

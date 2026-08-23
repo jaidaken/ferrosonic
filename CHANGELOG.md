@@ -4,6 +4,17 @@
 
 ### Added
 
+- **Quality + traffic in the now-playing bar for songs.** The quality row now
+  leads with the actual codec (`FLAC`, `MP3`, ... from mpv, falling back to
+  the file suffix) instead of mpv's decoded sample format, drops the
+  misleading `32-bit` when a lossy codec decodes to float, and appends the
+  measured bitrate plus the network download speed:
+  `FLAC │ 16-bit │ 44.1kHz │ Stereo │ 1014 kbps │ ↓ 350.0 KB/s`. Stats travel
+  over a new lightweight `StreamStatsChanged` event so MPRIS is not spammed.
+- **Digit page shortcuts.** `1`-`6` switch pages exactly like `F1`-`F6`, for
+  terminals and multiplexers that swallow function keys. Text inputs still
+  capture digits.
+
 - **Internet radio stations.** The Quick Play page (F3) gains a **Radio**
   option listing the stations configured on the server
   (`getInternetRadioStations`, e.g. Navidrome's *Radios* page). `Enter` plays

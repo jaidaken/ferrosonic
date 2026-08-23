@@ -156,27 +156,31 @@ impl App {
                 }
                 return Ok(());
             }
-            (KeyCode::F(1), _) => {
+            // Digits mirror F1-F6: many terminals and multiplexers swallow
+            // or re-map function keys, so pages stay reachable everywhere.
+            // Text inputs (search, rename, server fields) are routed above,
+            // so digits still type there.
+            (KeyCode::Char('1'), KeyModifiers::NONE) | (KeyCode::F(1), _) => {
                 state.client.page = Page::Library;
                 return Ok(());
             }
-            (KeyCode::F(2), _) => {
+            (KeyCode::Char('2'), KeyModifiers::NONE) | (KeyCode::F(2), _) => {
                 state.client.page = Page::Queue;
                 return Ok(());
             }
-            (KeyCode::F(3), _) => {
+            (KeyCode::Char('3'), KeyModifiers::NONE) | (KeyCode::F(3), _) => {
                 state.client.page = Page::QuickPlay;
                 return Ok(());
             }
-            (KeyCode::F(4), _) => {
+            (KeyCode::Char('4'), KeyModifiers::NONE) | (KeyCode::F(4), _) => {
                 state.client.page = Page::Playlists;
                 return Ok(());
             }
-            (KeyCode::F(5), _) => {
+            (KeyCode::Char('5'), KeyModifiers::NONE) | (KeyCode::F(5), _) => {
                 state.client.page = Page::Server;
                 return Ok(());
             }
-            (KeyCode::F(6), _) => {
+            (KeyCode::Char('6'), KeyModifiers::NONE) | (KeyCode::F(6), _) => {
                 state.client.page = Page::Settings;
                 return Ok(());
             }

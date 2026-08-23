@@ -306,3 +306,74 @@ async fn l_fires_next_on_playlists_when_not_editing() {
         "'l' on Playlists (not editing) must fire global Next, not route to the page handler"
     );
 }
+
+// ---- digit page shortcuts (F-key fallback for terminals that eat F1-F6) ----
+
+#[tokio::test]
+#[serial]
+async fn digits_one_to_six_switch_pages_like_f_keys() {
+    use ferrosonic::app::state::Page;
+    let client = RecordingClient::new();
+    let mut app = app_with(client);
+    for (ch, page) in [
+        ('2', Page::Queue),
+        ('3', Page::QuickPlay),
+        ('4', Page::Playlists),
+        ('6', Page::Settings),
+        ('1', Page::Library),
+        ('5', Page::Server),
+    ] {
+        press(&mut app, key(KeyCode::Char(ch))).await;
+        assert_eq!(
+            app.client_state.read().await.page,
+            page,
+            "digit {ch} switches to {page:?}"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn digits_still_type_into_a_server_text_field() {
+    use ferrosonic::app::state::Page;
+    let client = RecordingClient::new();
+    let mut app = app_with(client);
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Server;
+        cs.server_state.selected_field = 0; // URL field captures typing
+    }
+    press(&mut app, key(KeyCode::Char('3'))).await;
+    let cs = app.client_state.read().await;
+    assert_eq!(
+        cs.page,
+        Page::Server,
+        "no page switch while a text field is focused"
+    );
+    assert!(
+        cs.server_state.base_url.contains('3'),
+        "the digit lands in the URL text: {:?}",
+        cs.server_state.base_url
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn digits_still_type_into_the_library_filter() {
+    use ferrosonic::app::state::Page;
+    let client = RecordingClient::new();
+    let mut app = app_with(client);
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Library;
+        cs.artists.filter_active = true;
+    }
+    press(&mut app, key(KeyCode::Char('3'))).await;
+    let cs = app.client_state.read().await;
+    assert_eq!(cs.page, Page::Library, "no page switch while filtering");
+    assert!(
+        cs.artists.filter.contains('3'),
+        "the digit lands in the filter text: {:?}",
+        cs.artists.filter
+    );
+}
