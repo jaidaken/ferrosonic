@@ -110,7 +110,7 @@ fn quality_row_shows_codec_bitrate_and_traffic_for_a_song() {
     };
     assert_eq!(
         build_quality_string(&np),
-        "FLAC │ 16-bit │ 44.1kHz │ Stereo │ 1014 kbps │ ↓ 350.0 KB/s"
+        "FLAC │ 16-bit │ 44.1kHz │ Stereo │ 1014 kbps │ ↓  350.0 KB/s"
     );
 }
 
@@ -131,7 +131,10 @@ fn quality_row_hides_decoded_float_depth_and_falls_back_to_file_suffix_and_serve
         channels: Some("Stereo".into()),
         ..NowPlaying::default()
     };
-    assert_eq!(build_quality_string(&np), "MP3 │ 48kHz │ Stereo │ 320 kbps");
+    assert_eq!(
+        build_quality_string(&np),
+        "MP3 │ 48kHz │ Stereo │  320 kbps"
+    );
 }
 
 #[test]
@@ -171,4 +174,90 @@ fn quality_row_for_radio_leaves_bitrate_and_traffic_to_the_live_row() {
         1,
         "kbps shown once (LIVE row): {s}"
     );
+}
+
+// ---- layout stability: the quality row must not change width per tick ----
+
+#[test]
+fn quality_row_width_is_stable_across_speed_and_bitrate_jitter() {
+    // The info rows are centered: any width change shifts the whole row
+    // sideways every tick ("content jump"). Numeric fields are fixed-width
+    // and the traffic slot never appears/disappears mid-track.
+    let base = NowPlaying {
+        song: Some(song("s1", "Track")),
+        state: PlaybackState::Playing,
+        format: Some("s16".into()),
+        bit_depth: Some(16),
+        sample_rate: Some(44_100),
+        channels: Some("Stereo".into()),
+        codec: Some("flac".into()),
+        bitrate_kbps: Some(998),
+        download_bps: Some(358_400),
+        ..NowPlaying::default()
+    };
+    let w0 = build_quality_string(&base).chars().count();
+    for (kbps, bps) in [
+        (1108, 12_800u64), // 5-digit -> shorter speed, 4-digit bitrate
+        (64, 1_258_291),   // MB/s unit switch
+        (998, 0),          // burst gap: mpv reads in chunks, speed dips to 0
+        (2304, 999),       // sub-KB trickle
+    ] {
+        let np = NowPlaying {
+            bitrate_kbps: Some(kbps),
+            download_bps: Some(bps),
+            ..base.clone()
+        };
+        assert_eq!(
+            build_quality_string(&np).chars().count(),
+            w0,
+            "width changed for kbps={kbps} bps={bps}: {:?} vs {:?}",
+            build_quality_string(&np),
+            build_quality_string(&base)
+        );
+    }
+}
+
+#[test]
+fn live_row_width_is_stable_across_speed_jitter() {
+    use ferrosonic::ui::widget_now_playing::live_row_text;
+    let st = ferrosonic::subsonic::models::InternetRadioStation {
+        id: "1".into(),
+        name: "Jazz".into(),
+        stream_url: "http://r/x".into(),
+        home_page_url: None,
+    };
+    let base = NowPlaying {
+        song: Some(Child::from_radio_station(&st)),
+        state: PlaybackState::Playing,
+        position: 65.0,
+        bitrate_kbps: Some(128),
+        download_bps: Some(20_480),
+        ..NowPlaying::default()
+    };
+    let w0 = live_row_text(&base).chars().count();
+    for bps in [512u64, 0, 1_258_291, 5_120] {
+        let np = NowPlaying {
+            download_bps: Some(bps),
+            ..base.clone()
+        };
+        assert_eq!(
+            live_row_text(&np).chars().count(),
+            w0,
+            "width changed for bps={bps}: {:?}",
+            live_row_text(&np)
+        );
+    }
+}
+
+#[test]
+fn cover_fetch_size_scales_with_the_art_box() {
+    use ferrosonic::ui::cover_art::cover_fetch_size;
+    // 16 rows at 20px cells = 320px box -> 512 floor.
+    assert_eq!(cover_fetch_size(20, 16), 512);
+    // 16 rows at 32px cells = 512px box -> exactly 512.
+    assert_eq!(cover_fetch_size(32, 16), 512);
+    // HiDPI 40px cells = 640px box -> next 256 step, 768.
+    assert_eq!(cover_fetch_size(40, 16), 768);
+    // Huge box caps at 1024 so the server-side cache stays sane.
+    assert_eq!(cover_fetch_size(64, 24), 1024);
 }

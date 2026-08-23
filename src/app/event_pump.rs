@@ -217,10 +217,17 @@ async fn apply_now_playing_changed(
             };
             if should_fetch {
                 info!("Fetching cover art id={}", id);
+                let rows = daemon_state.read().await.config.cover_art_size;
+                let size = {
+                    let guard = cover_art
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    crate::ui::cover_art::cover_fetch_size(guard.cell_size.1, rows)
+                };
                 match client
                     .request(DaemonRequest::FetchCoverArt {
                         id: id.clone(),
-                        size: 512,
+                        size,
                     })
                     .await
                 {
@@ -301,10 +308,16 @@ async fn apply_config_changed(
             };
             if should_fetch {
                 info!("Cover art enabled; fetching current id={}", id);
+                let size = {
+                    let guard = cover_art
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    crate::ui::cover_art::cover_fetch_size(guard.cell_size.1, cover_art_size)
+                };
                 if let Ok(DaemonResponse::CoverArt(bytes)) = client
                     .request(DaemonRequest::FetchCoverArt {
                         id: id.clone(),
-                        size: 512,
+                        size,
                     })
                     .await
                 {

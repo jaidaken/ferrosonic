@@ -44,6 +44,23 @@ pub struct ChafaCache {
     pub cells: Vec<chafa_ext::EncodedCell>,
 }
 
+/// Cover-art request size (longest edge, px) for an art box `rows` cells tall.
+///
+/// With `cell_h`-pixel cells: the box height rounded up to a 256 step,
+/// clamped to `[512, 1024]`. A fixed 512 under-serves large fonts and
+/// `HiDPI` cells; the cap keeps the daemon and server caches bounded.
+///
+/// ```
+/// use ferrosonic::ui::cover_art::cover_fetch_size;
+/// assert_eq!(cover_fetch_size(20, 16), 512);
+/// assert_eq!(cover_fetch_size(40, 16), 768);
+/// ```
+#[must_use]
+pub fn cover_fetch_size(cell_h: u16, rows: u8) -> u32 {
+    let px = u32::from(cell_h) * u32::from(rows);
+    px.next_multiple_of(256).clamp(512, 1024)
+}
+
 fn query_cell_size() -> Option<(u16, u16)> {
     use std::os::unix::io::AsRawFd;
     let fd = std::io::stdout().as_raw_fd();
