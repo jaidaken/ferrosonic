@@ -181,6 +181,10 @@ pub struct LibraryCache {
     /// LRU order for `playlist_songs_cache`, least-recent first.
     #[serde(default)]
     pub playlist_songs_cache_order: VecDeque<String>,
+    /// Internet radio stations as synthetic `Child` entries (see
+    /// `Child::from_radio_station`); fetched on demand for the Quick Play page.
+    #[serde(default)]
+    pub radio_stations: Vec<Child>,
 }
 
 impl LibraryCache {

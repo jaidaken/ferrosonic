@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Internet radio stations.** The Quick Play page (F3) gains a **Radio**
+  option listing the stations configured on the server
+  (`getInternetRadioStations`, e.g. Navidrome's *Radios* page). `Enter` plays
+  a station as a live stream straight through mpv (bypassing the
+  download-then-load pre-buffer, which a live stream would stall). The
+  now-playing bar shows `● LIVE <elapsed> │ <kbps> │ <KB/s>` instead of a
+  progress bar; pause/resume rejoins the stream live; stations are never
+  scrobbled or gapless-prefetched and have no star / add-to-playlist actions.
+  Closes #34.
+
 ## [0.6.1] - 2026-06-27
 
 ### Fixed

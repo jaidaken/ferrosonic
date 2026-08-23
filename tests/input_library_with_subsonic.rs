@@ -139,6 +139,7 @@ async fn i_in_search_mode_for_album_inserts_next() {
             path: None,
             disc_number: None,
             starred: None,
+            radio_stream_url: None,
         });
         s.queue_position = Some(0);
     }

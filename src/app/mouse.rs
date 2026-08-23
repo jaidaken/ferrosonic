@@ -171,11 +171,7 @@ impl App {
 
         if in_pane(left) {
             let row_in_pane = y.saturating_sub(left.y + 1) as usize;
-            let option = match row_in_pane {
-                0 => Some(SongOption::Starred),
-                1 => Some(SongOption::Random),
-                _ => None,
-            };
+            let option = SongOption::from_index(row_in_pane);
             if let Some(option) = option {
                 let already;
                 {
@@ -190,11 +186,7 @@ impl App {
                     state.client.songs.focus = 0;
                 }
                 if !already {
-                    let req = match option {
-                        SongOption::Starred => DaemonRequest::RefreshStarred,
-                        SongOption::Random => DaemonRequest::RefreshRandom,
-                    };
-                    let _ = self.client.request(req).await;
+                    let _ = self.client.request(option.refresh_request()).await;
                 }
             }
             return Ok(());

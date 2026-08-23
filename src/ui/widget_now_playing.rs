@@ -1,5 +1,7 @@
 //! Now-playing strip widget with progress bar and cover art.
 
+use std::fmt::Write as _;
+
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
@@ -134,15 +136,63 @@ impl Widget for NowPlayingWidget<'_> {
             &self.colors,
         );
 
-        render_progress_bar(
-            progress_area,
-            buf,
-            self.now_playing.progress_percent(),
-            &self.now_playing.format_position(),
-            &self.now_playing.format_duration(),
-            &self.colors,
-        );
+        if song.is_radio() {
+            render_live_row(progress_area, buf, self.now_playing, &self.colors);
+        } else {
+            render_progress_bar(
+                progress_area,
+                buf,
+                self.now_playing.progress_percent(),
+                &self.now_playing.format_position(),
+                &self.now_playing.format_duration(),
+                &self.colors,
+            );
+        }
     }
+}
+
+/// Status line for a live radio stream: `● LIVE  <elapsed>  │ <kbps> │ <KB/s>`.
+/// Replaces the progress bar, which has no meaning without a duration.
+///
+/// ```
+/// use ferrosonic::daemon::state::NowPlaying;
+/// use ferrosonic::ui::widget_now_playing::live_row_text;
+/// let np = NowPlaying { position: 65.0, stream_bitrate_kbps: Some(128),
+///     stream_speed_bps: Some(20_480), ..NowPlaying::default() };
+/// assert_eq!(live_row_text(&np), "● LIVE  01:05  │ 128 kbps │ 20.0 KB/s");
+/// let bare = NowPlaying { position: 5.0, ..NowPlaying::default() };
+/// assert_eq!(live_row_text(&bare), "● LIVE  00:05");
+/// ```
+#[must_use]
+pub fn live_row_text(np: &NowPlaying) -> String {
+    let mut s = format!("● LIVE  {}", np.format_position());
+    if let Some(kbps) = np.stream_bitrate_kbps {
+        let _ = write!(s, "  │ {kbps} kbps");
+    }
+    if let Some(bps) = np.stream_speed_bps {
+        // Integer-precision `as` on a value already bounded by the stream rate.
+        #[allow(clippy::cast_precision_loss)]
+        let kib = bps as f64 / 1024.0;
+        let _ = write!(s, " │ {kib:.1} KB/s");
+    }
+    s
+}
+
+fn render_live_row(area: Rect, buf: &mut Buffer, np: &NowPlaying, colors: &ThemeColors) {
+    if area.width < 15 {
+        return;
+    }
+    let text = live_row_text(np);
+    let width = crate::num::u16_sat(text.chars().count());
+    let start_x = area.x + area.width.saturating_sub(width) / 2;
+    buf.set_string(
+        start_x,
+        area.y,
+        &text,
+        Style::default().fg(colors.highlight_fg),
+    );
+    // The live dot in the playing colour so the row reads as "on air".
+    buf[(start_x, area.y)].set_style(Style::default().fg(colors.playing));
 }
 
 fn build_quality_string(np: &NowPlaying) -> String {

@@ -70,8 +70,10 @@ pub async fn apply_event(
             apply_song_star_changed(daemon_state, client_state, id, starred).await;
         }
         DaemonEvent::RandomChanged(songs) => {
-            let mut ds = daemon_state.write().await;
-            ds.library.random_songs = songs;
+            daemon_state.write().await.library.random_songs = songs;
+        }
+        DaemonEvent::RadioStationsChanged(stations) => {
+            daemon_state.write().await.library.radio_stations = stations;
         }
         DaemonEvent::ArtistsChanged(artists) => {
             let mut ds = daemon_state.write().await;

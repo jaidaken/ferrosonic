@@ -9,9 +9,10 @@ use url::Url;
 
 use super::auth::generate_auth_params;
 use super::models::{
-    Album, AlbumData, AlbumList2Data, Artist, ArtistData, ArtistsData, Child, MusicFolder,
-    MusicFoldersData, OpenSubsonicExtensionsData, PingData, Playlist, PlaylistData, PlaylistsData,
-    RandomSongsData, Search3Data, SearchResult3, StarredSongsData, SubsonicResponse,
+    Album, AlbumData, AlbumList2Data, Artist, ArtistData, ArtistsData, Child, InternetRadioStation,
+    InternetRadioStationsData, MusicFolder, MusicFoldersData, OpenSubsonicExtensionsData, PingData,
+    Playlist, PlaylistData, PlaylistsData, RandomSongsData, Search3Data, SearchResult3,
+    StarredSongsData, SubsonicResponse,
 };
 use crate::error::SubsonicError;
 use crate::secret::Secret;
@@ -539,6 +540,19 @@ impl SubsonicClient {
         Ok((album, detail.song))
     }
 
+    /// Fetch the internet radio stations configured on the server.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
+    pub async fn get_internet_radio_stations(
+        &self,
+    ) -> Result<Vec<InternetRadioStation>, SubsonicError> {
+        let data: InternetRadioStationsData = self.request("getInternetRadioStations").await?;
+        let stations = data.internet_radio_stations.internet_radio_station;
+        debug!("Fetched {} radio stations", stations.len());
+        Ok(stations)
+    }
+
     /// Fetch all playlists visible to the account.
     ///
     /// # Errors
@@ -622,6 +636,30 @@ impl SubsonicClient {
         }
         let bytes = resp.bytes().await?;
         Ok(bytes.to_vec())
+    }
+
+    /// URL mpv should load for a queue entry: the raw station stream for an
+    /// internet radio entry, else the signed `rest/stream` URL for the song.
+    ///
+    /// ```
+    /// use ferrosonic::secret::Secret;
+    /// use ferrosonic::subsonic::client::SubsonicClient;
+    /// use ferrosonic::subsonic::models::Child;
+    /// let pw = Secret::from_string("pw".to_string());
+    /// let c = SubsonicClient::new("https://example.com/", "alice", &pw).unwrap();
+    /// let radio = Child { id: "radio:1".into(), radio_stream_url: Some("http://r/x".into()), ..Default::default() };
+    /// assert_eq!(c.stream_url_for(&radio).unwrap(), "http://r/x");
+    /// let song = Child { id: "s1".into(), ..Default::default() };
+    /// assert!(c.stream_url_for(&song).unwrap().starts_with("https://example.com/rest/stream?"));
+    /// ```
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the stream URL cannot be assembled.
+    pub fn stream_url_for(&self, entry: &Child) -> Result<String, SubsonicError> {
+        entry
+            .radio_stream_url
+            .as_ref()
+            .map_or_else(|| self.get_stream_url(&entry.id), |url| Ok(url.clone()))
     }
 
     /// Build the signed `rest/stream` URL for `song_id`. Adds Subsonic auth params (`u`, `t`, `s`, `v`, `c`) plus the song `id`. No network IO; this is pure URL assembly.

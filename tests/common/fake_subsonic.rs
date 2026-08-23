@@ -147,6 +147,38 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_internet_radio_stations(&self, stations: &[(&str, &str, &str)]) {
+        let list: Vec<Value> = stations
+            .iter()
+            .map(|(id, name, url)| {
+                json!({ "id": id, "name": name, "streamUrl": url, "homePageUrl": "https://example.org" })
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getInternetRadioStations"))
+            .respond_with(ok_body(json!({
+                "internetRadioStations": { "internetRadioStation": list }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Mount a raw (non-Subsonic) audio endpoint whose response body only
+    /// arrives after `delay_ms`, mimicking a live stream that never EOFs
+    /// quickly. Returns the absolute URL.
+    pub async fn expect_slow_stream(&self, path_str: &str, delay_ms: u64) -> String {
+        Mock::given(method("GET"))
+            .and(path(path_str))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(std::time::Duration::from_millis(delay_ms))
+                    .set_body_bytes(vec![0u8; 1024]),
+            )
+            .mount(&self.server)
+            .await;
+        format!("{}{}", self.server.uri(), path_str)
+    }
+
     pub async fn expect_playlists(&self) {
         Mock::given(method("GET"))
             .and(path("/rest/getPlaylists"))

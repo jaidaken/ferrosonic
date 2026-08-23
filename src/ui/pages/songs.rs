@@ -70,7 +70,7 @@ fn render_options(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, color
     list = list.highlight_style(highlight_style);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(selected_option as usize));
+    list_state.select(Some(selected_option.index()));
 
     frame.render_stateful_widget(list, area, &mut list_state);
 }
@@ -87,9 +87,10 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
         Style::default().fg(colors.border_unfocused)
     };
 
+    let is_radio = matches!(songs_ui.selected_option, Some(SongOption::Radio));
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Songs")
+        .title(if is_radio { "Radio Stations" } else { "Songs" })
         .border_style(border_style);
 
     let items: Vec<ListItem<'_>> = library_songs

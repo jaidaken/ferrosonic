@@ -44,6 +44,7 @@ impl DaemonCore {
             return Ok(());
         };
 
+        let mode = mode.for_entry(&song);
         info!(
             "Playing: {} (queue pos {}) mode={:?}",
             song.title, idx, mode

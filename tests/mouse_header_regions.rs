@@ -154,6 +154,7 @@ async fn click_on_now_playing_progress_bar_seeks() {
             path: None,
             disc_number: None,
             starred: None,
+            radio_stream_url: None,
         });
     }
     fx.app.handle_mouse(click(40, 27)).await.unwrap();

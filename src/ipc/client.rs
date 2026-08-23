@@ -90,6 +90,10 @@ impl DaemonClient for InProcessClient {
                 core.refresh_playlists().await;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::RefreshRadioStations => {
+                core.refresh_radio_stations().await;
+                Ok(DaemonResponse::Ok)
+            }
             DaemonRequest::CreatePlaylist { name, song_ids } => {
                 ok_response(core.create_playlist(&name, &song_ids).await)
             }

@@ -35,6 +35,7 @@ fn song(id: &str) -> Child {
         path: None,
         disc_number: None,
         starred: None,
+        radio_stream_url: None,
     }
 }
 

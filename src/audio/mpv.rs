@@ -678,6 +678,36 @@ impl MpvController {
         Ok(data.and_then(|v| v.as_str().map(String::from)))
     }
 
+    /// Demuxer-reported audio bitrate in bits per second (`audio-bitrate`);
+    /// `None` when mpv has no estimate yet.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
+    pub async fn get_audio_bitrate(&mut self) -> Result<Option<u64>, AudioError> {
+        let data = self
+            .send_command(vec![json!("get_property"), json!("audio-bitrate")])
+            .await?;
+        Ok(data
+            .and_then(|v| v.as_f64())
+            .filter(|b| *b > 0.0)
+            .map(f64_to_u64))
+    }
+
+    /// Current network read speed into the demuxer cache in bytes per second
+    /// (`cache-speed`); `None` when mpv is not reading from a stream.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
+    pub async fn get_cache_speed(&mut self) -> Result<Option<u64>, AudioError> {
+        let data = self
+            .send_command(vec![json!("get_property"), json!("cache-speed")])
+            .await?;
+        Ok(data
+            .and_then(|v| v.as_f64())
+            .filter(|b| *b >= 0.0)
+            .map(f64_to_u64))
+    }
+
     /// Channel layout label, e.g. `"Stereo"` or `"5ch"`.
     ///
     /// # Errors
@@ -799,6 +829,13 @@ fn classify_event(ev: &MpvEvent) -> MpvEventKind {
         "file-loaded" => MpvEventKind::FileLoaded,
         other => MpvEventKind::Other(other.to_string()),
     }
+}
+
+/// Truncating, saturating `f64` -> `u64` for non-negative rates.
+// f64->u64 `as` saturates (Rust >=1.45); callers filter negatives first.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+const fn f64_to_u64(v: f64) -> u64 {
+    v as u64
 }
 
 #[cfg(test)]
