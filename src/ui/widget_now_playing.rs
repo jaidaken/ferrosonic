@@ -160,7 +160,7 @@ impl Widget for NowPlayingWidget<'_> {
 /// use ferrosonic::ui::widget_now_playing::live_row_text;
 /// let np = NowPlaying { position: 65.0, bitrate_kbps: Some(128),
 ///     download_bps: Some(20_480), ..NowPlaying::default() };
-/// assert_eq!(live_row_text(&np), "● LIVE  01:05  │ 128 kbps │ 20.0 KB/s");
+/// assert_eq!(live_row_text(&np), "● LIVE  01:05  │  128 kbps │   20.0 KB/s");
 /// let bare = NowPlaying { position: 5.0, ..NowPlaying::default() };
 /// assert_eq!(live_row_text(&bare), "● LIVE  00:05");
 /// ```
@@ -168,9 +168,9 @@ impl Widget for NowPlayingWidget<'_> {
 pub fn live_row_text(np: &NowPlaying) -> String {
     let mut s = format!("● LIVE  {}", np.format_position());
     if let Some(kbps) = np.bitrate_kbps {
-        let _ = write!(s, "  │ {kbps} kbps");
+        let _ = write!(s, "  │ {kbps:>4} kbps");
     }
-    if let Some(bps) = np.download_bps.filter(|b| *b > 0) {
+    if let Some(bps) = np.download_bps {
         let _ = write!(s, " │ {}", format_speed(bps));
     }
     s
@@ -210,7 +210,7 @@ fn render_live_row(area: Rect, buf: &mut Buffer, np: &NowPlaying, colors: &Theme
 ///     codec: Some("flac".into()), bitrate_kbps: Some(2304),
 ///     download_bps: Some(1_048_576), ..NowPlaying::default() };
 /// assert_eq!(build_quality_string(&np),
-///     "FLAC │ 24-bit │ 96kHz │ Stereo │ 2304 kbps │ ↓ 1.0 MB/s");
+///     "FLAC │ 24-bit │ 96kHz │ Stereo │ 2304 kbps │ ↓    1.0 MB/s");
 /// ```
 #[must_use]
 pub fn build_quality_string(np: &NowPlaying) -> String {
@@ -252,33 +252,44 @@ pub fn build_quality_string(np: &NowPlaying) -> String {
                 .and_then(|b| u32::try_from(b).ok())
         });
         if let Some(k) = kbps {
-            parts.push(format!("{k} kbps"));
+            // Right-aligned to 4 digits: VBR estimates move every tick and the
+            // centered row must not change width ("content jump").
+            parts.push(format!("{k:>4} kbps"));
         }
-        // 0 B/s = nothing left to fetch (fully cached); drop the arrow.
-        if let Some(bps) = np.download_bps.filter(|b| *b > 0) {
+        // The slot stays reserved for the whole track (mpv reads in bursts,
+        // so the speed dips to 0 between chunks); only the digits change.
+        if let Some(bps) = np.download_bps {
             parts.push(format!("↓ {}", format_speed(bps)));
         }
     }
     parts.join(" │ ")
 }
 
-/// Bytes/s as `KB/s` under 1 MiB/s, else `MB/s`, one decimal — keeps the
-/// quality row narrow when a local file downloads at tens of MB/s.
+/// Bytes/s as a fixed-width (11-char) rate.
+///
+/// `KB/s` under 1 MiB/s, else `MB/s`, one decimal; `--` while nothing is
+/// being fetched. Constant width keeps the centered rows from shifting as
+/// digits come and go.
 ///
 /// ```
 /// use ferrosonic::ui::widget_now_playing::format_speed;
-/// assert_eq!(format_speed(20_480), "20.0 KB/s");
-/// assert_eq!(format_speed(12_739_174), "12.1 MB/s");
+/// assert_eq!(format_speed(20_480),      "  20.0 KB/s");
+/// assert_eq!(format_speed(12_739_174),  "  12.1 MB/s");
+/// assert_eq!(format_speed(0),           "    -- KB/s");
+/// assert_eq!(format_speed(1_047_527),   "1023.0 KB/s");
 /// ```
 #[must_use]
 pub fn format_speed(bps: u64) -> String {
+    if bps == 0 {
+        return format!("{:>6} KB/s", "--");
+    }
     // Integer-precision `as` on a value already bounded by the stream rate.
     #[allow(clippy::cast_precision_loss)]
     let kib = bps as f64 / 1024.0;
     if kib >= 1024.0 {
-        format!("{:.1} MB/s", kib / 1024.0)
+        format!("{:>6.1} MB/s", kib / 1024.0)
     } else {
-        format!("{kib:.1} KB/s")
+        format!("{kib:>6.1} KB/s")
     }
 }
 
