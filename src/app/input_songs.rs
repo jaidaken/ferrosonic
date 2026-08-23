@@ -29,6 +29,7 @@ impl App {
                     if let Some(opt) = prev {
                         state.client.songs.selected_option = Some(opt.clone());
                         state.client.songs.selected_index = None;
+                        state.client.songs.scroll_offset = 0;
                         let _ = state;
                         drop(cs);
                         drop(ds);
@@ -57,6 +58,7 @@ impl App {
                     if let Some(opt) = next {
                         state.client.songs.selected_option = Some(opt.clone());
                         state.client.songs.selected_index = None;
+                        state.client.songs.scroll_offset = 0;
                         let _ = state;
                         drop(cs);
                         drop(ds);

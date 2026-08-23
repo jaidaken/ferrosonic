@@ -36,25 +36,43 @@ impl App {
                         state.client.notify("Playlist name cannot be empty");
                         return Ok(());
                     }
-                    let song_ids: Vec<String> =
-                        state.daemon.queue.iter().map(|s| s.id.clone()).collect();
+                    // Stations are not library songs; createPlaylist rejects a radio: id.
+                    let song_ids: Vec<String> = state
+                        .daemon
+                        .queue
+                        .iter()
+                        .filter(|s| !s.is_radio())
+                        .map(|s| s.id.clone())
+                        .collect();
                     state.client.queue_state.naming_playlist = false;
                     state.client.queue_state.playlist_name.clear();
                     if song_ids.is_empty() {
-                        state.client.notify("Queue is empty");
+                        let msg = if state.daemon.queue.is_empty() {
+                            "Queue is empty"
+                        } else {
+                            "Queue holds only radio stations"
+                        };
+                        state.client.notify(msg);
                         return Ok(());
                     }
                     let count = song_ids.len();
-                    state
-                        .client
-                        .notify(format!("Saved playlist: {name} ({count} songs)"));
                     let _ = state;
                     drop(cs);
                     drop(ds);
-                    let _ = self
+                    let saved = self
                         .client
-                        .request(DaemonRequest::CreatePlaylist { name, song_ids })
-                        .await;
+                        .request(DaemonRequest::CreatePlaylist {
+                            name: name.clone(),
+                            song_ids,
+                        })
+                        .await
+                        .is_ok();
+                    let mut cs = self.client_state.write().await;
+                    if saved {
+                        cs.notify(format!("Saved playlist: {name} ({count} songs)"));
+                    } else {
+                        cs.notify_error(format!("Failed to save playlist: {name}"));
+                    }
                     return Ok(());
                 }
                 _ => {}
@@ -206,11 +224,14 @@ impl App {
                 return Ok(());
             }
             KeyCode::Char('m') => {
+                // A station has no server-side star; the request would be rejected and the row would flicker.
                 let song_id = state
                     .client
                     .queue_state
                     .selected
-                    .and_then(|idx| state.daemon.queue.get(idx).map(|s| s.id.clone()));
+                    .and_then(|idx| state.daemon.queue.get(idx))
+                    .filter(|s| !s.is_radio())
+                    .map(|s| s.id.clone());
                 let _ = state;
                 drop(cs);
                 drop(ds);
@@ -221,7 +242,11 @@ impl App {
             }
             KeyCode::Char('a') => {
                 let idx = state.client.queue_state.selected;
-                let song = idx.and_then(|i| state.daemon.queue.get(i).cloned());
+                // A station is not a library song; updatePlaylist would reject the radio: id.
+                let song = idx
+                    .and_then(|i| state.daemon.queue.get(i))
+                    .filter(|s| !s.is_radio())
+                    .cloned();
                 if let Some(song) = song {
                     if state.daemon.library.playlists.is_empty() {
                         state.client.notify("No playlists to add to");

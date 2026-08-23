@@ -53,8 +53,12 @@ impl DaemonCore {
                 }
                 let entries: Vec<crate::subsonic::models::Child> = stations
                     .iter()
-                    .map(crate::subsonic::models::Child::from_radio_station)
+                    .filter_map(crate::subsonic::models::Child::from_radio_station)
                     .collect();
+                let rejected = stations.len() - entries.len();
+                if rejected > 0 {
+                    warn!("Skipped {rejected} radio station(s): stream URL is not http(s)");
+                }
                 let mut state = self.state.write().await;
                 state.library.radio_stations.clone_from(&entries);
                 drop(state);

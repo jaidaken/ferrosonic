@@ -18,9 +18,16 @@ fn station(id: &str, name: &str, url: &str) -> InternetRadioStation {
     }
 }
 
+/// A station child for an http(s) URL the scheme check accepts.
+fn radio_child(id: &str, name: &str, url: &str) -> Child {
+    Child::from_radio_station(&station(id, name, url))
+        .expect("test fixtures use http(s) stream URLs")
+}
+
 #[test]
 fn radio_child_carries_stream_url_and_prefixed_id() {
-    let c = Child::from_radio_station(&station("7", "Jazz FM", "http://r.example/jazz"));
+    let c = Child::from_radio_station(&station("7", "Jazz FM", "http://r.example/jazz"))
+        .expect("an http station is accepted");
     assert!(c.is_radio(), "a station child must identify as radio");
     assert_eq!(
         c.id, "radio:7",
@@ -31,6 +38,37 @@ fn radio_child_carries_stream_url_and_prefixed_id() {
     assert!(c.cover_art.is_none(), "stations have no cover art id");
     assert!(c.duration.is_none(), "live streams have no duration");
     assert!(!common::fixtures::song("s1", "x").is_radio());
+}
+
+#[test]
+fn stations_payload_tolerates_a_server_with_none_configured() {
+    use ferrosonic::subsonic::models::InternetRadioStationsData;
+    // Subsonic servers omit the wrapper entirely rather than sending an empty one.
+    let d: InternetRadioStationsData =
+        serde_json::from_str("{}").expect("a payload with no stations key still parses");
+    assert!(d.internet_radio_stations.internet_radio_station.is_empty());
+}
+
+#[test]
+fn radio_child_rejects_stream_url_the_player_must_not_open() {
+    // The server fully controls streamUrl, so anything but http(s) would let it
+    // steer mpv at the local filesystem or another protocol handler.
+    for url in [
+        "file:///etc/passwd",
+        "ftp://elsewhere.example/x",
+        "javascript:alert(1)",
+        "not a url",
+        "",
+    ] {
+        assert!(
+            Child::from_radio_station(&station("9", "Hostile", url)).is_none(),
+            "a {url:?} stream URL must never become a queue entry"
+        );
+    }
+    assert!(
+        Child::from_radio_station(&station("9", "Fine", "https://r.example/x")).is_some(),
+        "https stations are still accepted"
+    );
 }
 
 #[tokio::test]
@@ -64,7 +102,7 @@ async fn buffered_mode_is_bypassed_for_a_live_station() {
         .fake_subsonic
         .expect_slow_stream("/live/jazz", 10_000)
         .await;
-    let c = Child::from_radio_station(&station("1", "Jazz FM", &url));
+    let c = radio_child("1", "Jazz FM", &url);
 
     td.core
         .replace_queue_and_play(vec![c], Some(0), PlayMode::Buffered)
@@ -93,7 +131,7 @@ async fn buffered_mode_is_bypassed_for_a_live_station() {
 #[serial]
 async fn playing_a_station_loads_its_stream_url_directly() {
     let td = TestDaemon::new().await;
-    let c = Child::from_radio_station(&station("1", "Jazz FM", "http://r.example/jazz"));
+    let c = radio_child("1", "Jazz FM", "http://r.example/jazz");
 
     td.core
         .replace_queue_and_play(vec![c], Some(0), PlayMode::Direct)
@@ -145,7 +183,7 @@ async fn tick_never_backfills_a_duration_for_a_live_station() {
     // arm the near-end AdvanceEarly path. Stay at 0 = unknown/live.
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
-    let c = Child::from_radio_station(&station("1", "Jazz FM", "http://r.example/jazz"));
+    let c = radio_child("1", "Jazz FM", "http://r.example/jazz");
     seed_playing_radio(&td, vec![c], 30.0).await;
     td.fake_mpv.set_loaded_file("http://r.example/jazz").await;
     td.fake_mpv.set_duration(10.0).await;
@@ -167,7 +205,7 @@ async fn tick_does_not_preload_the_next_entry_while_a_station_plays() {
     // endless second download).
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
-    let a = Child::from_radio_station(&station("1", "Jazz FM", "http://r.example/jazz"));
+    let a = radio_child("1", "Jazz FM", "http://r.example/jazz");
     let b = common::fixtures::song("s2", "Next Song");
     seed_playing_radio(&td, vec![a, b], 30.0).await;
     td.fake_mpv.set_loaded_file("http://r.example/jazz").await;
@@ -192,7 +230,7 @@ async fn tick_does_not_preload_the_next_entry_while_a_station_plays() {
 async fn tick_reports_stream_bitrate_and_download_speed_for_a_station() {
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
-    let c = Child::from_radio_station(&station("1", "Jazz FM", "http://r.example/jazz"));
+    let c = radio_child("1", "Jazz FM", "http://r.example/jazz");
     seed_playing_radio(&td, vec![c], 30.0).await;
     td.fake_mpv.set_loaded_file("http://r.example/jazz").await;
     td.fake_mpv
@@ -219,11 +257,7 @@ fn now_playing_widget_renders_a_live_row_instead_of_a_progress_bar() {
     use ratatui::widgets::Widget;
 
     let np = NowPlaying {
-        song: Some(Child::from_radio_station(&station(
-            "1",
-            "Jazz FM",
-            "http://r.example/jazz",
-        ))),
+        song: Some(radio_child("1", "Jazz FM", "http://r.example/jazz")),
         state: PlaybackState::Playing,
         position: 65.0,
         duration: 0.0,

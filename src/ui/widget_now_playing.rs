@@ -186,10 +186,12 @@ fn render_live_row(area: Rect, buf: &mut Buffer, np: &NowPlaying, colors: &Theme
     let text = live_row_text(np);
     let width = crate::num::u16_sat(text.chars().count());
     let start_x = area.x + area.width.saturating_sub(width) / 2;
-    buf.set_string(
+    // set_string clips to the whole buffer, not to this rect, so a long row would bleed into the pane on the right.
+    buf.set_stringn(
         start_x,
         area.y,
         &text,
+        usize::from(area.width),
         Style::default().fg(colors.highlight_fg),
     );
     // The live dot in the playing colour so the row reads as "on air".

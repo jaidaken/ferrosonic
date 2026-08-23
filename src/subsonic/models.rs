@@ -367,18 +367,40 @@ impl Child {
         self.radio_stream_url.is_some()
     }
 
-    /// Build a queue entry for an internet radio station. The ID is
-    /// namespaced with [`Self::RADIO_ID_PREFIX`] so it can never collide with
-    /// a song ID (star index, playing indicator, scrobble state).
+    /// Whether a server-supplied station URL is safe to hand to the player.
+    ///
+    /// The stream URL is the only playable URL the client does not build itself,
+    /// so a hostile or compromised server controls it completely. Restricting it
+    /// to `http`/`https` stops `file://` reads and other local schemes mpv accepts.
+    ///
+    /// ```
+    /// use ferrosonic::subsonic::models::Child;
+    /// assert!(Child::is_playable_stream_url("http://stream.example/live"));
+    /// assert!(Child::is_playable_stream_url("https://stream.example/live"));
+    /// assert!(!Child::is_playable_stream_url("file:///etc/passwd"));
+    /// assert!(!Child::is_playable_stream_url("not a url"));
+    /// ```
     #[must_use]
-    pub fn from_radio_station(station: &InternetRadioStation) -> Self {
-        Self {
+    pub fn is_playable_stream_url(raw: &str) -> bool {
+        url::Url::parse(raw).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
+    }
+
+    /// Build a queue entry for an internet radio station, or `None` when the
+    /// server's stream URL is not a plain http(s) URL. The ID is namespaced
+    /// with [`Self::RADIO_ID_PREFIX`] so it can never collide with a song ID
+    /// (star index, playing indicator, scrobble state).
+    #[must_use]
+    pub fn from_radio_station(station: &InternetRadioStation) -> Option<Self> {
+        if !Self::is_playable_stream_url(&station.stream_url) {
+            return None;
+        }
+        Some(Self {
             id: format!("{}{}", Self::RADIO_ID_PREFIX, station.id),
             title: station.name.clone(),
             artist: Some("Internet Radio".to_string()),
             radio_stream_url: Some(station.stream_url.clone()),
             ..Default::default()
-        }
+        })
     }
 
     /// Duration as `MM:SS`, or `--:--` when unknown.
@@ -425,8 +447,8 @@ pub struct MusicFolder {
 /// Payload of `getInternetRadioStations`.
 #[derive(Debug, Deserialize)]
 pub struct InternetRadioStationsData {
-    /// The stations wrapper object.
-    #[serde(rename = "internetRadioStations")]
+    /// The stations wrapper object; absent entirely on a server with none configured.
+    #[serde(default, rename = "internetRadioStations")]
     pub internet_radio_stations: InternetRadioStationsInner,
 }
 

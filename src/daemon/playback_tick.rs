@@ -45,6 +45,7 @@ struct PlaybackTickInputs {
     queue_position: Option<usize>,
     prebuffer_loading: bool,
     just_loaded: bool,
+    current_is_radio: bool,
 }
 
 /// Outcome of one playback tick. Branch priority: `AdvanceEarly` > Preload > `GaplessAdvance` > `AdvanceOnIdle`.
@@ -107,16 +108,28 @@ impl DaemonCore {
                 queue_position: None,
                 prebuffer_loading: false,
                 just_loaded: false,
+                current_is_radio: false,
             };
         }
 
-        let (time_remaining, has_next, position, queue_position) = {
+        let (time_remaining, has_next, position, queue_position, current_is_radio) = {
             let state = self.state.read().await;
             let tr = state.now_playing.duration - state.now_playing.position;
             let hn = state
                 .queue_position
                 .is_some_and(|p| p + 1 < state.queue.len());
-            (tr, hn, state.now_playing.position, state.queue_position)
+            let radio = state
+                .now_playing
+                .song
+                .as_ref()
+                .is_some_and(crate::subsonic::models::Child::is_radio);
+            (
+                tr,
+                hn,
+                state.now_playing.position,
+                state.queue_position,
+                radio,
+            )
         };
 
         let (playlist_count, playlist_pos, mpv_idle) = {
@@ -156,6 +169,7 @@ impl DaemonCore {
             queue_position,
             prebuffer_loading,
             just_loaded,
+            current_is_radio,
         }
     }
 
@@ -180,7 +194,8 @@ impl DaemonCore {
             }
         }
 
-        if matches!(inputs.playlist_count, Some(1)) {
+        // A station never preloads, so playlist_count stays 1 and this branch would mask AdvanceOnIdle forever.
+        if matches!(inputs.playlist_count, Some(1)) && !inputs.current_is_radio {
             if let Some(from_pos) = inputs.queue_position {
                 return PlaybackTickAction::Preload { from_pos };
             }
@@ -387,7 +402,7 @@ impl DaemonCore {
         });
     }
 
-    /// Fetch sample-rate + bit-depth + format + channels if not yet known. Backstop poll.
+    /// Whether the currently loaded entry is a live radio station.
     async fn now_playing_is_radio(&self) -> bool {
         self.state
             .read()
@@ -401,52 +416,71 @@ impl DaemonCore {
     /// Poll mpv's codec, measured bitrate and network read speed for the
     /// playing track and broadcast `StreamStatsChanged` when any of them
     /// moved. Runs only while Playing; a paused/stopped mpv reports nothing.
-    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
-    #[allow(clippy::significant_drop_tightening)]
     async fn tick_stream_stats(self: &Arc<Self>) {
-        use crate::daemon::state::PlaybackState;
-        let (playing, known_codec) = {
-            let state = self.state.read().await;
-            (
-                state.now_playing.state == PlaybackState::Playing
-                    && state.now_playing.song.is_some(),
-                state.now_playing.codec.clone(),
-            )
+        let Some(known_codec) = self.stream_stats_known_codec().await else {
+            return;
         };
-        if !playing {
+        let gen_at_start = self.loadfile_gen.load(Ordering::Acquire);
+        let stats = self.poll_stream_stats(known_codec).await;
+        // The track can change across the mpv awaits; the codec is never re-probed once set, so a stale write would stick for the whole next track.
+        if self.loadfile_gen.load(Ordering::Acquire) != gen_at_start {
             return;
         }
-        let (codec, bitrate, speed) = {
-            let mut mpv = self.mpv.lock().await;
-            // The codec is fixed per track: probe until known, then keep it.
-            let c = match known_codec {
-                Some(c) => Some(c),
-                None => mpv.get_audio_codec_name().await.ok().flatten(),
-            };
-            let b = mpv.get_audio_bitrate().await.ok().flatten();
-            let s = mpv.get_cache_speed().await.ok().flatten();
-            (c, b, s)
+        self.commit_stream_stats(stats).await;
+    }
+
+    /// Codec already known for the playing track, or `None` when not Playing.
+    /// Outer `Option` gates the poll; inner is the codec itself.
+    async fn stream_stats_known_codec(&self) -> Option<Option<String>> {
+        use crate::daemon::state::PlaybackState;
+        let state = self.state.read().await;
+        let playing =
+            state.now_playing.state == PlaybackState::Playing && state.now_playing.song.is_some();
+        playing.then(|| state.now_playing.codec.clone())
+    }
+
+    /// One mpv round trip per stat. Codec is fixed per track: probe until known, then keep it.
+    async fn poll_stream_stats(
+        self: &Arc<Self>,
+        known_codec: Option<String>,
+    ) -> (Option<String>, Option<u32>, Option<u64>) {
+        let mut mpv = self.mpv.lock().await;
+        let codec = match known_codec {
+            Some(c) => Some(c),
+            None => mpv.get_audio_codec_name().await.ok().flatten(),
         };
-        let bitrate_kbps = bitrate.map(|b| crate::num::u32_sat(b / 1000));
+        let bitrate = mpv.get_audio_bitrate().await.ok().flatten();
+        let speed = mpv.get_cache_speed().await.ok().flatten();
+        drop(mpv);
+        (codec, bitrate.map(|b| crate::num::u32_sat(b / 1000)), speed)
+    }
+
+    /// Store the polled stats and broadcast only when one of them moved.
+    async fn commit_stream_stats(
+        self: &Arc<Self>,
+        (codec, bitrate_kbps, download_bps): (Option<String>, Option<u32>, Option<u64>),
+    ) {
         let changed = {
             let mut state = self.state.write().await;
             let np = &mut state.now_playing;
-            let changed =
-                np.codec != codec || np.bitrate_kbps != bitrate_kbps || np.download_bps != speed;
+            let changed = np.codec != codec
+                || np.bitrate_kbps != bitrate_kbps
+                || np.download_bps != download_bps;
             np.codec.clone_from(&codec);
             np.bitrate_kbps = bitrate_kbps;
-            np.download_bps = speed;
+            np.download_bps = download_bps;
             changed
         };
         if changed {
             self.emit(DaemonEvent::StreamStatsChanged {
                 codec,
                 bitrate_kbps,
-                download_bps: speed,
+                download_bps,
             });
         }
     }
 
+    /// Fetch sample-rate + bit-depth + format + channels if not yet known. Backstop poll.
     async fn tick_fetch_audio_properties_if_needed(self: &Arc<Self>) {
         let need_sr = self.state.read().await.now_playing.sample_rate.is_none();
         if need_sr {
@@ -492,6 +526,7 @@ mod playback_tick_tests {
             queue_position: Some(0),
             prebuffer_loading: false,
             just_loaded: false,
+            current_is_radio: false,
         }
     }
 
@@ -515,6 +550,33 @@ mod playback_tick_tests {
             ..baseline()
         };
         assert_eq!(decide(&i), PlaybackTickAction::Skip);
+    }
+
+    #[test]
+    fn radio_advances_on_idle_instead_of_looping_on_preload() {
+        // Without the radio guard this returns Preload every tick, so a dropped stream never advances or stops.
+        let i = PlaybackTickInputs {
+            current_is_radio: true,
+            playlist_count: Some(1),
+            playlist_pos: Some(0),
+            mpv_idle: Some(true),
+            queue_position: Some(0),
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::AdvanceOnIdle);
+    }
+
+    #[test]
+    fn non_radio_still_preloads_with_a_single_entry_playlist() {
+        let i = PlaybackTickInputs {
+            current_is_radio: false,
+            playlist_count: Some(1),
+            playlist_pos: Some(0),
+            mpv_idle: Some(true),
+            queue_position: Some(3),
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::Preload { from_pos: 3 });
     }
 
     #[test]
@@ -781,6 +843,7 @@ mod prop {
             queue_position in prop_oneof![Just(None), (0usize..32).prop_map(Some)],
             prebuffer_loading in any::<bool>(),
             just_loaded in any::<bool>(),
+            current_is_radio in any::<bool>(),
         ) -> PlaybackTickInputs {
             PlaybackTickInputs {
                 is_active,
@@ -795,6 +858,7 @@ mod prop {
                 queue_position,
                 prebuffer_loading,
                 just_loaded,
+                current_is_radio,
             }
         }
     }
@@ -881,6 +945,7 @@ mod prop {
                 mpv_idle: Some(true),
                 prebuffer_loading: false,
                 just_loaded: false,
+                current_is_radio: false,
             };
             let action = DaemonCore::decide_playback_tick_action(&inputs);
             prop_assert_eq!(action, PlaybackTickAction::AdvanceEarly);
@@ -904,6 +969,7 @@ mod prop {
                 mpv_idle: Some(true),
                 prebuffer_loading: false,
                 just_loaded: false,
+                current_is_radio: false,
             };
             let action = DaemonCore::decide_playback_tick_action(&inputs);
             prop_assert_eq!(action, PlaybackTickAction::Preload { from_pos });

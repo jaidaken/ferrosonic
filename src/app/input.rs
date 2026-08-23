@@ -93,29 +93,12 @@ impl App {
             return self.handle_playlist_picker_key(key).await;
         }
 
-        // F-keys switch pages while typing; unsaved edits revert.
+        // Page-switch keys revert unsaved edits. Digits mirror F1-F6 so they gate too, but only after text-input routing declines them.
         let is_function_key = matches!(key.code, KeyCode::F(_));
-        if is_function_key {
-            if state.client.page == Page::Server {
-                let cfg = state.daemon.config.clone();
-                state.client.server_state.base_url = cfg.base_url;
-                state.client.server_state.username = cfg.username;
-                state.client.server_state.password = cfg.password;
-                state.client.server_state.status = None;
-            }
-            if state.client.page == Page::Library && state.client.artists.filter_active {
-                state.client.artists.filter_active = false;
-            }
-            if state.client.page == Page::Queue && state.client.queue_state.naming_playlist {
-                state.client.queue_state.naming_playlist = false;
-                state.client.queue_state.playlist_name.clear();
-            }
-            if state.client.page == Page::Playlists {
-                state.client.playlists.renaming = false;
-                state.client.playlists.rename_buf.clear();
-                state.client.playlists.confirming_delete = false;
-            }
-        } else {
+        let is_digit_page_key =
+            key.modifiers == KeyModifiers::NONE && matches!(key.code, KeyCode::Char('1'..='6'));
+        let mut revert_unsaved_edits = is_function_key;
+        if !is_function_key {
             let is_server_text_field =
                 state.client.page == Page::Server && state.client.server_state.selected_field <= 2;
             let is_filtering =
@@ -137,6 +120,28 @@ impl App {
                     Page::Playlists => self.handle_playlists_key(key).await,
                     _ => Ok(()),
                 };
+            }
+            revert_unsaved_edits = is_digit_page_key;
+        }
+        if revert_unsaved_edits {
+            if state.client.page == Page::Server {
+                let cfg = state.daemon.config.clone();
+                state.client.server_state.base_url = cfg.base_url;
+                state.client.server_state.username = cfg.username;
+                state.client.server_state.password = cfg.password;
+                state.client.server_state.status = None;
+            }
+            if state.client.page == Page::Library && state.client.artists.filter_active {
+                state.client.artists.filter_active = false;
+            }
+            if state.client.page == Page::Queue && state.client.queue_state.naming_playlist {
+                state.client.queue_state.naming_playlist = false;
+                state.client.queue_state.playlist_name.clear();
+            }
+            if state.client.page == Page::Playlists {
+                state.client.playlists.renaming = false;
+                state.client.playlists.rename_buf.clear();
+                state.client.playlists.confirming_delete = false;
             }
         }
 
@@ -218,7 +223,14 @@ impl App {
                     .map_err(Error::from);
             }
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
-                let song_id = state.daemon.now_playing.song.as_ref().map(|s| s.id.clone());
+                // A playing station has no server-side star; the request would be rejected silently.
+                let song_id = state
+                    .daemon
+                    .now_playing
+                    .song
+                    .as_ref()
+                    .filter(|s| !s.is_radio())
+                    .map(|s| s.id.clone());
                 let _ = state;
                 drop(cs);
                 drop(ds);

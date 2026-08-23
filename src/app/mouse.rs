@@ -184,6 +184,11 @@ impl App {
                     already = state.client.songs.selected_option.as_ref() == Some(&option);
                     state.client.songs.selected_option = Some(option.clone());
                     state.client.songs.focus = 0;
+                    if !already {
+                        // The new list has its own length; a carried-over index or scroll points off the end.
+                        state.client.songs.selected_index = None;
+                        state.client.songs.scroll_offset = 0;
+                    }
                 }
                 if !already {
                     let _ = self.client.request(option.refresh_request()).await;

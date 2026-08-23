@@ -146,7 +146,7 @@ fn quality_row_for_radio_leaves_bitrate_and_traffic_to_the_live_row() {
         home_page_url: None,
     };
     let np = NowPlaying {
-        song: Some(Child::from_radio_station(&st)),
+        song: Child::from_radio_station(&st),
         state: PlaybackState::Playing,
         format: Some("floatp".into()),
         bit_depth: Some(32),
@@ -227,7 +227,7 @@ fn live_row_width_is_stable_across_speed_jitter() {
         home_page_url: None,
     };
     let base = NowPlaying {
-        song: Some(Child::from_radio_station(&st)),
+        song: Child::from_radio_station(&st),
         state: PlaybackState::Playing,
         position: 65.0,
         bitrate_kbps: Some(128),

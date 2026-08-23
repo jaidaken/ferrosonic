@@ -35,8 +35,13 @@
   download-then-load pre-buffer, which a live stream would stall). The
   now-playing bar shows `● LIVE <elapsed> │ <kbps> │ <KB/s>` instead of a
   progress bar; pause/resume rejoins the stream live; stations are never
-  scrobbled or gapless-prefetched and have no star / add-to-playlist actions.
-  Closes #34.
+  scrobbled or gapless-prefetched and have no star / add-to-playlist actions
+  on any page. A station whose server-supplied stream URL is not plain
+  http(s) is refused rather than handed to mpv, and a server with no stations
+  configured lists as empty instead of erroring. Closes #34.
+
+- **Nix flake packaging.** `nix build` produces the binary from the flake at
+  the repo root. Thanks to @Soliprem (#33).
 
 ## [0.6.1] - 2026-06-27
 
