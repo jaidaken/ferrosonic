@@ -29,6 +29,7 @@ fn snapshot() -> QueueSnapshot {
             path: None,
             disc_number: None,
             starred: None,
+            radio_stream_url: None,
         }],
         position: Some(0),
     }

@@ -28,6 +28,20 @@ pub enum PlayMode {
     Buffered,
 }
 
+impl PlayMode {
+    /// The mode to actually use for `entry`: a live radio stream never EOFs,
+    /// so `Buffered` (download-then-load) would stall it — such entries are
+    /// always handed to mpv `Direct`.
+    #[must_use]
+    pub const fn for_entry(self, entry: &crate::subsonic::models::Child) -> Self {
+        if entry.is_radio() {
+            Self::Direct
+        } else {
+            self
+        }
+    }
+}
+
 const EVENT_CHANNEL_CAPACITY: usize = 32;
 
 /// Drop clears `prebuffer_loading` if `dispatch_play` is cancelled before the spawn task takes over.
@@ -529,9 +543,12 @@ impl DaemonCore {
         let Some((song, stream_url, idx)) = prepared else {
             return Ok(false);
         };
-        info!("Playing: {} (queue pos {}) mode=Buffered", song.title, idx);
-        self.dispatch_play(stream_url, idx, PlayMode::Buffered, 0.0)
-            .await?;
+        let mode = PlayMode::Buffered.for_entry(&song);
+        info!(
+            "Playing: {} (queue pos {}) mode={:?}",
+            song.title, idx, mode
+        );
+        self.dispatch_play(stream_url, idx, mode, 0.0).await?;
         self.emit_now_playing().await;
         self.emit_queue().await;
         Ok(true)
@@ -550,7 +567,7 @@ impl DaemonCore {
             Some(s) => s.clone(),
             None => return Err(()),
         };
-        let url = match client.get_stream_url(&song.id) {
+        let url = match client.stream_url_for(&song) {
             Ok(url) => url,
             Err(e) => {
                 error!("Failed to get stream URL: {}", e);
@@ -570,6 +587,9 @@ impl DaemonCore {
         state.now_playing.bit_depth = None;
         state.now_playing.format = None;
         state.now_playing.channels = None;
+        state.now_playing.codec = None;
+        state.now_playing.bitrate_kbps = None;
+        state.now_playing.download_bps = None;
         // R2: stamp last_loadfile under the state write lock so the 1.5s idle-advance gate in update_playback_info covers the in-flight loadfile, not only the post-loadfile window.
         self.stamp_loadfile();
         Ok((song, url))

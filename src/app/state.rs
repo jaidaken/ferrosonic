@@ -150,6 +150,7 @@ impl AppState<'_> {
     pub fn songs_list(&self) -> &[Child] {
         match self.client.songs.selected_option {
             Some(SongOption::Random) => &self.daemon.library.random_songs,
+            Some(SongOption::Radio) => &self.daemon.library.radio_stations,
             _ => &self.daemon.library.starred_songs,
         }
     }

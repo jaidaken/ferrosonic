@@ -72,6 +72,18 @@ pub struct NowPlaying {
     pub format: Option<String>,
     /// "Stereo", "Mono", "5.1ch", etc.
     pub channels: Option<String>,
+    /// Codec of the playing file or stream as mpv names it, e.g. `"flac"`,
+    /// `"mp3"`, `"opus"` (`audio-codec-name`); `None` until probed.
+    #[serde(default)]
+    pub codec: Option<String>,
+    /// Encoded bitrate in kbit/s as mpv measures it (`audio-bitrate`, varies
+    /// over time for VBR); `None` until mpv has an estimate.
+    #[serde(default)]
+    pub bitrate_kbps: Option<u32>,
+    /// Network read speed into mpv's cache in bytes/s (`cache-speed`); `None`
+    /// when not reading from the network (paused, or the file is fully cached).
+    #[serde(default)]
+    pub download_bps: Option<u64>,
 }
 
 impl NowPlaying {

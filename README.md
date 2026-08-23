@@ -18,7 +18,7 @@ It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termson
 - **Tree browser** - expandable artist/album view, with a flat album-list toggle (`v`).
 - **Unified search** - `/` runs one server-side `search3` across artists, albums, and songs together.
 - **Multi-library** - on multi-folder servers, `f` scopes the tree, album list, random songs, and search to one music folder; remembered across restarts.
-- **Quick Play** - jump straight into your Starred songs or a fresh Random roll, no browsing.
+- **Quick Play** - jump straight into your Starred songs, a fresh Random roll, or the server's internet Radio stations, no browsing.
 - **Stars** - favourite tracks with `n` (playing) or `m` (highlighted); shown with a star everywhere.
 - **Shuffle and repeat** - shuffle any artist, album, or the whole library; cycle repeat Off/One/All with `r`.
 - **Queue** - add, remove, reorder, shuffle, and clear history; persists across daemon restarts; save as a server playlist with `s`.
@@ -194,12 +194,12 @@ It is resolved at startup. Because the background daemon has no terminal, **the 
 | `r` | Cycle repeat mode (Off → One → All) |
 | `Shift+T` | Shuffle the entire library and play |
 | `Ctrl+R` | Refresh data from server |
-| `F1` | Library page |
-| `F2` | Queue page |
-| `F3` | Quick Play page |
-| `F4` | Playlists page |
-| `F5` | Server configuration page |
-| `F6` | Settings page |
+| `F1` / `1` | Library page |
+| `F2` / `2` | Queue page |
+| `F3` / `3` | Quick Play page |
+| `F4` / `4` | Playlists page |
+| `F5` / `5` | Server configuration page |
+| `F6` / `6` | Settings page |
 
 ### Library Page (F1)
 
@@ -246,7 +246,7 @@ It is resolved at startup. Because the background daemon has no terminal, **the 
 | `Enter` | Play selected song (queues all visible songs and starts from selection) |
 | `m` | Star/unstar highlighted song |
 
-The Quick Play page has two modes selectable from the options pane: **Starred** (shows your starred/favourited songs from the server) and **Random** (a fresh 500-song roll from the library on each visit).
+The Quick Play page has three modes selectable from the options pane: **Starred** (shows your starred/favourited songs from the server), **Random** (a fresh 500-song roll from the library on each visit), and **Radio** (the internet radio stations configured on the server, e.g. Navidrome's *Radios* page). A station plays as a live stream: the now-playing bar shows `● LIVE` with elapsed time, stream bitrate and download speed instead of a progress bar; no star/playlist actions, never scrobbled.
 
 ### Playlists Page (F4)
 

@@ -6,6 +6,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::daemon::core::{DaemonCore, PlayMode};
 use crate::error::Error;
+use crate::subsonic::models::Child;
 
 impl DaemonCore {
     /// Toggle pause by current state: `Playing` pauses, `Paused` resumes, `Stopped` with a queued position starts playback. Delegates so the `PipeWire` pin release/re-apply lives in one place per direction.
@@ -86,7 +87,12 @@ impl DaemonCore {
         let Some(pos) = queue_pos else {
             return Ok(());
         };
-        let start_at = if playback_state == PlaybackState::Paused {
+        // A live station cannot be resumed at an offset: rejoin the stream live.
+        let resuming_radio = {
+            let state = self.state.read().await;
+            state.queue.get(pos).is_some_and(Child::is_radio)
+        };
+        let start_at = if playback_state == PlaybackState::Paused && !resuming_radio {
             resume_at
         } else {
             0.0
@@ -257,6 +263,7 @@ impl DaemonCore {
             }
         };
 
+        let mode = mode.for_entry(&song);
         info!(
             "Playing: {} (queue pos {}) mode={:?} start={}",
             song.title, pos, mode, start_at
@@ -279,11 +286,17 @@ impl DaemonCore {
         let gen = self.loadfile_gen.load(std::sync::atomic::Ordering::Acquire);
         let next_song = {
             let state = self.state.read().await;
+            // A live radio stream never EOFs, so there is no gapless boundary
+            // to prepare: prefetching would only hold an idle second
+            // connection open (an endless download if the next is a station).
+            if state.queue.get(current_pos).is_some_and(Child::is_radio) {
+                return;
+            }
             let queue_len = state.queue.len();
             let target = state.config.repeat_mode.next_auto(current_pos, queue_len);
             match target.and_then(|p| state.queue.get(p)) {
-                Some(s) => s.clone(),
-                None => return,
+                Some(s) if !s.is_radio() => s.clone(),
+                _ => return,
             }
         };
 
@@ -291,7 +304,7 @@ impl DaemonCore {
             let Some(client) = self.subsonic.read().await.clone() else {
                 return;
             };
-            match client.get_stream_url(&next_song.id) {
+            match client.stream_url_for(&next_song) {
                 Ok(u) => u,
                 Err(_) => return,
             }

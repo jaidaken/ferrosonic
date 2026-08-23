@@ -48,6 +48,9 @@ pub async fn apply_event(
     cover_art: &Arc<std::sync::Mutex<CoverArtState>>,
     ev: DaemonEvent,
 ) {
+    let Some(ev) = apply_library_event(daemon_state, ev).await else {
+        return;
+    };
     match ev {
         DaemonEvent::QueueChanged { queue, position } => {
             let mut ds = daemon_state.write().await;
@@ -61,21 +64,82 @@ pub async fn apply_event(
             let mut ds = daemon_state.write().await;
             ds.now_playing.position = pos;
         }
+        DaemonEvent::StreamStatsChanged {
+            codec,
+            bitrate_kbps,
+            download_bps,
+        } => {
+            let mut ds = daemon_state.write().await;
+            ds.now_playing.codec = codec;
+            ds.now_playing.bitrate_kbps = bitrate_kbps;
+            ds.now_playing.download_bps = download_bps;
+        }
+        DaemonEvent::SongStarChanged { id, starred } => {
+            apply_song_star_changed(daemon_state, client_state, id, starred).await;
+        }
+        DaemonEvent::Notification { message, is_error } => {
+            let mut cs = client_state.write().await;
+            if is_error {
+                cs.notify_error(message);
+            } else {
+                cs.notify(message);
+            }
+        }
+        DaemonEvent::ConfigChanged(cfg) => {
+            apply_config_changed(daemon_state, client_state, client, cover_art, cfg).await;
+        }
+        DaemonEvent::RepeatModeChanged(mode) => {
+            {
+                let mut ds = daemon_state.write().await;
+                ds.config.repeat_mode = mode;
+            }
+            let mut cs = client_state.write().await;
+            cs.settings_state.repeat_mode = mode;
+        }
+        // Already mirrored by `apply_library_event`; listed so the match stays
+        // exhaustive when a new event variant is added.
+        DaemonEvent::StarredChanged(_)
+        | DaemonEvent::RandomChanged(_)
+        | DaemonEvent::RadioStationsChanged(_)
+        | DaemonEvent::ArtistsChanged(_)
+        | DaemonEvent::AlbumsChanged { .. }
+        | DaemonEvent::AlbumSongsChanged { .. }
+        | DaemonEvent::PlaylistsChanged(_)
+        | DaemonEvent::MusicFoldersChanged(_)
+        | DaemonEvent::PlaylistSongsChanged { .. }
+        // The pull-style library-version signal is unused by this TUI.
+        | DaemonEvent::LibraryVersionChanged(_) => {}
+        DaemonEvent::Shutdown => {
+            let mut cs = client_state.write().await;
+            cs.notify_error("Daemon shut down, disconnecting");
+            cs.should_quit = true;
+        }
+    }
+}
+
+/// Mirror a library-cache event into `daemon_state`. Returns `None` when the
+/// event was one of these pure list/cache updates (fully handled), or gives
+/// the event back for `apply_event`'s interactive arms.
+// significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
+#[allow(clippy::significant_drop_tightening)]
+async fn apply_library_event(
+    daemon_state: &SharedDaemonState,
+    ev: DaemonEvent,
+) -> Option<DaemonEvent> {
+    match ev {
         DaemonEvent::StarredChanged(songs) => {
             let mut ds = daemon_state.write().await;
             ds.library.starred_songs = songs;
             ds.library.rebuild_starred_index();
         }
-        DaemonEvent::SongStarChanged { id, starred } => {
-            apply_song_star_changed(daemon_state, client_state, id, starred).await;
-        }
         DaemonEvent::RandomChanged(songs) => {
-            let mut ds = daemon_state.write().await;
-            ds.library.random_songs = songs;
+            daemon_state.write().await.library.random_songs = songs;
+        }
+        DaemonEvent::RadioStationsChanged(stations) => {
+            daemon_state.write().await.library.radio_stations = stations;
         }
         DaemonEvent::ArtistsChanged(artists) => {
-            let mut ds = daemon_state.write().await;
-            ds.library.artists = artists;
+            daemon_state.write().await.library.artists = artists;
         }
         DaemonEvent::AlbumsChanged { artist_id, albums } => {
             let mut ds = daemon_state.write().await;
@@ -100,12 +164,10 @@ pub async fn apply_event(
             );
         }
         DaemonEvent::PlaylistsChanged(playlists) => {
-            let mut ds = daemon_state.write().await;
-            ds.library.playlists = playlists;
+            daemon_state.write().await.library.playlists = playlists;
         }
         DaemonEvent::MusicFoldersChanged(folders) => {
-            let mut ds = daemon_state.write().await;
-            ds.library.music_folders = folders;
+            daemon_state.write().await.library.music_folders = folders;
         }
         DaemonEvent::PlaylistSongsChanged { playlist_id, songs } => {
             let mut ds = daemon_state.write().await;
@@ -118,32 +180,9 @@ pub async fn apply_event(
                 crate::daemon::library::PLAYLIST_SONGS_CACHE_CAP,
             );
         }
-        DaemonEvent::Notification { message, is_error } => {
-            let mut cs = client_state.write().await;
-            if is_error {
-                cs.notify_error(message);
-            } else {
-                cs.notify(message);
-            }
-        }
-        DaemonEvent::ConfigChanged(cfg) => {
-            apply_config_changed(daemon_state, client_state, client, cover_art, cfg).await;
-        }
-        DaemonEvent::RepeatModeChanged(mode) => {
-            {
-                let mut ds = daemon_state.write().await;
-                ds.config.repeat_mode = mode;
-            }
-            let mut cs = client_state.write().await;
-            cs.settings_state.repeat_mode = mode;
-        }
-        DaemonEvent::Shutdown => {
-            let mut cs = client_state.write().await;
-            cs.notify_error("Daemon shut down, disconnecting");
-            cs.should_quit = true;
-        }
-        DaemonEvent::LibraryVersionChanged(_) => {}
+        other => return Some(other),
     }
+    None
 }
 
 /// Apply `NowPlayingChanged`: store the new now-playing and refresh cover art.
@@ -178,10 +217,17 @@ async fn apply_now_playing_changed(
             };
             if should_fetch {
                 info!("Fetching cover art id={}", id);
+                let rows = daemon_state.read().await.config.cover_art_size;
+                let size = {
+                    let guard = cover_art
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    crate::ui::cover_art::cover_fetch_size(guard.cell_size.1, rows)
+                };
                 match client
                     .request(DaemonRequest::FetchCoverArt {
                         id: id.clone(),
-                        size: 512,
+                        size,
                     })
                     .await
                 {
@@ -262,10 +308,16 @@ async fn apply_config_changed(
             };
             if should_fetch {
                 info!("Cover art enabled; fetching current id={}", id);
+                let size = {
+                    let guard = cover_art
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    crate::ui::cover_art::cover_fetch_size(guard.cell_size.1, cover_art_size)
+                };
                 if let Ok(DaemonResponse::CoverArt(bytes)) = client
                     .request(DaemonRequest::FetchCoverArt {
                         id: id.clone(),
-                        size: 512,
+                        size,
                     })
                     .await
                 {

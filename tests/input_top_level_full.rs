@@ -90,6 +90,7 @@ async fn n_with_current_song_stars_it() {
             path: None,
             disc_number: None,
             starred: None,
+            radio_stream_url: None,
         });
     }
     app.handle_key(key(KeyCode::Char('n'))).await.unwrap();

@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **No more content jump from the traffic field.** The now-playing info rows
+  are centered, so any width change shifted them sideways every tick. The
+  bitrate and download-speed fields are now fixed-width (speed shows `--`
+  between mpv's read bursts instead of vanishing), for songs and radio alike.
+- **Cover art request size follows the art box.** Instead of a fixed 512 px,
+  the fetch asks for the art box's real pixel height (cell size × rows)
+  rounded up to a 256 step, clamped to 512-1024 — sharper art on large fonts
+  and HiDPI cells. Note: inside terminal multiplexers that don't pass the
+  graphics-protocol query through, rendering still falls back to
+  chafa/halfblocks, which is inherently coarse.
+
+### Added
+
+- **Quality + traffic in the now-playing bar for songs.** The quality row now
+  leads with the actual codec (`FLAC`, `MP3`, ... from mpv, falling back to
+  the file suffix) instead of mpv's decoded sample format, drops the
+  misleading `32-bit` when a lossy codec decodes to float, and appends the
+  measured bitrate plus the network download speed:
+  `FLAC │ 16-bit │ 44.1kHz │ Stereo │ 1014 kbps │ ↓ 350.0 KB/s`. Stats travel
+  over a new lightweight `StreamStatsChanged` event so MPRIS is not spammed.
+- **Digit page shortcuts.** `1`-`6` switch pages exactly like `F1`-`F6`, for
+  terminals and multiplexers that swallow function keys. Text inputs still
+  capture digits.
+
+- **Internet radio stations.** The Quick Play page (F3) gains a **Radio**
+  option listing the stations configured on the server
+  (`getInternetRadioStations`, e.g. Navidrome's *Radios* page). `Enter` plays
+  a station as a live stream straight through mpv (bypassing the
+  download-then-load pre-buffer, which a live stream would stall). The
+  now-playing bar shows `● LIVE <elapsed> │ <kbps> │ <KB/s>` instead of a
+  progress bar; pause/resume rejoins the stream live; stations are never
+  scrobbled or gapless-prefetched and have no star / add-to-playlist actions.
+  Closes #34.
+
 ## [0.6.1] - 2026-06-27
 
 ### Fixed

@@ -19,17 +19,22 @@ impl App {
         };
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => match state.client.songs.focus {
-                0 => match state.client.songs.selected_option {
-                    Some(SongOption::Starred) => {}
-                    Some(SongOption::Random) => {
-                        state.client.songs.selected_option = Some(SongOption::Starred);
+                0 => {
+                    let prev = state
+                        .client
+                        .songs
+                        .selected_option
+                        .as_ref()
+                        .and_then(SongOption::prev);
+                    if let Some(opt) = prev {
+                        state.client.songs.selected_option = Some(opt.clone());
+                        state.client.songs.selected_index = None;
                         let _ = state;
                         drop(cs);
                         drop(ds);
-                        let _ = self.client.request(DaemonRequest::RefreshStarred).await;
+                        let _ = self.client.request(opt.refresh_request()).await;
                     }
-                    None => {}
-                },
+                }
                 1 => {
                     if let Some(sel) = state.client.songs.selected_index {
                         if sel > 0 {
@@ -42,17 +47,22 @@ impl App {
                 _ => {}
             },
             KeyCode::Down | KeyCode::Char('j') => match state.client.songs.focus {
-                0 => match state.client.songs.selected_option {
-                    Some(SongOption::Starred) => {
-                        state.client.songs.selected_option = Some(SongOption::Random);
+                0 => {
+                    let next = state
+                        .client
+                        .songs
+                        .selected_option
+                        .as_ref()
+                        .and_then(SongOption::next);
+                    if let Some(opt) = next {
+                        state.client.songs.selected_option = Some(opt.clone());
+                        state.client.songs.selected_index = None;
                         let _ = state;
                         drop(cs);
                         drop(ds);
-                        let _ = self.client.request(DaemonRequest::RefreshRandom).await;
+                        let _ = self.client.request(opt.refresh_request()).await;
                     }
-                    Some(SongOption::Random) => {}
-                    None => {}
-                },
+                }
                 1 => {
                     let max = state.songs_list().len().saturating_sub(1);
                     if let Some(sel) = state.client.songs.selected_index {
@@ -106,11 +116,14 @@ impl App {
                 }
             }
             KeyCode::Char('m') => {
+                // Radio stations are not server songs: nothing to star.
                 let song_id = state
                     .client
                     .songs
                     .selected_index
-                    .and_then(|idx| state.songs_list().get(idx).map(|s| s.id.clone()));
+                    .and_then(|idx| state.songs_list().get(idx))
+                    .filter(|s| !s.is_radio())
+                    .map(|s| s.id.clone());
                 let _ = state;
                 drop(cs);
                 drop(ds);
@@ -121,7 +134,9 @@ impl App {
             }
             KeyCode::Char('a') => {
                 let idx = state.client.songs.selected_index;
-                let song = idx.and_then(|i| state.songs_list().get(i).cloned());
+                let song = idx
+                    .and_then(|i| state.songs_list().get(i).cloned())
+                    .filter(|s| !s.is_radio());
                 if let Some(song) = song {
                     if state.daemon.library.playlists.is_empty() {
                         state.client.notify("No playlists to add to");

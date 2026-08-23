@@ -337,11 +337,19 @@ impl App {
         }
         let Some(id) = id else { return };
         info!("Seeding cover art for current song id={}", id);
+        let rows = self.daemon_state.read().await.config.cover_art_size;
+        let size = {
+            let guard = self
+                .cover_art
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            crate::ui::cover_art::cover_fetch_size(guard.cell_size.1, rows)
+        };
         if let Ok(crate::ipc::DaemonResponse::CoverArt(bytes)) = self
             .client
             .request(DaemonRequest::FetchCoverArt {
                 id: id.clone(),
-                size: 512,
+                size,
             })
             .await
         {

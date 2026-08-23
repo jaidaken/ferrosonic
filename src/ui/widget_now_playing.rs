@@ -1,5 +1,7 @@
 //! Now-playing strip widget with progress bar and cover art.
 
+use std::fmt::Write as _;
+
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
@@ -9,6 +11,7 @@ use ratatui::{
 };
 
 use crate::daemon::state::NowPlaying;
+use crate::subsonic::models::Child;
 use crate::ui::theme::ThemeColors;
 
 /// Now-playing strip: title, artist, format info, progress bar.
@@ -122,7 +125,10 @@ impl Widget for NowPlayingWidget<'_> {
         let artist = song.artist.clone().unwrap_or_default();
         let album = song.album.clone().unwrap_or_default();
         let title = song.title.clone();
-        let quality = build_quality_string(self.now_playing);
+        let quality = fit_segments(
+            &build_quality_string(self.now_playing),
+            usize::from(info_area.width),
+        );
 
         render_info(
             info_area,
@@ -134,23 +140,95 @@ impl Widget for NowPlayingWidget<'_> {
             &self.colors,
         );
 
-        render_progress_bar(
-            progress_area,
-            buf,
-            self.now_playing.progress_percent(),
-            &self.now_playing.format_position(),
-            &self.now_playing.format_duration(),
-            &self.colors,
-        );
+        if song.is_radio() {
+            render_live_row(progress_area, buf, self.now_playing, &self.colors);
+        } else {
+            render_progress_bar(
+                progress_area,
+                buf,
+                self.now_playing.progress_percent(),
+                &self.now_playing.format_position(),
+                &self.now_playing.format_duration(),
+                &self.colors,
+            );
+        }
     }
 }
 
-fn build_quality_string(np: &NowPlaying) -> String {
-    let mut parts = Vec::new();
-    if let Some(ref fmt) = np.format {
-        parts.push(fmt.clone().to_uppercase());
+/// Status line for a live radio stream: `● LIVE  <elapsed>  │ <kbps> │ <KB/s>`.
+/// Replaces the progress bar, which has no meaning without a duration.
+///
+/// ```
+/// use ferrosonic::daemon::state::NowPlaying;
+/// use ferrosonic::ui::widget_now_playing::live_row_text;
+/// let np = NowPlaying { position: 65.0, bitrate_kbps: Some(128),
+///     download_bps: Some(20_480), ..NowPlaying::default() };
+/// assert_eq!(live_row_text(&np), "● LIVE  01:05  │  128 kbps │   20.0 KB/s");
+/// let bare = NowPlaying { position: 5.0, ..NowPlaying::default() };
+/// assert_eq!(live_row_text(&bare), "● LIVE  00:05");
+/// ```
+#[must_use]
+pub fn live_row_text(np: &NowPlaying) -> String {
+    let mut s = format!("● LIVE  {}", np.format_position());
+    if let Some(kbps) = np.bitrate_kbps {
+        let _ = write!(s, "  │ {kbps:>4} kbps");
     }
-    if let Some(bits) = np.bit_depth {
+    if let Some(bps) = np.download_bps {
+        let _ = write!(s, " │ {}", format_speed(bps));
+    }
+    s
+}
+
+fn render_live_row(area: Rect, buf: &mut Buffer, np: &NowPlaying, colors: &ThemeColors) {
+    if area.width < 15 {
+        return;
+    }
+    let text = live_row_text(np);
+    let width = crate::num::u16_sat(text.chars().count());
+    let start_x = area.x + area.width.saturating_sub(width) / 2;
+    buf.set_string(
+        start_x,
+        area.y,
+        &text,
+        Style::default().fg(colors.highlight_fg),
+    );
+    // The live dot in the playing colour so the row reads as "on air".
+    buf[(start_x, area.y)].set_style(Style::default().fg(colors.playing));
+}
+
+/// Quality row under the title: `CODEC │ depth │ rate │ channels [│ kbps │ ↓ KB/s]`.
+///
+/// - Codec is mpv's `audio-codec-name` (the actual file/stream codec), falling
+///   back to the song's file suffix, then to mpv's decoded sample format.
+/// - Bit depth is dropped when mpv decodes to float: `32-bit` there describes
+///   the decoder, not the source (every lossy codec lands on `floatp`).
+/// - Bitrate is mpv's live measurement, else the server's nominal `bitRate`.
+/// - Bitrate and download speed are left to the LIVE row for radio stations.
+///
+/// ```
+/// use ferrosonic::daemon::state::NowPlaying;
+/// use ferrosonic::ui::widget_now_playing::build_quality_string;
+/// let np = NowPlaying { format: Some("s24".into()), bit_depth: Some(24),
+///     sample_rate: Some(96_000), channels: Some("Stereo".into()),
+///     codec: Some("flac".into()), bitrate_kbps: Some(2304),
+///     download_bps: Some(1_048_576), ..NowPlaying::default() };
+/// assert_eq!(build_quality_string(&np),
+///     "FLAC │ 24-bit │ 96kHz │ Stereo │ 2304 kbps │ ↓    1.0 MB/s");
+/// ```
+#[must_use]
+pub fn build_quality_string(np: &NowPlaying) -> String {
+    let mut parts = Vec::new();
+    let song = np.song.as_ref();
+    let codec = np
+        .codec
+        .clone()
+        .or_else(|| song.and_then(|s| s.suffix.clone()))
+        .or_else(|| np.format.clone());
+    if let Some(c) = codec {
+        parts.push(c.to_uppercase());
+    }
+    let decoded_float = np.format.as_deref().is_some_and(|f| f.contains("float"));
+    if let Some(bits) = np.bit_depth.filter(|_| !decoded_float) {
         parts.push(format!("{bits}-bit"));
     }
     if let Some(rate) = np.sample_rate {
@@ -170,7 +248,73 @@ fn build_quality_string(np: &NowPlaying) -> String {
     if let Some(ref channels) = np.channels {
         parts.push(channels.clone());
     }
+    let is_radio = song.is_some_and(Child::is_radio);
+    if !is_radio {
+        let kbps = np.bitrate_kbps.or_else(|| {
+            song.and_then(|s| s.bit_rate)
+                .and_then(|b| u32::try_from(b).ok())
+        });
+        if let Some(k) = kbps {
+            // Right-aligned to 4 digits: VBR estimates move every tick and the
+            // centered row must not change width ("content jump").
+            parts.push(format!("{k:>4} kbps"));
+        }
+        // The slot stays reserved for the whole track (mpv reads in bursts,
+        // so the speed dips to 0 between chunks); only the digits change.
+        if let Some(bps) = np.download_bps {
+            parts.push(format!("↓ {}", format_speed(bps)));
+        }
+    }
     parts.join(" │ ")
+}
+
+/// Trim a `" │ "`-separated row to `width` display columns by dropping whole
+/// segments from the end — a clipped `↓  1` tail reads worse than no tail.
+///
+/// ```
+/// use ferrosonic::ui::widget_now_playing::fit_segments;
+/// assert_eq!(fit_segments("A │ B │ C", 9), "A │ B │ C");
+/// assert_eq!(fit_segments("A │ B │ C", 8), "A │ B");
+/// assert_eq!(fit_segments("A │ B │ C", 2), "A");
+/// ```
+#[must_use]
+pub fn fit_segments(row: &str, width: usize) -> String {
+    let mut s = row.to_string();
+    while s.chars().count() > width {
+        match s.rfind(" │ ") {
+            Some(i) => s.truncate(i),
+            None => break,
+        }
+    }
+    s
+}
+
+/// Bytes/s as a fixed-width (11-char) rate.
+///
+/// `KB/s` under 1 MiB/s, else `MB/s`, one decimal; `--` while nothing is
+/// being fetched. Constant width keeps the centered rows from shifting as
+/// digits come and go.
+///
+/// ```
+/// use ferrosonic::ui::widget_now_playing::format_speed;
+/// assert_eq!(format_speed(20_480),      "  20.0 KB/s");
+/// assert_eq!(format_speed(12_739_174),  "  12.1 MB/s");
+/// assert_eq!(format_speed(0),           "    -- KB/s");
+/// assert_eq!(format_speed(1_047_527),   "1023.0 KB/s");
+/// ```
+#[must_use]
+pub fn format_speed(bps: u64) -> String {
+    if bps == 0 {
+        return format!("{:>6} KB/s", "--");
+    }
+    // Integer-precision `as` on a value already bounded by the stream rate.
+    #[allow(clippy::cast_precision_loss)]
+    let kib = bps as f64 / 1024.0;
+    if kib >= 1024.0 {
+        format!("{:>6.1} MB/s", kib / 1024.0)
+    } else {
+        format!("{kib:>6.1} KB/s")
+    }
 }
 
 fn render_info(

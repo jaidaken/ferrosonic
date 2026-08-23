@@ -64,6 +64,8 @@ pub enum DaemonRequest {
     RefreshArtists,
     /// Re-fetch the playlist list from the server.
     RefreshPlaylists,
+    /// Re-fetch the internet radio station list from the server.
+    RefreshRadioStations,
     /// Create a server-side playlist from an ordered list of song IDs.
     CreatePlaylist {
         /// Playlist name as typed by the user.
@@ -272,6 +274,17 @@ pub enum DaemonEvent {
     NowPlayingChanged(Box<NowPlaying>),
     /// Playback position update in seconds.
     PositionTick(f64),
+    /// Codec / bitrate / network-speed update for the playing track. Separate
+    /// from `NowPlayingChanged` because it can fire every tick while a file
+    /// downloads and must not fan out to MPRIS.
+    StreamStatsChanged {
+        /// mpv codec name, e.g. `"flac"`.
+        codec: Option<String>,
+        /// Measured bitrate in kbit/s.
+        bitrate_kbps: Option<u32>,
+        /// Network read speed in bytes/s.
+        download_bps: Option<u64>,
+    },
     /// New starred-songs list.
     StarredChanged(Vec<Child>),
     /// Star state of one song changed.
@@ -283,6 +296,8 @@ pub enum DaemonEvent {
     },
     /// New random-songs list.
     RandomChanged(Vec<Child>),
+    /// New internet radio station list (as synthetic `Child` entries).
+    RadioStationsChanged(Vec<Child>),
     /// New artist index.
     ArtistsChanged(Vec<Artist>),
     /// Album list of one artist changed.
