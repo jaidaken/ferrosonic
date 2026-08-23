@@ -155,6 +155,7 @@ async fn right_arrow_with_songs_switches_focus_to_song_pane() {
             path: None,
             disc_number: None,
             starred: None,
+            radio_stream_url: None,
         }];
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();

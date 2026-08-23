@@ -18,6 +18,10 @@ use std::collections::HashSet;
 
 #[derive(Clone)]
 /// One row of the library tree.
+// `Song` carries a full `Child` (~200 bytes more than the label variants);
+// rows are built per render from borrowed data, so boxing would only add an
+// allocation per visible row for no memory win.
+#[allow(clippy::large_enum_variant)]
 pub enum TreeItem {
     /// Artist row.
     Artist {

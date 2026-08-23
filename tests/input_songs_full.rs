@@ -36,6 +36,7 @@ fn song(id: &str) -> Child {
         path: None,
         disc_number: None,
         starred: None,
+        radio_stream_url: None,
     }
 }
 
@@ -73,7 +74,7 @@ async fn down_in_option_pane_starred_to_random_triggers_refresh() {
 
 #[tokio::test]
 #[serial]
-async fn down_at_random_option_is_noop() {
+async fn down_at_random_option_moves_to_radio() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
@@ -81,6 +82,38 @@ async fn down_at_random_option_is_noop() {
         cs.songs.selected_option = Some(SongOption::Random);
     }
     fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+    assert!(matches!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::Radio)
+    ));
+}
+
+#[tokio::test]
+#[serial]
+async fn down_at_radio_option_is_noop() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 0;
+        cs.songs.selected_option = Some(SongOption::Radio);
+    }
+    fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+    assert!(matches!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::Radio)
+    ));
+}
+
+#[tokio::test]
+#[serial]
+async fn up_at_radio_option_moves_to_random() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 0;
+        cs.songs.selected_option = Some(SongOption::Radio);
+    }
+    fx.app.handle_key(key(KeyCode::Up)).await.unwrap();
     assert!(matches!(
         fx.app.client_state.read().await.songs.selected_option,
         Some(SongOption::Random)

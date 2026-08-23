@@ -64,6 +64,7 @@ async fn queue_page_down_advances_selected() {
                 path: None,
                 disc_number: None,
                 starred: None,
+                radio_stream_url: None,
             });
         }
     }

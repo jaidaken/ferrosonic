@@ -225,6 +225,8 @@ impl DaemonCore {
                 // sample rates must not stay pinned to the previous track's rate.
                 state.now_playing.sample_rate = None;
                 state.now_playing.bit_depth = None;
+                state.now_playing.stream_bitrate_kbps = None;
+                state.now_playing.stream_speed_bps = None;
                 drop(state);
                 Some(next_pos)
             } else {
@@ -327,7 +329,13 @@ impl DaemonCore {
     }
 
     /// Backfill duration if missing; re-check is INSIDE the write critical section to close a TOCTOU.
+    /// Skipped for a live radio stream: mpv reports its buffered window as
+    /// `duration`, which would draw a progress bar that "ends" and arm the
+    /// near-end advance; `0.0` stays the live/unknown marker.
     async fn tick_backfill_duration(self: &Arc<Self>) {
+        if self.now_playing_is_radio().await {
+            return;
+        }
         let dur_opt = {
             let mut mpv = self.mpv.lock().await;
             mpv.get_duration().await.ok()
@@ -379,6 +387,44 @@ impl DaemonCore {
     }
 
     /// Fetch sample-rate + bit-depth + format + channels if not yet known. Backstop poll.
+    async fn now_playing_is_radio(&self) -> bool {
+        self.state
+            .read()
+            .await
+            .now_playing
+            .song
+            .as_ref()
+            .is_some_and(crate::subsonic::models::Child::is_radio)
+    }
+
+    /// For a live radio stream, poll mpv's stream bitrate and network read
+    /// speed and publish them (via `NowPlayingChanged`) when they change.
+    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
+    #[allow(clippy::significant_drop_tightening)]
+    async fn tick_stream_stats(self: &Arc<Self>) {
+        if !self.now_playing_is_radio().await {
+            return;
+        }
+        let (bitrate, speed) = {
+            let mut mpv = self.mpv.lock().await;
+            let b = mpv.get_audio_bitrate().await.ok().flatten();
+            let s = mpv.get_cache_speed().await.ok().flatten();
+            (b, s)
+        };
+        let bitrate_kbps = bitrate.map(|b| crate::num::u32_sat(b / 1000));
+        let changed = {
+            let mut state = self.state.write().await;
+            let np = &mut state.now_playing;
+            let changed = np.stream_bitrate_kbps != bitrate_kbps || np.stream_speed_bps != speed;
+            np.stream_bitrate_kbps = bitrate_kbps;
+            np.stream_speed_bps = speed;
+            changed
+        };
+        if changed {
+            self.emit_now_playing().await;
+        }
+    }
+
     async fn tick_fetch_audio_properties_if_needed(self: &Arc<Self>) {
         let need_sr = self.state.read().await.now_playing.sample_rate.is_none();
         if need_sr {
@@ -401,6 +447,7 @@ impl DaemonCore {
         self.tick_emit_position().await;
         self.tick_backfill_duration().await;
         self.tick_fetch_audio_properties_if_needed().await;
+        self.tick_stream_stats().await;
     }
 }
 

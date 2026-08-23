@@ -39,6 +39,38 @@ impl DaemonCore {
         }
     }
 
+    /// Re-fetch the internet radio stations and broadcast the new list.
+    pub async fn refresh_radio_stations(self: &Arc<Self>) {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
+        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
+        match client.get_internet_radio_stations().await {
+            Ok(stations) => {
+                if self.config_gen_changed(gen_at_start) {
+                    debug!("refresh_radio_stations: config changed mid-request, discarding");
+                    return;
+                }
+                let entries: Vec<crate::subsonic::models::Child> = stations
+                    .iter()
+                    .map(crate::subsonic::models::Child::from_radio_station)
+                    .collect();
+                let mut state = self.state.write().await;
+                state.library.radio_stations.clone_from(&entries);
+                drop(state);
+                self.emit(DaemonEvent::RadioStationsChanged(entries));
+                self.bump_library_version();
+            }
+            Err(e) => {
+                error!("Failed to load radio stations: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load radio stations: {e}"),
+                    is_error: true,
+                });
+            }
+        }
+    }
+
     /// Re-fetch the random-songs batch and broadcast the new list.
     pub async fn refresh_random(self: &Arc<Self>) {
         let Some(client) = self.subsonic.read().await.clone() else {

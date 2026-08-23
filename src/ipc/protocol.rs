@@ -64,6 +64,8 @@ pub enum DaemonRequest {
     RefreshArtists,
     /// Re-fetch the playlist list from the server.
     RefreshPlaylists,
+    /// Re-fetch the internet radio station list from the server.
+    RefreshRadioStations,
     /// Create a server-side playlist from an ordered list of song IDs.
     CreatePlaylist {
         /// Playlist name as typed by the user.
@@ -283,6 +285,8 @@ pub enum DaemonEvent {
     },
     /// New random-songs list.
     RandomChanged(Vec<Child>),
+    /// New internet radio station list (as synthetic `Child` entries).
+    RadioStationsChanged(Vec<Child>),
     /// New artist index.
     ArtistsChanged(Vec<Artist>),
     /// Album list of one artist changed.

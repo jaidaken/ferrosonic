@@ -318,6 +318,11 @@ pub struct Child {
     /// Star timestamp; present only when the song is starred.
     #[serde(default)]
     pub starred: Option<String>,
+    /// Raw stream URL when this entry is an internet radio station rather
+    /// than a library song. Playback hands this to mpv directly instead of
+    /// building a `rest/stream` URL from `id`. Never set by the server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radio_stream_url: Option<String>,
 }
 
 impl Child {
@@ -342,6 +347,37 @@ impl Child {
         match (&self.cover_art, &self.album_id) {
             (Some(ca), Some(aid)) if ca.starts_with("mf-") => Some(format!("al-{aid}")),
             _ => self.cover_art.clone(),
+        }
+    }
+
+    /// ID prefix that namespaces radio stations away from song IDs.
+    pub const RADIO_ID_PREFIX: &'static str = "radio:";
+
+    /// Whether this entry is an internet radio station (see `radio_stream_url`).
+    ///
+    /// ```
+    /// use ferrosonic::subsonic::models::Child;
+    /// let song = Child { id: "1".into(), ..Default::default() };
+    /// assert!(!song.is_radio());
+    /// let radio = Child { radio_stream_url: Some("http://x/y".into()), ..Default::default() };
+    /// assert!(radio.is_radio());
+    /// ```
+    #[must_use]
+    pub const fn is_radio(&self) -> bool {
+        self.radio_stream_url.is_some()
+    }
+
+    /// Build a queue entry for an internet radio station. The ID is
+    /// namespaced with [`Self::RADIO_ID_PREFIX`] so it can never collide with
+    /// a song ID (star index, playing indicator, scrobble state).
+    #[must_use]
+    pub fn from_radio_station(station: &InternetRadioStation) -> Self {
+        Self {
+            id: format!("{}{}", Self::RADIO_ID_PREFIX, station.id),
+            title: station.name.clone(),
+            artist: Some("Internet Radio".to_string()),
+            radio_stream_url: Some(station.stream_url.clone()),
+            ..Default::default()
         }
     }
 
@@ -384,6 +420,37 @@ pub struct MusicFolder {
     pub id: i64,
     /// Display name of the library.
     pub name: String,
+}
+
+/// Payload of `getInternetRadioStations`.
+#[derive(Debug, Deserialize)]
+pub struct InternetRadioStationsData {
+    /// The stations wrapper object.
+    #[serde(rename = "internetRadioStations")]
+    pub internet_radio_stations: InternetRadioStationsInner,
+}
+
+/// Station list inside `getInternetRadioStations`.
+#[derive(Debug, Default, Deserialize)]
+pub struct InternetRadioStationsInner {
+    /// Configured stations; empty when the server has none.
+    #[serde(default, rename = "internetRadioStation")]
+    pub internet_radio_station: Vec<InternetRadioStation>,
+}
+
+/// One internet radio station as configured on the server.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InternetRadioStation {
+    /// Unique Subsonic ID.
+    pub id: String,
+    /// Station display name.
+    pub name: String,
+    /// Direct URL of the audio stream.
+    #[serde(rename = "streamUrl")]
+    pub stream_url: String,
+    /// Station home page, when configured.
+    #[serde(default, rename = "homePageUrl")]
+    pub home_page_url: Option<String>,
 }
 
 /// Payload of `getPlaylists`.

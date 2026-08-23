@@ -92,7 +92,12 @@ impl DaemonCore {
             let s = self.state.read().await;
             (
                 s.config.scrobble,
-                s.now_playing.song.as_ref().map(|c| c.id.clone()),
+                // Radio stations are not server media: never scrobble them.
+                s.now_playing
+                    .song
+                    .as_ref()
+                    .filter(|c| !c.is_radio())
+                    .map(|c| c.id.clone()),
                 s.now_playing.state,
                 s.now_playing.position,
                 s.now_playing.duration,

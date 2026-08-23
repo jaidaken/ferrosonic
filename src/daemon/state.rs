@@ -72,6 +72,14 @@ pub struct NowPlaying {
     pub format: Option<String>,
     /// "Stereo", "Mono", "5.1ch", etc.
     pub channels: Option<String>,
+    /// Encoded bitrate of a live radio stream in kbit/s (mpv `audio-bitrate`);
+    /// `None` for library songs.
+    #[serde(default)]
+    pub stream_bitrate_kbps: Option<u32>,
+    /// Network read speed of a live radio stream in bytes/s (mpv
+    /// `cache-speed`); `None` for library songs.
+    #[serde(default)]
+    pub stream_speed_bps: Option<u64>,
 }
 
 impl NowPlaying {
