@@ -34,3 +34,6 @@ Thumbs.db
 # Config (may contain credentials)
 config.toml
 TESTING-PLAN.md
+
+# insta rejected snapshots (never committed)
+*.snap.new
