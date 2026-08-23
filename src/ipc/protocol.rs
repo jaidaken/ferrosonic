@@ -274,6 +274,17 @@ pub enum DaemonEvent {
     NowPlayingChanged(Box<NowPlaying>),
     /// Playback position update in seconds.
     PositionTick(f64),
+    /// Codec / bitrate / network-speed update for the playing track. Separate
+    /// from `NowPlayingChanged` because it can fire every tick while a file
+    /// downloads and must not fan out to MPRIS.
+    StreamStatsChanged {
+        /// mpv codec name, e.g. `"flac"`.
+        codec: Option<String>,
+        /// Measured bitrate in kbit/s.
+        bitrate_kbps: Option<u32>,
+        /// Network read speed in bytes/s.
+        download_bps: Option<u64>,
+    },
     /// New starred-songs list.
     StarredChanged(Vec<Child>),
     /// Star state of one song changed.

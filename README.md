@@ -194,12 +194,12 @@ It is resolved at startup. Because the background daemon has no terminal, **the 
 | `r` | Cycle repeat mode (Off → One → All) |
 | `Shift+T` | Shuffle the entire library and play |
 | `Ctrl+R` | Refresh data from server |
-| `F1` | Library page |
-| `F2` | Queue page |
-| `F3` | Quick Play page |
-| `F4` | Playlists page |
-| `F5` | Server configuration page |
-| `F6` | Settings page |
+| `F1` / `1` | Library page |
+| `F2` / `2` | Queue page |
+| `F3` / `3` | Quick Play page |
+| `F4` / `4` | Playlists page |
+| `F5` / `5` | Server configuration page |
+| `F6` / `6` | Settings page |
 
 ### Library Page (F1)
 
