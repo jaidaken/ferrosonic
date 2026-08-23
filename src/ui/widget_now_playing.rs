@@ -125,7 +125,10 @@ impl Widget for NowPlayingWidget<'_> {
         let artist = song.artist.clone().unwrap_or_default();
         let album = song.album.clone().unwrap_or_default();
         let title = song.title.clone();
-        let quality = build_quality_string(self.now_playing);
+        let quality = fit_segments(
+            &build_quality_string(self.now_playing),
+            usize::from(info_area.width),
+        );
 
         render_info(
             info_area,
@@ -263,6 +266,27 @@ pub fn build_quality_string(np: &NowPlaying) -> String {
         }
     }
     parts.join(" │ ")
+}
+
+/// Trim a `" │ "`-separated row to `width` display columns by dropping whole
+/// segments from the end — a clipped `↓  1` tail reads worse than no tail.
+///
+/// ```
+/// use ferrosonic::ui::widget_now_playing::fit_segments;
+/// assert_eq!(fit_segments("A │ B │ C", 9), "A │ B │ C");
+/// assert_eq!(fit_segments("A │ B │ C", 8), "A │ B");
+/// assert_eq!(fit_segments("A │ B │ C", 2), "A");
+/// ```
+#[must_use]
+pub fn fit_segments(row: &str, width: usize) -> String {
+    let mut s = row.to_string();
+    while s.chars().count() > width {
+        match s.rfind(" │ ") {
+            Some(i) => s.truncate(i),
+            None => break,
+        }
+    }
+    s
 }
 
 /// Bytes/s as a fixed-width (11-char) rate.
