@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **No more content jump from the traffic field.** The now-playing info rows
+  are centered, so any width change shifted them sideways every tick. The
+  bitrate and download-speed fields are now fixed-width (speed shows `--`
+  between mpv's read bursts instead of vanishing), for songs and radio alike.
+- **Cover art request size follows the art box.** Instead of a fixed 512 px,
+  the fetch asks for the art box's real pixel height (cell size × rows)
+  rounded up to a 256 step, clamped to 512-1024 — sharper art on large fonts
+  and HiDPI cells. Note: inside terminal multiplexers that don't pass the
+  graphics-protocol query through, rendering still falls back to
+  chafa/halfblocks, which is inherently coarse.
+
 ### Added
 
 - **Quality + traffic in the now-playing bar for songs.** The quality row now
