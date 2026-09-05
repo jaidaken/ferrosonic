@@ -492,3 +492,41 @@ async fn alt_digit_on_the_library_artist_pane_sends_nothing() {
     press(&mut app, key_mod(KeyCode::Char('5'), KeyModifiers::ALT)).await;
     assert_eq!(sent_rating(&client), None, "artist rows are not rateable");
 }
+
+#[tokio::test]
+#[serial]
+async fn alt_digit_on_an_unfocused_library_song_pane_says_how_to_fix_it() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::Library;
+        // Songs are listed but the tree pane holds focus, so no row is
+        // rendered as highlighted and none can be rated.
+        cs.artists.focus = 0;
+        cs.artists.songs = vec![song("lib-0")];
+        cs.artists.selected_song = Some(0);
+    }
+    press(&mut app, key_mod(KeyCode::Char('3'), KeyModifiers::ALT)).await;
+    assert_eq!(sent_rating(&client), None);
+    let cs = app.client_state.read().await;
+    let note = cs.notification.as_ref().expect("must explain the no-op");
+    assert!(
+        note.message.contains("press Right"),
+        "Library hint must say how to focus the song list, got {note:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn plain_digit_with_nothing_playing_says_so() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    press(&mut app, key(KeyCode::Char('3'))).await;
+    assert_eq!(sent_rating(&client), None);
+    let cs = app.client_state.read().await;
+    assert!(cs
+        .notification
+        .as_ref()
+        .is_some_and(|n| n.message.contains("Nothing is playing")));
+}

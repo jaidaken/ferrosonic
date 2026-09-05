@@ -320,20 +320,33 @@ impl App {
             // through so it can still reach the page handlers below.
             if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::ALT {
                 let highlighted = key.modifiers == KeyModifiers::ALT;
+                let page = state.client.page;
+                let song_pane_focused = state.client.artists.focus == 1;
                 let _ = state;
                 drop(cs);
                 drop(ds);
                 let Some((id, current)) = target else {
-                    // Logged because an ignored key is otherwise
-                    // indistinguishable from one that never arrived.
+                    // Say why nothing happened rather than no-opping in
+                    // silence, which is indistinguishable from a key that
+                    // never arrived. The Library case earns its own wording:
+                    // a song row is only highlighted while the song pane has
+                    // focus, so the fix there is to press Right first.
                     debug!(
-                        "Rating key '{c}' ignored: no {} song",
+                        "Rating key '{c}' ignored: no {} song (page {page:?})",
                         if highlighted {
                             "highlighted"
                         } else {
                             "playing"
                         }
                     );
+                    let message = if !highlighted {
+                        "Nothing is playing to rate"
+                    } else if page == Page::Library && !song_pane_focused {
+                        "No song highlighted - press Right to focus the song list first"
+                    } else {
+                        "No song highlighted to rate"
+                    };
+                    self.client_state.write().await.notify(message);
                     return Ok(());
                 };
                 // `c` is one ASCII digit '1'-'5' per the match pattern.

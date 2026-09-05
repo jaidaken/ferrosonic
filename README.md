@@ -234,7 +234,7 @@ The bindings in this section (except `p`/`Space` for pause and the `1`-`5` / `Al
 | `h` | Previous track |
 | `n` | Star/unstar currently-playing song |
 | `1`-`5` | Rate the currently-playing song 1-5; press the current rating again to clear it |
-| `Alt+1`-`Alt+5` | Rate the *highlighted* song instead, on any page with a song list |
+| `Alt+1`-`Alt+5` | Rate the *highlighted* song instead. On the Library page the song list must have focus (`→`), the same rule `m` follows - ferrosonic tells you if nothing is highlighted |
 | `r` | Cycle repeat mode (Off → One → All) |
 | `Shift+T` | Shuffle the entire library and play |
 | `Ctrl+R` | Refresh data from server |
