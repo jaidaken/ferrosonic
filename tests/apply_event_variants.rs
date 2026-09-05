@@ -465,3 +465,72 @@ async fn config_event_synchronizes_new_settings_without_purging_queue() {
     assert_eq!(state.config.playback_filters.min_rating, 5);
     assert_eq!(state.queue[0].id, "low");
 }
+
+/// A rating (or star) applied to a song shown in the Library tree's search
+/// results must update that list too. `build_tree_items` renders song rows
+/// straight out of `artists.search_results` whenever a filter is active, so
+/// a song rated from there stays visually unrated until the search is
+/// re-run, even though the write reached the server.
+#[tokio::test]
+#[serial]
+async fn rating_updates_a_song_shown_in_library_search_results() {
+    let h = build_harness();
+    {
+        let mut client = h.client_state.write().await;
+        client.artists.filter = "target".into();
+        let mut results = ferrosonic::subsonic::models::SearchResult3::default();
+        results.song = vec![song("target", "Target"), song("other", "Other")];
+        client.artists.search_results = Some(results);
+    }
+    apply_event(
+        &h.daemon,
+        &h.client_state,
+        &h.client,
+        &h.cover_art,
+        DaemonEvent::SongRatingChanged {
+            id: "target".into(),
+            rating: Some(5),
+        },
+    )
+    .await;
+    let client = h.client_state.read().await;
+    let results = client.artists.search_results.as_ref().unwrap();
+    assert_eq!(
+        results.song[0].user_rating,
+        Some(5),
+        "the rated search-result row must show its new rating"
+    );
+    assert_eq!(results.song[1].user_rating, None);
+}
+
+/// The same gap for stars, which share the update path.
+#[tokio::test]
+#[serial]
+async fn starring_updates_a_song_shown_in_library_search_results() {
+    let h = build_harness();
+    {
+        let mut client = h.client_state.write().await;
+        client.artists.filter = "target".into();
+        let mut results = ferrosonic::subsonic::models::SearchResult3::default();
+        results.song = vec![song("target", "Target")];
+        client.artists.search_results = Some(results);
+    }
+    apply_event(
+        &h.daemon,
+        &h.client_state,
+        &h.client,
+        &h.cover_art,
+        DaemonEvent::SongStarChanged {
+            id: "target".into(),
+            starred: true,
+        },
+    )
+    .await;
+    let client = h.client_state.read().await;
+    assert!(
+        client.artists.search_results.as_ref().unwrap().song[0]
+            .starred
+            .is_some(),
+        "the starred search-result row must show its star"
+    );
+}

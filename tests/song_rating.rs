@@ -211,3 +211,62 @@ async fn old_server_rating_response_cannot_mutate_new_server_caches() {
         );
     }
 }
+
+/// End-to-end: rating a song the user highlighted in the Library must reach
+/// the *client-side* list the Library song pane renders from
+/// (`client.artists.songs`), not only the daemon's caches.
+///
+/// The Queue page renders from the shared daemon state, so in standalone
+/// mode it updates whether or not the broadcast event is delivered. The
+/// Library pane has no such shortcut: it only changes if
+/// `SongRatingChanged` actually reaches the event pump. A regression here
+/// would look exactly like "ratings work in the Queue but not the Library".
+#[tokio::test]
+#[serial]
+async fn rating_reaches_the_client_library_song_pane_over_the_event_bus() {
+    use ferrosonic::app::event_pump::apply_event;
+    use ferrosonic::ipc::protocol::DaemonEvent;
+
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_set_rating().await;
+
+    let config = ferrosonic::config::Config::new();
+    let client_state = ferrosonic::app::state::new_shared_client_state(&config);
+    client_state.write().await.artists.songs = vec![song("s1", "Target"), song("s2", "Other")];
+
+    let mut rx = td.core.subscribe();
+    td.core.set_song_rating("s1", 4).await.unwrap();
+
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+        .await
+        .expect("a rating event must be broadcast")
+        .expect("broadcast channel stays open");
+    assert!(
+        matches!(&ev, DaemonEvent::SongRatingChanged { id, rating } if id == "s1" && *rating == Some(4)),
+        "expected SongRatingChanged, got {ev:?}"
+    );
+
+    let cover_art = std::sync::Arc::new(std::sync::Mutex::new(
+        ferrosonic::ui::cover_art::CoverArtState {
+            picker: None,
+            protocol_type: None,
+            cell_size: (8, 16),
+            current_id: None,
+            image: None,
+            protocol: None,
+            chafa_cache: None,
+        },
+    ));
+    let client: std::sync::Arc<dyn ferrosonic::ipc::client::DaemonClient> = std::sync::Arc::new(
+        ferrosonic::ipc::client::InProcessClient::new(td.core.clone()),
+    );
+    apply_event(&td.state, &client_state, &client, &cover_art, ev).await;
+
+    let cs = client_state.read().await;
+    assert_eq!(
+        cs.artists.songs[0].user_rating,
+        Some(4),
+        "the highlighted Library row must show the new rating"
+    );
+    assert_eq!(cs.artists.songs[1].user_rating, None);
+}

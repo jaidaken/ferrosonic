@@ -359,6 +359,15 @@ async fn apply_song_star_changed(
         for song in &mut cs.playlists.songs {
             update(song);
         }
+        // The Library tree renders song rows straight out of the search
+        // results while a filter is active (`build_tree_items`), so a row
+        // rated or starred from there would otherwise stay visually
+        // unchanged until the search was re-run.
+        if let Some(results) = cs.artists.search_results.as_mut() {
+            for song in &mut results.song {
+                update(song);
+            }
+        }
     }
 }
 
@@ -414,6 +423,15 @@ async fn apply_song_rating_changed(
         }
         for song in &mut cs.playlists.songs {
             update(song);
+        }
+        // The Library tree renders song rows straight out of the search
+        // results while a filter is active (`build_tree_items`), so a row
+        // rated or starred from there would otherwise stay visually
+        // unchanged until the search was re-run.
+        if let Some(results) = cs.artists.search_results.as_mut() {
+            for song in &mut results.song {
+                update(song);
+            }
         }
     }
 }
