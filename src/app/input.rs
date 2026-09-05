@@ -1,4 +1,5 @@
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use tracing::{debug, error};
 
 use crate::config::keybind::{GlobalAction, KeyChord};
 use crate::error::Error;
@@ -306,22 +307,38 @@ impl App {
             let _ = state;
             drop(cs);
             drop(ds);
-            if let Some(song) = song {
-                // `c` is one ASCII digit '1'-'5' per the match pattern.
-                let pressed = c as u8 - b'0';
-                // Pressing the already-set rating again clears it.
-                let rating = if song.user_rating == Some(pressed) {
-                    0
-                } else {
-                    pressed
-                };
-                let _ = self
-                    .client
-                    .request(DaemonRequest::SetSongRating {
-                        id: song.id,
-                        rating,
-                    })
-                    .await;
+            let Some(song) = song else {
+                // No playing song: nothing to rate. Logged because it is
+                // otherwise indistinguishable from the key not arriving.
+                debug!("Rating key '{c}' ignored: no song is playing");
+                return Ok(());
+            };
+            // `c` is one ASCII digit '1'-'5' per the match pattern.
+            let pressed = c as u8 - b'0';
+            // Pressing the already-set rating again clears it.
+            let rating = if song.user_rating == Some(pressed) {
+                0
+            } else {
+                pressed
+            };
+            debug!(
+                "Rating key '{c}': setting rating {rating} on song {}",
+                song.id
+            );
+            // A rejected rating must not fail silently: without this the user
+            // sees an unchanged row and cannot tell a refused write from a
+            // key that never registered.
+            if let Err(e) = self
+                .client
+                .request(DaemonRequest::SetSongRating {
+                    id: song.id,
+                    rating,
+                })
+                .await
+            {
+                error!("Failed to set rating: {e}");
+                let mut cs = self.client_state.write().await;
+                cs.notify_error(format!("Failed to set rating: {e}"));
             }
             return Ok(());
         }

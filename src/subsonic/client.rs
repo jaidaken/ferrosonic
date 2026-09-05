@@ -112,6 +112,14 @@ impl SubsonicClient {
 
     async fn request_action(&self, endpoint: &str) -> Result<(), SubsonicError> {
         let url = self.build_url(endpoint)?;
+        // Logged like `request`, so write actions (star, unstar, setRating,
+        // playlist edits) are as visible in a `-v` log as the read calls.
+        // Without this an entire class of request left no trace, which makes
+        // "did the client even ask the server?" unanswerable from a log.
+        debug!(
+            "Requesting: {}",
+            url.as_str().split('?').next().unwrap_or("")
+        );
         let response = self.http.get(url).send().await?;
         let text = response.text().await?;
         let parsed: SubsonicResponse<serde_json::Value> = serde_json::from_str(&text)
