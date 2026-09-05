@@ -270,3 +270,80 @@ async fn rating_reaches_the_client_library_song_pane_over_the_event_bus() {
     );
     assert_eq!(cs.artists.songs[1].user_rating, None);
 }
+
+/// A rating change must reach the persisted queue, or it silently reverts
+/// on the next start.
+///
+/// `queue.json` is only rewritten when something pokes the save channel,
+/// which until now only `emit_queue` did. Rating mutates `daemon.queue`
+/// in memory and emits `SongRatingChanged` instead, so the rating shown
+/// after a restart was whatever happened to be current at the last queue
+/// mutation -- a track rated 1 and later 5 came back as 1.
+#[tokio::test]
+#[serial]
+async fn a_rating_change_is_persisted_to_the_queue_snapshot() {
+    use ferrosonic::daemon::persistence::QueueSnapshot;
+
+    let dir = common::tempdir();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
+
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_set_rating().await;
+    td.state.write().await.queue = vec![song("s1", "Target")];
+
+    // An earlier rating, persisted the way any queue mutation would be.
+    td.core.set_song_rating("s1", 1).await.unwrap();
+    // The rating the user actually wants to keep.
+    td.core.set_song_rating("s1", 5).await.unwrap();
+
+    // The persistence task is debounced; give it room to flush.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let persisted = loop {
+        if let Some(snap) = QueueSnapshot::load() {
+            if snap.queue.first().and_then(|s| s.user_rating) == Some(5) {
+                break Some(snap);
+            }
+        }
+        if std::time::Instant::now() > deadline {
+            break QueueSnapshot::load();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    };
+
+    let snap = persisted.expect("queue.json must be written after a rating change");
+    assert_eq!(
+        snap.queue[0].user_rating,
+        Some(5),
+        "the persisted queue must carry the latest rating, not a stale one"
+    );
+}
+
+/// Stars share the in-place queue edit and the same staleness.
+#[tokio::test]
+#[serial]
+async fn a_star_change_is_persisted_to_the_queue_snapshot() {
+    use ferrosonic::daemon::persistence::QueueSnapshot;
+
+    let dir = common::tempdir();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
+
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_star().await;
+    td.state.write().await.queue = vec![song("s1", "Target")];
+
+    td.core.toggle_star_song("s1").await.unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if let Some(snap) = QueueSnapshot::load() {
+            if snap.queue.first().is_some_and(|s| s.starred.is_some()) {
+                return;
+            }
+        }
+        assert!(
+            std::time::Instant::now() <= deadline,
+            "the persisted queue must carry the new star"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}

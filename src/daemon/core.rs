@@ -393,8 +393,20 @@ impl DaemonCore {
             let state = self.state.read().await;
             (state.queue.clone(), state.queue_position)
         };
-        let _ = self.queue_save_tx.try_send(());
+        self.schedule_queue_save();
         self.emit(DaemonEvent::QueueChanged { queue, position });
+    }
+
+    /// Ask the persistence task to rewrite `queue.json`.
+    ///
+    /// For per-song edits that mutate the queue in place without changing
+    /// its contents or order -- ratings and stars, which broadcast their
+    /// own targeted events rather than a whole `QueueChanged` -- the queue
+    /// would otherwise keep whatever value was current at the last real
+    /// queue mutation and revert on the next start. The channel has
+    /// capacity 1, so repeated pokes coalesce into one write.
+    pub(super) fn schedule_queue_save(&self) {
+        let _ = self.queue_save_tx.try_send(());
     }
 
     /// Snapshot for a connecting client. Password is scrubbed — the

@@ -421,6 +421,9 @@ impl DaemonCore {
             }
             state.library.starred_songs.clone()
         };
+        // Same in-place queue edit as a rating: persist it or the star
+        // reverts on the next start.
+        self.schedule_queue_save();
         self.emit(DaemonEvent::SongStarChanged {
             id: song_id.to_string(),
             starred: new_starred,
@@ -483,6 +486,9 @@ impl DaemonCore {
         // A library refresh may have replaced cached copies while the RPC
         // was in flight. Commit the confirmed value to those copies too.
         apply_rating_to_cached(&mut state, song_id, new_rating);
+        // The queue holds its own copy of the song; persist it so the
+        // rating survives a restart.
+        self.schedule_queue_save();
         self.emit(DaemonEvent::SongRatingChanged {
             id: song_id.to_string(),
             rating: new_rating,
