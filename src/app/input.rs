@@ -61,12 +61,13 @@ impl App {
         let action = if key.code == KeyCode::Char('p') && key.modifiers == KeyModifiers::NONE {
             Some(GlobalAction::TogglePause)
         } else if matches!(key.code, KeyCode::Char('1'..='5'))
-            && key.modifiers == KeyModifiers::NONE
+            && matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::ALT)
         {
             // Digit keys 1-5 are reserved for song rating (handled below,
             // outside the configurable keymap) and must never be shadowed
             // by a `[Keybindings]` override remapping some other action
-            // onto a digit chord.
+            // onto a digit chord. Alt+digit rates the highlighted row and
+            // is reserved on the same grounds.
             None
         } else {
             self.keymap.get(&KeyChord::from(key)).copied()
@@ -302,45 +303,65 @@ impl App {
         // Song rating: five keys feeding one conceptual action doesn't fit
         // the one-action-one-chord keymap model, so this stays hardcoded
         // and out of the configurable set (see the `keybind` module docs).
-        if let (KeyCode::Char(c @ '1'..='5'), KeyModifiers::NONE) = (key.code, key.modifiers) {
-            let song = state.daemon.now_playing.song.clone();
-            let _ = state;
-            drop(cs);
-            drop(ds);
-            let Some(song) = song else {
-                // No playing song: nothing to rate. Logged because it is
-                // otherwise indistinguishable from the key not arriving.
-                debug!("Rating key '{c}' ignored: no song is playing");
+        // Plain digits rate the playing song, Alt+digit the highlighted row,
+        // the same split as `n` (star playing) and `m` (star highlighted).
+        if let KeyCode::Char(c @ '1'..='5') = key.code {
+            let target = match key.modifiers {
+                KeyModifiers::NONE => state
+                    .daemon
+                    .now_playing
+                    .song
+                    .as_ref()
+                    .map(|s| (s.id.clone(), s.user_rating)),
+                KeyModifiers::ALT => state.highlighted_song(),
+                _ => None,
+            };
+            // Any other modifier combination is not a rating chord; fall
+            // through so it can still reach the page handlers below.
+            if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::ALT {
+                let highlighted = key.modifiers == KeyModifiers::ALT;
+                let _ = state;
+                drop(cs);
+                drop(ds);
+                let Some((id, current)) = target else {
+                    // Logged because an ignored key is otherwise
+                    // indistinguishable from one that never arrived.
+                    debug!(
+                        "Rating key '{c}' ignored: no {} song",
+                        if highlighted {
+                            "highlighted"
+                        } else {
+                            "playing"
+                        }
+                    );
+                    return Ok(());
+                };
+                // `c` is one ASCII digit '1'-'5' per the match pattern.
+                let pressed = c as u8 - b'0';
+                // Pressing the already-set rating again clears it.
+                let rating = if current == Some(pressed) { 0 } else { pressed };
+                debug!(
+                    "Rating key '{c}': setting rating {rating} on {} song {id}",
+                    if highlighted {
+                        "highlighted"
+                    } else {
+                        "playing"
+                    }
+                );
+                // A rejected rating must not fail silently: without this the
+                // user sees an unchanged row and cannot tell a refused write
+                // from a key that never registered.
+                if let Err(e) = self
+                    .client
+                    .request(DaemonRequest::SetSongRating { id, rating })
+                    .await
+                {
+                    error!("Failed to set rating: {e}");
+                    let mut cs = self.client_state.write().await;
+                    cs.notify_error(format!("Failed to set rating: {e}"));
+                }
                 return Ok(());
-            };
-            // `c` is one ASCII digit '1'-'5' per the match pattern.
-            let pressed = c as u8 - b'0';
-            // Pressing the already-set rating again clears it.
-            let rating = if song.user_rating == Some(pressed) {
-                0
-            } else {
-                pressed
-            };
-            debug!(
-                "Rating key '{c}': setting rating {rating} on song {}",
-                song.id
-            );
-            // A rejected rating must not fail silently: without this the user
-            // sees an unchanged row and cannot tell a refused write from a
-            // key that never registered.
-            if let Err(e) = self
-                .client
-                .request(DaemonRequest::SetSongRating {
-                    id: song.id,
-                    rating,
-                })
-                .await
-            {
-                error!("Failed to set rating: {e}");
-                let mut cs = self.client_state.write().await;
-                cs.notify_error(format!("Failed to set rating: {e}"));
             }
-            return Ok(());
         }
 
         let page = state.client.page;

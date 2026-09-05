@@ -307,9 +307,15 @@ pub fn resolve(
     let mut warnings = Vec::new();
     for (action, default_chord) in DEFAULT_BINDINGS {
         let chord = overrides.get(&action).copied().unwrap_or(default_chord);
-        if chord.modifiers == KeyModifiers::NONE
-            && (matches!(chord.code, KeyCode::Char('1'..='5'))
-                || (chord.code == KeyCode::Char('p') && action != GlobalAction::TogglePause))
+        // `1`-`5` rate the playing song and Alt+`1`-`5` the highlighted
+        // one; both are handled outside this keymap, so an override onto
+        // either would be silently unreachable.
+        let reserved_rating_chord = matches!(chord.code, KeyCode::Char('1'..='5'))
+            && matches!(chord.modifiers, KeyModifiers::NONE | KeyModifiers::ALT);
+        if reserved_rating_chord
+            || (chord.modifiers == KeyModifiers::NONE
+                && chord.code == KeyCode::Char('p')
+                && action != GlobalAction::TogglePause)
         {
             let message = format!(
                 "Keybinding conflict: {chord} is reserved; {action:?} is unreachable until you fix [Keybindings] in config.toml"

@@ -254,12 +254,21 @@ fn equivalent_shift_spellings_and_reserved_conflicts() {
     use ferrosonic::config::keybind::{resolve, GlobalAction, KeyChord};
     use std::collections::HashMap;
     assert_eq!("Shift+t".parse::<KeyChord>().unwrap(), "T".parse().unwrap());
-    for key in ["p", "1", "2", "3", "4", "5"] {
+    // Alt+digit rates the highlighted row and is reserved on the same
+    // grounds as the plain digits: both are handled outside this keymap,
+    // so an override onto either would be silently unreachable.
+    for key in [
+        "p", "1", "2", "3", "4", "5", "Alt+1", "Alt+2", "Alt+3", "Alt+4", "Alt+5",
+    ] {
         let chord = key.parse::<KeyChord>().unwrap();
         let (resolved, warnings) = resolve(&HashMap::from([(GlobalAction::Quit, chord)]));
-        assert!(!resolved.contains_key(&chord));
+        assert!(!resolved.contains_key(&chord), "{key} must stay reserved");
         assert!(warnings
             .iter()
             .any(|w| w.contains("reserved") && w.contains("Quit")));
     }
+    // Alt+p is not a rating chord and stays bindable.
+    let alt_p = "Alt+p".parse::<KeyChord>().unwrap();
+    let (resolved, _) = resolve(&HashMap::from([(GlobalAction::Quit, alt_p)]));
+    assert_eq!(resolved.get(&alt_p), Some(&GlobalAction::Quit));
 }

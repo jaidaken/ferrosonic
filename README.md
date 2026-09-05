@@ -21,7 +21,7 @@ It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termson
 - **Multi-library** - on multi-folder servers, `f` scopes the tree, album list, random songs, and search to one music folder; remembered across restarts.
 - **Quick Play** - jump straight into your Starred songs, a fresh Random roll, or a Random Album, no browsing.
 - **Stars** - favourite tracks with `n` (playing) or `m` (highlighted); shown with a star everywhere.
-- **Ratings** - rate the playing track 1-5 (`1`-`5`; press the current rating again to clear it), synced to the server and exposed via MPRIS.
+- **Ratings** - rate the playing track 1-5 (`1`-`5`) or the highlighted one (`Alt+1`-`Alt+5`); press the current rating again to clear it. Synced to the server and exposed via MPRIS.
 - **Playback filters** - exclude songs from the queue by minimum rating, year range, or duration from Settings (`F6`); genre and artist exclude-lists via `config.toml`. Applies wherever songs enter the queue (enqueue, shuffle, auto-continue).
 - **Shuffle and repeat** - shuffle any artist, album, or the whole library; cycle repeat Off/One/All with `r`.
 - **Queue** - add, remove, reorder, shuffle, and clear history; persists across daemon restarts; save as a server playlist with `s`.
@@ -178,7 +178,7 @@ All fields are optional and independently combinable; omit a field (or the whole
 
 ### Custom keybindings
 
-The ~14 global (page-independent) shortcuts - quit, play/pause, next/previous track, star-playing, shuffle-library, cycle-repeat, refresh, and the six `F1`-`F6` page switches - can be remapped in a `[Keybindings]` table, keyed by action name with a key-chord string value (`"q"`, `"F1"`, `"Space"`, `"Ctrl+r"`; a shifted letter can be written as `"T"` or `"Shift+t"`). Per-page bindings and modal overlays (quit-confirm, the add-to-playlist picker, Settings' own `h`/`l`/`Space` field navigation) are not configurable. `p` (secondary pause alias) and the `1`-`5` rating keys are always reserved and can't be remapped or shadowed.
+The ~14 global (page-independent) shortcuts - quit, play/pause, next/previous track, star-playing, shuffle-library, cycle-repeat, refresh, and the six `F1`-`F6` page switches - can be remapped in a `[Keybindings]` table, keyed by action name with a key-chord string value (`"q"`, `"F1"`, `"Space"`, `"Ctrl+r"`; a shifted letter can be written as `"T"` or `"Shift+t"`). Per-page bindings and modal overlays (quit-confirm, the add-to-playlist picker, Settings' own `h`/`l`/`Space` field navigation) are not configurable. `p` (secondary pause alias) and the rating keys (`1`-`5` and `Alt+1`-`Alt+5`) are always reserved and can't be remapped or shadowed.
 
 ```toml
 [Keybindings]
@@ -224,7 +224,7 @@ It is resolved at startup. Because the background daemon has no terminal, **the 
 
 ### Global
 
-The bindings in this section (except `p`/`Space` for pause and `1`-`5` for rating) are remappable via `[Keybindings]`; see [Custom keybindings](#custom-keybindings). Per-page bindings further down are not.
+The bindings in this section (except `p`/`Space` for pause and the `1`-`5` / `Alt+1`-`Alt+5` rating keys) are remappable via `[Keybindings]`; see [Custom keybindings](#custom-keybindings). Per-page bindings further down are not.
 
 | Key | Action |
 |---|---|
@@ -234,6 +234,7 @@ The bindings in this section (except `p`/`Space` for pause and `1`-`5` for ratin
 | `h` | Previous track |
 | `n` | Star/unstar currently-playing song |
 | `1`-`5` | Rate the currently-playing song 1-5; press the current rating again to clear it |
+| `Alt+1`-`Alt+5` | Rate the *highlighted* song instead, on any page with a song list |
 | `r` | Cycle repeat mode (Off → One → All) |
 | `Shift+T` | Shuffle the entire library and play |
 | `Ctrl+R` | Refresh data from server |

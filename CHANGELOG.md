@@ -14,8 +14,10 @@
 ### Added
 
 - **Song ratings.** Rate the currently-playing track 1-5 with the `1`-`5`
-  keys (press the current rating again to clear it). Synced to the server
-  and exposed to desktop media controls via MPRIS's `userRating`.
+  keys, or the highlighted row with `Alt+1`-`Alt+5` (press the current
+  rating again to clear it) - the same playing/highlighted split as `n`
+  and `m` for stars. Synced to the server and exposed to desktop media
+  controls via MPRIS's `userRating`.
 - **Playback filters.** Exclude songs from ever entering the queue by
   minimum rating, year range, or duration (`F6` Settings page), or by genre
   or artist exclude-list (`[PlaybackFilters]` in `config.toml`). Applies

@@ -356,3 +356,139 @@ async fn l_fires_next_on_playlists_when_not_editing() {
         "'l' on Playlists (not editing) must fire global Next, not route to the page handler"
     );
 }
+
+// --- Alt+digit rates the highlighted row -------------------------------
+
+fn rated(id: &str, rating: Option<u8>) -> Child {
+    let mut c = song(id);
+    c.user_rating = rating;
+    c
+}
+
+fn sent_rating(client: &Arc<RecordingClient>) -> Option<(String, u8)> {
+    client.sent().iter().find_map(|r| match r {
+        DaemonRequest::SetSongRating { id, rating } => Some((id.clone(), *rating)),
+        _ => None,
+    })
+}
+
+#[tokio::test]
+#[serial]
+async fn alt_digit_rates_the_highlighted_queue_row_not_the_playing_song() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.now_playing.song = Some(song("playing"));
+        ds.queue = vec![song("q-0"), song("q-1")];
+    }
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::Queue;
+        cs.queue_state.selected = Some(1);
+    }
+    press(&mut app, key_mod(KeyCode::Char('4'), KeyModifiers::ALT)).await;
+    assert_eq!(
+        sent_rating(&client),
+        Some(("q-1".to_string(), 4)),
+        "Alt+4 must rate the highlighted row, leaving the playing song alone"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn plain_digit_still_rates_the_playing_song_when_a_row_is_highlighted() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.now_playing.song = Some(song("playing"));
+        ds.queue = vec![song("q-0")];
+    }
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::Queue;
+        cs.queue_state.selected = Some(0);
+    }
+    press(&mut app, key(KeyCode::Char('4'))).await;
+    assert_eq!(
+        sent_rating(&client),
+        Some(("playing".to_string(), 4)),
+        "a plain digit must keep rating the playing song"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn alt_digit_repeating_the_current_rating_clears_it() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    app.daemon_state.write().await.queue = vec![rated("q-0", Some(2))];
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::Queue;
+        cs.queue_state.selected = Some(0);
+    }
+    press(&mut app, key_mod(KeyCode::Char('2'), KeyModifiers::ALT)).await;
+    assert_eq!(
+        sent_rating(&client),
+        Some(("q-0".to_string(), 0)),
+        "Alt+2 on an already-2 row must clear the rating"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn alt_digit_with_no_highlighted_row_sends_nothing() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    app.daemon_state.write().await.now_playing.song = Some(song("playing"));
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::Queue;
+        cs.queue_state.selected = None;
+    }
+    press(&mut app, key_mod(KeyCode::Char('3'), KeyModifiers::ALT)).await;
+    assert_eq!(
+        sent_rating(&client),
+        None,
+        "Alt+digit must not fall back to the playing song"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn alt_digit_rates_the_highlighted_library_song() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::Library;
+        cs.artists.focus = 1;
+        cs.artists.songs = vec![song("lib-0"), song("lib-1")];
+        cs.artists.selected_song = Some(1);
+    }
+    press(&mut app, key_mod(KeyCode::Char('5'), KeyModifiers::ALT)).await;
+    assert_eq!(
+        sent_rating(&client),
+        Some(("lib-1".to_string(), 5)),
+        "Alt+5 must rate the highlighted Library song"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn alt_digit_on_the_library_artist_pane_sends_nothing() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::Library;
+        // Artist pane focused, no committed search: no song row is selected.
+        cs.artists.focus = 0;
+        cs.artists.songs = vec![song("lib-0")];
+        cs.artists.selected_song = Some(0);
+    }
+    press(&mut app, key_mod(KeyCode::Char('5'), KeyModifiers::ALT)).await;
+    assert_eq!(sent_rating(&client), None, "artist rows are not rateable");
+}

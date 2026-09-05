@@ -154,6 +154,64 @@ impl AppState<'_> {
             Some(SongOption::Starred) | None => &self.daemon.library.starred_songs,
         }
     }
+
+    /// The song row the user has highlighted on the current page, as
+    /// `(id, current rating)`, or `None` where nothing song-shaped is
+    /// selected.
+    ///
+    /// Mirrors exactly the rows `m` (star highlighted) acts on, so the
+    /// rating and star keys never disagree about what "highlighted" means:
+    /// the Queue and Quick Play lists, the Library and Playlists song panes
+    /// when the song pane holds focus, and song rows in the Library tree's
+    /// committed search results.
+    #[must_use]
+    pub fn highlighted_song(&self) -> Option<(String, Option<u8>)> {
+        let song = match self.client.page {
+            Page::Queue => self
+                .client
+                .queue_state
+                .selected
+                .and_then(|idx| self.daemon.queue.get(idx)),
+            Page::QuickPlay => self
+                .client
+                .songs
+                .selected_index
+                .and_then(|idx| self.songs_list().get(idx)),
+            Page::Playlists if self.client.playlists.focus == 1 => self
+                .client
+                .playlists
+                .selected_song
+                .and_then(|idx| self.client.playlists.songs.get(idx)),
+            Page::Library if self.client.artists.focus == 1 => self
+                .client
+                .artists
+                .selected_song
+                .and_then(|idx| self.client.artists.songs.get(idx)),
+            // Tree rows are only song-shaped inside committed search
+            // results; building the tree is the only way to map the flat
+            // selection index onto a row, as the artist/album/song rows
+            // share one index space.
+            Page::Library
+                if !self.client.artists.filter.is_empty()
+                    && self.client.artists.search_results.is_some() =>
+            {
+                let items = crate::ui::pages::library::build_tree_items(self);
+                return self
+                    .client
+                    .artists
+                    .selected_index
+                    .and_then(|idx| items.get(idx).cloned())
+                    .and_then(|item| match item {
+                        crate::ui::pages::library::TreeItem::Song { song } => {
+                            Some((song.id, song.user_rating))
+                        }
+                        _ => None,
+                    });
+            }
+            Page::Library | Page::Playlists | Page::Server | Page::Settings => None,
+        };
+        song.map(|s| (s.id.clone(), s.user_rating))
+    }
 }
 
 /// Shared handle to the daemon state mirror.
