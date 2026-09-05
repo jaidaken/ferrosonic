@@ -74,6 +74,40 @@ async fn refresh_random_populates_library() {
 
 #[tokio::test]
 #[serial]
+async fn refresh_random_album_populates_library() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_random_album("alb-1", "Test Album", &["One", "Two"])
+        .await;
+
+    td.core.refresh_random_album().await;
+
+    let s = td.state.read().await;
+    assert_eq!(s.library.random_album_songs.len(), 2);
+    assert_eq!(s.library.random_album_songs[0].title, "One");
+}
+
+#[tokio::test]
+#[serial]
+async fn refresh_random_album_with_no_albums_clears_and_notifies_nothing_bad() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_no_random_album().await;
+    {
+        let mut s = td.state.write().await;
+        s.library.random_album_songs = vec![song("stale", "Stale")];
+    }
+
+    td.core.refresh_random_album().await;
+
+    let s = td.state.read().await;
+    assert!(
+        s.library.random_album_songs.is_empty(),
+        "an empty library must clear any previously cached random album"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn refresh_artists_populates_library() {
     let td = TestDaemon::new().await;
     td.fake_subsonic
@@ -112,12 +146,48 @@ async fn refresh_without_subsonic_client_is_safe() {
 
     td.core.refresh_starred().await;
     td.core.refresh_random().await;
+    td.core.refresh_random_album().await;
     td.core.refresh_artists().await;
     td.core.refresh_playlists().await;
 
     let s = td.state.read().await;
     assert!(s.library.starred_songs.is_empty());
     assert!(s.library.random_songs.is_empty());
+    assert!(s.library.random_album_songs.is_empty());
     assert!(s.library.artists.is_empty());
     assert!(s.library.playlists.is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn stale_empty_random_album_does_not_clear_current_library() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_no_random_album_with_delay(500)
+        .await;
+    td.state.write().await.library.random_album_songs = vec![song("current", "Current")];
+    let core = td.core.clone();
+    let task = tokio::spawn(async move { core.refresh_random_album().await });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if td
+                .fake_subsonic
+                .received_requests()
+                .await
+                .iter()
+                .any(|r| r.url.path() == "/rest/getAlbumList2")
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    td.core.bump_config_gen_for_test();
+    task.await.unwrap();
+    assert_eq!(
+        td.state.read().await.library.random_album_songs[0].id,
+        "current"
+    );
 }

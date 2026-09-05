@@ -1,5 +1,6 @@
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
+use crate::config::keybind::{GlobalAction, KeyChord};
 use crate::error::Error;
 
 use super::{App, AppState, DaemonRequest, Page};
@@ -51,6 +52,25 @@ impl App {
     // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+        // 'p' is a permanent secondary alias for TogglePause, reserved
+        // ahead of the configurable keymap so a `[Keybindings]` override
+        // that remaps some other action onto plain 'p' can never shadow it.
+        // Every other global action is resolved from `self.keymap` (defaults
+        // merged with overrides).
+        let action = if key.code == KeyCode::Char('p') && key.modifiers == KeyModifiers::NONE {
+            Some(GlobalAction::TogglePause)
+        } else if matches!(key.code, KeyCode::Char('1'..='5'))
+            && key.modifiers == KeyModifiers::NONE
+        {
+            // Digit keys 1-5 are reserved for song rating (handled below,
+            // outside the configurable keymap) and must never be shadowed
+            // by a `[Keybindings]` override remapping some other action
+            // onto a digit chord.
+            None
+        } else {
+            self.keymap.get(&KeyChord::from(key)).copied()
+        };
+
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
         let state = AppState {
@@ -93,9 +113,24 @@ impl App {
             return self.handle_playlist_picker_key(key).await;
         }
 
-        // F-keys switch pages while typing; unsaved edits revert.
-        let is_function_key = matches!(key.code, KeyCode::F(_));
-        if is_function_key {
+        // Settings' own h/l/space field-navigation bindings are checked
+        // ahead of everything else below: they must win even when a
+        // `[Keybindings]` override happens to resolve one of these keys to
+        // a page-switch action, or field nav would silently break on
+        // Settings whenever the user remaps e.g. GoToLibrary onto 'h'.
+        if state.client.page == Page::Settings && matches!(key.code, KeyCode::Char('h' | 'l' | ' '))
+        {
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            return self.handle_settings_key(key).await;
+        }
+
+        // Page switches revert unsaved edits first, driven off the
+        // resolved action (not the literal F-key) so remapping a page
+        // switch away from its default key keeps this cleanup working.
+        let is_page_switch = action.is_some_and(GlobalAction::is_page_switch);
+        if is_page_switch {
             if state.client.page == Page::Server {
                 let cfg = state.daemon.config.clone();
                 state.client.server_state.base_url = cfg.base_url;
@@ -135,13 +170,14 @@ impl App {
                     Page::Library => self.handle_library_key(key).await,
                     Page::Queue => self.handle_queue_key(key).await,
                     Page::Playlists => self.handle_playlists_key(key).await,
-                    _ => Ok(()),
+                    Page::Settings => self.handle_settings_key(key).await,
+                    Page::QuickPlay => Ok(()),
                 };
             }
         }
 
-        match (key.code, key.modifiers) {
-            (KeyCode::Char('q'), KeyModifiers::NONE) => {
+        match action {
+            Some(GlobalAction::Quit) => {
                 // Results showing but box not capturing: q backs out to the
                 // tree. An active box routes q to the filter above (types q).
                 if state.client.page == Page::Library && !state.client.artists.filter.is_empty() {
@@ -156,31 +192,31 @@ impl App {
                 }
                 return Ok(());
             }
-            (KeyCode::F(1), _) => {
+            Some(GlobalAction::GoToLibrary) => {
                 state.client.page = Page::Library;
                 return Ok(());
             }
-            (KeyCode::F(2), _) => {
+            Some(GlobalAction::GoToQueue) => {
                 state.client.page = Page::Queue;
                 return Ok(());
             }
-            (KeyCode::F(3), _) => {
+            Some(GlobalAction::GoToQuickPlay) => {
                 state.client.page = Page::QuickPlay;
                 return Ok(());
             }
-            (KeyCode::F(4), _) => {
+            Some(GlobalAction::GoToPlaylists) => {
                 state.client.page = Page::Playlists;
                 return Ok(());
             }
-            (KeyCode::F(5), _) => {
+            Some(GlobalAction::GoToServer) => {
                 state.client.page = Page::Server;
                 return Ok(());
             }
-            (KeyCode::F(6), _) => {
+            Some(GlobalAction::GoToSettings) => {
                 state.client.page = Page::Settings;
                 return Ok(());
             }
-            (KeyCode::Char('p' | ' '), KeyModifiers::NONE) => {
+            Some(GlobalAction::TogglePause) => {
                 let _ = state;
                 drop(cs);
                 drop(ds);
@@ -191,7 +227,7 @@ impl App {
                     .map(|_| ())
                     .map_err(Error::from);
             }
-            (KeyCode::Char('l'), KeyModifiers::NONE) => {
+            Some(GlobalAction::NextTrack) => {
                 let _ = state;
                 drop(cs);
                 drop(ds);
@@ -202,7 +238,7 @@ impl App {
                     .map(|_| ())
                     .map_err(Error::from);
             }
-            (KeyCode::Char('h'), KeyModifiers::NONE) => {
+            Some(GlobalAction::PreviousTrack) => {
                 let _ = state;
                 drop(cs);
                 drop(ds);
@@ -213,7 +249,7 @@ impl App {
                     .map(|_| ())
                     .map_err(Error::from);
             }
-            (KeyCode::Char('n'), KeyModifiers::NONE) => {
+            Some(GlobalAction::StarPlaying) => {
                 let song_id = state.daemon.now_playing.song.as_ref().map(|s| s.id.clone());
                 let _ = state;
                 drop(cs);
@@ -223,7 +259,7 @@ impl App {
                 }
                 return Ok(());
             }
-            (KeyCode::Char('T'), _) => {
+            Some(GlobalAction::ShuffleLibrary) => {
                 state.client.notify("Shuffling library...");
                 let _ = state;
                 drop(cs);
@@ -231,7 +267,7 @@ impl App {
                 let _ = self.client.request(DaemonRequest::ShuffleLibrary).await;
                 return Ok(());
             }
-            (KeyCode::Char('r'), m) if !m.contains(KeyModifiers::CONTROL) => {
+            Some(GlobalAction::CycleRepeat) => {
                 let new_mode = state.client.settings_state.repeat_mode.cycle();
                 state.client.settings_state.repeat_mode = new_mode;
                 state.client.notify(format!("Repeat: {}", new_mode.label()));
@@ -244,7 +280,7 @@ impl App {
                     .await;
                 return Ok(());
             }
-            (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+            Some(GlobalAction::Refresh) => {
                 state.client.notify("Refreshing...");
                 let _ = state;
                 drop(cs);
@@ -259,7 +295,35 @@ impl App {
                 state.client.notify("Data refreshed");
                 return Ok(());
             }
-            _ => {}
+            None => {}
+        }
+
+        // Song rating: five keys feeding one conceptual action doesn't fit
+        // the one-action-one-chord keymap model, so this stays hardcoded
+        // and out of the configurable set (see the `keybind` module docs).
+        if let (KeyCode::Char(c @ '1'..='5'), KeyModifiers::NONE) = (key.code, key.modifiers) {
+            let song = state.daemon.now_playing.song.clone();
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            if let Some(song) = song {
+                // `c` is one ASCII digit '1'-'5' per the match pattern.
+                let pressed = c as u8 - b'0';
+                // Pressing the already-set rating again clears it.
+                let rating = if song.user_rating == Some(pressed) {
+                    0
+                } else {
+                    pressed
+                };
+                let _ = self
+                    .client
+                    .request(DaemonRequest::SetSongRating {
+                        id: song.id,
+                        rating,
+                    })
+                    .await;
+            }
+            return Ok(());
         }
 
         let page = state.client.page;

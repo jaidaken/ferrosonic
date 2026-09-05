@@ -12,14 +12,17 @@ It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termson
 - **Gapless playback** - the next track is pre-buffered into mpv before the current one ends.
 - **Quality readout** - live sample rate, bit depth, codec, and channel layout.
 - **Visualizer** - built-in cava pane with theme-matched gradient colors.
+- **ReplayGain** - track/album/off mode, preamp, and clip prevention, applied via mpv and adjustable live from Settings (`F6`).
 
 ### Library and queue
 
 - **Tree browser** - expandable artist/album view, with a flat album-list toggle (`v`).
 - **Unified search** - `/` runs one server-side `search3` across artists, albums, and songs together.
 - **Multi-library** - on multi-folder servers, `f` scopes the tree, album list, random songs, and search to one music folder; remembered across restarts.
-- **Quick Play** - jump straight into your Starred songs or a fresh Random roll, no browsing.
+- **Quick Play** - jump straight into your Starred songs, a fresh Random roll, or a Random Album, no browsing.
 - **Stars** - favourite tracks with `n` (playing) or `m` (highlighted); shown with a star everywhere.
+- **Ratings** - rate the playing track 1-5 (`1`-`5`; press the current rating again to clear it), synced to the server and exposed via MPRIS.
+- **Playback filters** - exclude songs from the queue by minimum rating, year range, or duration from Settings (`F6`); genre and artist exclude-lists via `config.toml`. Applies wherever songs enter the queue (enqueue, shuffle, auto-continue).
 - **Shuffle and repeat** - shuffle any artist, album, or the whole library; cycle repeat Off/One/All with `r`.
 - **Queue** - add, remove, reorder, shuffle, and clear history; persists across daemon restarts; save as a server playlist with `s`.
 - **Playlists** - browse, play, and fully edit server playlists (rename, delete, add/remove/reorder songs).
@@ -37,7 +40,7 @@ It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termson
 - **13 themes** - Default, Monokai, Dracula, Nord, Gruvbox, Catppuccin, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, One Dark, Ayu Dark; plus custom TOML themes in `~/.config/ferrosonic/themes/`.
 - **Cover art** - kitty / iTerm2 / sixel image protocols, with a chafa-enhanced half-block fallback.
 - **Mouse support** - clickable tabs, buttons, lists, and progress-bar seeking.
-- **Keyboard-driven** - Vim-style `j`/`k` alongside arrow keys.
+- **Keyboard-driven** - Vim-style `j`/`k` alongside arrow keys; the global shortcuts (quit, play/pause, page switches, ...) are remappable via a `[Keybindings]` table in `config.toml`.
 
 ## Screenshots
 
@@ -127,6 +130,9 @@ CoverArt = false
 CoverArtSize = 16
 Scrobble = true
 Notifications = true
+ReplayGainMode = "no"
+ReplayGainPreamp = 0.0
+ReplayGainClip = false
 ```
 
 | Field | Description |
@@ -147,8 +153,42 @@ Notifications = true
 | `CoverArtSize` | Cover art pane width in columns (default 16) |
 | `Scrobble` | Report plays to the server, default `true` (classic `scrobble` + OpenSubsonic `reportPlayback`) |
 | `Notifications` | Desktop track-change notifications with cover art, default `true` |
+| `ReplayGainMode` | ReplayGain adjustment mode: `"no"`, `"track"`, or `"album"`, default `"no"`. Passed to mpv and applied live if a track is playing. |
+| `ReplayGainPreamp` | ReplayGain preamp offset in dB, `-15.0` to `15.0`, default `0.0`. Values must be finite; NaN and infinities are rejected |
+| `ReplayGainClip` | Prevent clipping from ReplayGain amplification, default `false` |
 
 Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/ferrosonic/ferrosonicd.log` (daemon). The queue is persisted to `~/.config/ferrosonic/queue.json` so it survives daemon restarts.
+
+### Playback filters
+
+Exclude songs from ever entering the queue - whether from adding a song/album/playlist, shuffling the library, or auto-continue's random pick - by rating, year, duration, genre, or artist. `MinRating`, the year range, and the duration range have Settings-page rows (`F6`); `ExcludedGenres`/`ExcludedArtists` are `config.toml`-only for now, since there's no in-app list editor yet. Filters are not applied retroactively to an already-persisted queue or when just browsing the library - they only govern what gets added going forward. If a filter excludes everything from a given add, ferrosonic shows a notification instead of silently doing nothing.
+
+```toml
+[PlaybackFilters]
+MinRating = 2                    # exclude songs rated 1 or 2; 0 (default) disables this filter
+YearMin = 1970
+YearMax = 2010
+DurationMinSecs = 60
+DurationMaxSecs = 600
+ExcludedGenres = ["Podcast", "Christmas"]
+ExcludedArtists = ["Some Artist"]
+```
+
+All fields are optional and independently combinable; omit a field (or the whole table) to leave that criterion unrestricted. Genre/artist matching is case-insensitive.
+
+### Custom keybindings
+
+The ~14 global (page-independent) shortcuts - quit, play/pause, next/previous track, star-playing, shuffle-library, cycle-repeat, refresh, and the six `F1`-`F6` page switches - can be remapped in a `[Keybindings]` table, keyed by action name with a key-chord string value (`"q"`, `"F1"`, `"Space"`, `"Ctrl+r"`; a shifted letter can be written as `"T"` or `"Shift+t"`). Per-page bindings and modal overlays (quit-confirm, the add-to-playlist picker, Settings' own `h`/`l`/`Space` field navigation) are not configurable. `p` (secondary pause alias) and the `1`-`5` rating keys are always reserved and can't be remapped or shadowed.
+
+```toml
+[Keybindings]
+Quit = "Ctrl+q"
+NextTrack = "j"
+PreviousTrack = "k"
+ShuffleLibrary = "s"
+```
+
+An override using a reserved key is also logged and reported as unreachable. Any action left out keeps its default binding. Config is read once at startup; picking up an edit needs an app restart. A key chord claimed by two actions is a config error, logged and reported once in the TUI at startup - the action earlier in `[Keybindings]`'s internal default order wins, the later one is unreachable until the collision is fixed.
 
 ### Where your password is stored
 
@@ -184,6 +224,8 @@ It is resolved at startup. Because the background daemon has no terminal, **the 
 
 ### Global
 
+The bindings in this section (except `p`/`Space` for pause and `1`-`5` for rating) are remappable via `[Keybindings]`; see [Custom keybindings](#custom-keybindings). Per-page bindings further down are not.
+
 | Key | Action |
 |---|---|
 | `q` | Quit |
@@ -191,6 +233,7 @@ It is resolved at startup. Because the background daemon has no terminal, **the 
 | `l` | Next track |
 | `h` | Previous track |
 | `n` | Star/unstar currently-playing song |
+| `1`-`5` | Rate the currently-playing song 1-5; press the current rating again to clear it |
 | `r` | Cycle repeat mode (Off → One → All) |
 | `Shift+T` | Shuffle the entire library and play |
 | `Ctrl+R` | Refresh data from server |
@@ -246,7 +289,9 @@ It is resolved at startup. Because the background daemon has no terminal, **the 
 | `Enter` | Play selected song (queues all visible songs and starts from selection) |
 | `m` | Star/unstar highlighted song |
 
-The Quick Play page has two modes selectable from the options pane: **Starred** (shows your starred/favourited songs from the server) and **Random** (a fresh 500-song roll from the library on each visit).
+The Quick Play page has three modes selectable from the options pane: **Starred** (your starred/favourited songs from the server), **Random** (a fresh 500-song roll from the library on each visit), and **Random Album** (a random full album, re-rolled when switching into this option from another option).
+
+Returning to F3 or clicking an already selected Random Album retains that album. Switch to another option and back to fetch a new one.
 
 ### Playlists Page (F4)
 
@@ -288,7 +333,7 @@ F-keys still switch pages from the Server page; any unsaved edits are discarded 
 | `Left` | Previous option |
 | `Right` / `Enter` | Next option |
 
-Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, scrobbling, desktop notifications, and the daemon-mode preference. Changes are saved automatically. The daemon-mode toggle takes effect on the next launch.
+Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, scrobbling, desktop notifications, ReplayGain mode/preamp/clip prevention, playback filters (min rating, year range, duration range), and the daemon-mode preference. Changes are saved automatically and, for ReplayGain, applied live to mpv if a track is playing. The daemon-mode toggle takes effect on the next launch. Note `h`/`l`/`Space` are hardcoded to move between options on this page, not the global previous/pause/next bindings.
 
 ## Mouse Support
 

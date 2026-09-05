@@ -134,6 +134,9 @@ impl Drop for ClientGuard {
 
 /// Heart of the daemon: owns mpv, `PipeWire`, the Subsonic client, and state.
 pub struct DaemonCore {
+    /// Serializes rating RPCs and their optimistic cache transactions.
+    /// Acquired before state/subsonic; never used by playback operations.
+    pub(super) rating_updates: Mutex<()>,
     /// Shared daemon state mirror.
     pub state: SharedDaemonState,
     /// mpv process and IPC controller.
@@ -215,9 +218,17 @@ impl DaemonCore {
     pub fn new_with_mpv_and_pipewire(
         state: SharedDaemonState,
         config: &Config,
-        mpv: MpvController,
+        mut mpv: MpvController,
         pipewire: PipeWireController,
     ) -> Arc<Self> {
+        // Seeds the args `start_mpv()` spawns mpv with; a later live change
+        // goes through `settings_ops::set_replay_gain_*` instead.
+        mpv.set_replaygain_startup(
+            config.replay_gain_mode,
+            config.replay_gain_preamp,
+            config.replay_gain_clip,
+        );
+
         let subsonic = if config.is_configured() {
             match SubsonicClient::new(&config.base_url, &config.username, &config.password) {
                 Ok(mut client) => {
@@ -237,6 +248,7 @@ impl DaemonCore {
         let (queue_save_tx, queue_save_rx) = tokio::sync::mpsc::channel::<()>(1);
 
         let core = Arc::new(Self {
+            rating_updates: Mutex::new(()),
             state,
             mpv: Mutex::new(mpv),
             pipewire: Mutex::new(pipewire),
@@ -411,7 +423,7 @@ impl DaemonCore {
         // Mask the wire path explicitly. Secret::Serialize would emit "***" but we want "" so the client treats it as empty.
         cfg.password.clear();
         cfg.password_file = None;
-        self.emit(DaemonEvent::ConfigChanged(cfg));
+        self.emit(DaemonEvent::ConfigChanged(Box::new(cfg)));
     }
 }
 
@@ -444,24 +456,27 @@ impl DaemonCore {
 
 impl DaemonCore {
     /// Fetch random songs, extend queue and play first new track under one write lock so another client cannot mutate the queue between extend and `play_from` index.
-    /// Up to `LOOKAHEAD` random songs whose ids are not already in the queue,
-    /// so auto-continue never replays a track until the library is exhausted.
-    /// When every candidate is already queued the bag is spent, and the raw
-    /// batch is returned so playback can continue with repeats.
+    /// Up to `LOOKAHEAD` random songs whose ids are not already in the queue
+    /// and pass the configured `PlaybackFilters`, so auto-continue never
+    /// replays a track until the library is exhausted and never has a full
+    /// batch shrunk by filtering after the fact (filtering happens as
+    /// candidates accumulate, not on the finished batch). When every
+    /// candidate is already queued the bag is spent, and the raw
+    /// (unfiltered) batch is returned so the caller's own filter pass can
+    /// either use it for repeats or surface the "excluded by filters"
+    /// notification if the library truly has nothing left to offer.
     async fn pick_unplayed_random(
         self: &Arc<Self>,
         client: &SubsonicClient,
     ) -> Result<Vec<crate::subsonic::models::Child>, crate::error::SubsonicError> {
         const ATTEMPTS: u32 = 3;
         const LOOKAHEAD: usize = 20;
-        let mut seen: std::collections::HashSet<String> = self
-            .state
-            .read()
-            .await
-            .queue
-            .iter()
-            .map(|s| s.id.clone())
-            .collect();
+        let (mut seen, filters) = {
+            let state = self.state.read().await;
+            let seen: std::collections::HashSet<String> =
+                state.queue.iter().map(|s| s.id.clone()).collect();
+            (seen, state.config.playback_filters.clone())
+        };
         let mut fresh = Vec::new();
         let mut fallback = Vec::new();
         for _ in 0..ATTEMPTS {
@@ -476,7 +491,10 @@ impl DaemonCore {
                 if fresh.len() >= LOOKAHEAD {
                     break;
                 }
-                if seen.insert(song.id.clone()) {
+                if !seen.insert(song.id.clone()) {
+                    continue;
+                }
+                if crate::daemon::playback_filters::passes_filters(&song, &filters) {
                     fresh.push(song);
                 }
             }
@@ -517,6 +535,10 @@ impl DaemonCore {
                 return Ok(false);
             }
         };
+        let songs = self.filter_for_playback(songs).await;
+        if songs.is_empty() {
+            return Ok(false);
+        }
         let prepared = {
             let mut state = self.state.write().await;
             let start_pos = state.queue.len();

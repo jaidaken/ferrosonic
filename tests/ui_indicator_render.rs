@@ -81,6 +81,61 @@ fn library_song_pane_stars_the_starred_song_only() {
 }
 
 #[test]
+fn queue_shows_the_rating_suffix_on_the_rated_song_only() {
+    let (mut daemon, mut client) = base();
+    client.page = Page::Queue;
+    let mut rated = song("q0", "Rated Track");
+    rated.user_rating = Some(4);
+    daemon.queue = vec![rated, song("q1", "Unrated Track")];
+
+    let screen = render_styled(100, 24, &daemon, &mut client);
+    let marked = screen.rows_with("4★");
+
+    assert!(
+        marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Rated Track")),
+        "the rated song must show its rating suffix;\n{}",
+        screen.text()
+    );
+    assert!(
+        !marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Unrated Track")),
+        "an unrated song must not show a rating suffix;\n{}",
+        screen.text()
+    );
+}
+
+#[test]
+fn library_song_pane_shows_the_rating_suffix_on_the_rated_song_only() {
+    let (daemon, mut client) = base();
+    client.page = Page::Library;
+    let mut rated = song("s0", "Rated Song");
+    rated.user_rating = Some(2);
+    client.artists.songs = vec![rated, song("s1", "Unrated Song")];
+    client.artists.focus = 1;
+
+    let screen = render_styled(100, 24, &daemon, &mut client);
+    let marked = screen.rows_with("2★");
+
+    assert!(
+        marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Rated Song")),
+        "the rated song must show its rating suffix;\n{}",
+        screen.text()
+    );
+    assert!(
+        !marked
+            .iter()
+            .any(|&y| screen.row_text(y).contains("Unrated Song")),
+        "an unrated song must not show a rating suffix;\n{}",
+        screen.text()
+    );
+}
+
+#[test]
 fn library_song_pane_marks_the_playing_song_only() {
     let (mut daemon, mut client) = base();
     client.page = Page::Library;
@@ -107,4 +162,31 @@ fn library_song_pane_marks_the_playing_song_only() {
         "a non-playing song must not show ▶;\n{}",
         screen.text()
     );
+}
+
+#[test]
+fn new_settings_rows_scroll_into_view_in_small_terminal() {
+    let (daemon, mut client) = base();
+    client.page = Page::Settings;
+    for (field, label) in [
+        (10, "Mode"),
+        (11, "Preamp"),
+        (12, "Prevent Clipping"),
+        (13, "Min Rating"),
+        (14, "Year Min"),
+        (15, "Year Max"),
+        (16, "Duration Min"),
+        (17, "Duration Max"),
+    ] {
+        client.settings_state.selected_field = field;
+        let screen = render_styled(60, 12, &daemon, &mut client);
+        assert!(
+            screen.text().contains(label),
+            "field {field}: {}",
+            screen.text()
+        );
+    }
+    for (width, height) in [(1, 1), (10, 5), (30, 8)] {
+        let _ = render_styled(width, height, &daemon, &mut client);
+    }
 }

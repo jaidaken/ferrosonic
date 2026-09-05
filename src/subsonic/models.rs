@@ -318,6 +318,9 @@ pub struct Child {
     /// Star timestamp; present only when the song is starred.
     #[serde(default)]
     pub starred: Option<String>,
+    /// User star rating, 1-5; absent/`None` when unrated.
+    #[serde(default, rename = "userRating")]
+    pub user_rating: Option<u8>,
 }
 
 impl Child {

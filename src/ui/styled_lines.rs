@@ -20,6 +20,7 @@ pub fn get_song_with_artist_line<'a>(
 
     let star_indicator = if is_starred { "★ " } else { "  " };
     let indicator = if is_playing { "▶ " } else { "  " };
+    let rating_suffix = rating_suffix(song.user_rating);
 
     let (title_color, artist_color, duration_color) = get_colors(is_selected, is_playing, colors);
     let artist = song.artist.as_deref().unwrap_or("n/a");
@@ -36,6 +37,7 @@ pub fn get_song_with_artist_line<'a>(
             format!(" [{}]", song.format_duration()),
             Style::default().fg(duration_color),
         ),
+        Span::styled(rating_suffix, Style::default().fg(colors.accent)),
     ]);
 
     line
@@ -54,6 +56,7 @@ pub fn get_song_without_artist_line<'a>(
 
     let star_indicator = if is_starred { "★ " } else { "  " };
     let indicator = if is_playing { "▶ " } else { "  " };
+    let rating_suffix = rating_suffix(song.user_rating);
 
     let (title_color, track_color, duration_color) = get_colors(is_selected, is_playing, colors);
 
@@ -82,8 +85,16 @@ pub fn get_song_without_artist_line<'a>(
             format!(" [{duration}]"),
             Style::default().fg(duration_color),
         ),
+        Span::styled(rating_suffix, Style::default().fg(colors.accent)),
     ]);
     line
+}
+
+/// Compact rating suffix, e.g. `" 3★"`; empty when unrated. `pub(crate)`
+/// since the Queue page (`ui/pages/queue.rs`) has its own bespoke row
+/// rendering rather than going through the shared line builders above.
+pub(crate) fn rating_suffix(rating: Option<u8>) -> String {
+    rating.map_or_else(String::new, |r| format!(" {r}★"))
 }
 
 const fn get_colors(

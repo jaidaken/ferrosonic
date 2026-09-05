@@ -126,6 +126,43 @@ async fn metadata_includes_length_in_microseconds() {
 
 #[tokio::test]
 #[serial]
+async fn metadata_includes_user_rating_scaled_to_0_1() {
+    let ds = new_shared_daemon_state(Config::new());
+    {
+        let mut s = ds.write().await;
+        let mut sng = song("a", "Track");
+        sng.user_rating = Some(4);
+        s.queue.push(sng.clone());
+        s.queue_position = Some(0);
+        s.now_playing.song = Some(sng);
+    }
+    let snap = build_property_snapshot(&ds).await;
+    let md = snap.metadata.unwrap();
+    assert_eq!(
+        md.user_rating(),
+        Some(0.8),
+        "4/5 stars is 0.8 on MPRIS's 0.0-1.0 scale"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn metadata_omits_user_rating_when_unrated() {
+    let ds = new_shared_daemon_state(Config::new());
+    {
+        let mut s = ds.write().await;
+        let sng = song("a", "Track");
+        s.queue.push(sng.clone());
+        s.queue_position = Some(0);
+        s.now_playing.song = Some(sng);
+    }
+    let snap = build_property_snapshot(&ds).await;
+    let md = snap.metadata.unwrap();
+    assert_eq!(md.user_rating(), None);
+}
+
+#[tokio::test]
+#[serial]
 async fn metadata_includes_art_url_when_cover_art_present() {
     let mut cfg = Config::new();
     cfg.base_url = "https://example.com".into();

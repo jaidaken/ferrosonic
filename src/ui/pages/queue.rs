@@ -102,6 +102,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
                     Span::styled(format!(" - {artist}"), artist_style)
                 },
                 Span::styled(format!(" [{duration}]"), Style::default().fg(colors.muted)),
+                Span::styled(
+                    crate::ui::styled_lines::rating_suffix(song.user_rating),
+                    Style::default().fg(colors.accent),
+                ),
             ]);
 
             ListItem::new(line)

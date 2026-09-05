@@ -109,3 +109,64 @@ async fn multiple_concurrent_requests_resolve_independently() {
     }
     server.abort();
 }
+
+#[tokio::test]
+#[serial]
+async fn custom_features_round_trip_over_socket_and_reconnect() {
+    use ferrosonic::config::{PlaybackFilters, ReplayGainMode};
+    use ferrosonic::ipc::{DaemonResponse, EnqueueMode};
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_set_rating().await;
+    td.fake_subsonic
+        .expect_random_album("album", "Album", &["Track"])
+        .await;
+    let socket = td.config_dir.path().join("features.sock");
+    let core = td.core.clone();
+    let socket_path = socket.clone();
+    let server = tokio::spawn(async move { serve(core, &socket_path).await });
+    assert!(wait_for_socket(&socket, 1500).await);
+    let client = SocketClient::connect(&socket).await.unwrap();
+    for request in [
+        DaemonRequest::SetPlaybackFilters(PlaybackFilters {
+            min_rating: 2,
+            ..Default::default()
+        }),
+        DaemonRequest::SetReplayGainMode(ReplayGainMode::Album),
+        DaemonRequest::SetReplayGainPreamp(1.5),
+        DaemonRequest::SetReplayGainClip(true),
+        DaemonRequest::RefreshRandomAlbum,
+        DaemonRequest::SetSongRating {
+            id: "song-0".into(),
+            rating: 4,
+        },
+    ] {
+        assert!(matches!(
+            client.request(request).await.unwrap(),
+            DaemonResponse::Ok
+        ));
+    }
+    let mut excluded = common::song("excluded", "Excluded");
+    excluded.user_rating = Some(1);
+    let included = td.state.read().await.library.random_album_songs[0].clone();
+    client
+        .request(DaemonRequest::EnqueueSongs {
+            songs: vec![excluded, included],
+            mode: EnqueueMode::Replace { play_from: None },
+        })
+        .await
+        .unwrap();
+    drop(client);
+    let client = SocketClient::connect(&socket).await.unwrap();
+    let snapshot = client.request(DaemonRequest::Snapshot).await.unwrap();
+    let DaemonResponse::Snapshot(state) = snapshot else {
+        panic!("expected state");
+    };
+    assert_eq!(state.queue.len(), 1);
+    assert_eq!(state.queue[0].user_rating, Some(4));
+    assert_eq!(state.library.random_album_songs.len(), 1);
+    assert_eq!(state.config.playback_filters.min_rating, 2);
+    assert_eq!(state.config.replay_gain_mode, ReplayGainMode::Album);
+    assert_eq!(state.config.replay_gain_preamp, 1.5);
+    assert!(state.config.replay_gain_clip);
+    server.abort();
+}

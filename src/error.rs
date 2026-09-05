@@ -55,6 +55,15 @@ pub enum ConfigError {
         field: String,
     },
 
+    /// A configuration value violates a field's numeric or semantic constraints.
+    #[error("Invalid value for {field}: {reason}")]
+    InvalidValue {
+        /// Name of the invalid field.
+        field: &'static str,
+        /// Constraint the value must satisfy.
+        reason: &'static str,
+    },
+
     /// A config field holds a malformed URL.
     #[error("Invalid URL: {url}")]
     InvalidUrl {

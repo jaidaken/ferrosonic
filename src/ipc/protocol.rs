@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, RepeatMode};
+use crate::config::{Config, RepeatMode, ReplayGainMode};
 use crate::daemon::state::{DaemonState, NowPlaying};
 use crate::secret::{deserialize_secret, serialize_revealed, Secret};
 use crate::subsonic::models::{Album, Artist, Child, MusicFolder, Playlist, SearchResult3};
@@ -60,6 +60,8 @@ pub enum DaemonRequest {
     RefreshStarred,
     /// Re-fetch the random-songs list from the server.
     RefreshRandom,
+    /// Fetch a fresh random album's songs from the server.
+    RefreshRandomAlbum,
     /// Re-fetch the artist index from the server.
     RefreshArtists,
     /// Re-fetch the playlist list from the server.
@@ -106,6 +108,13 @@ pub enum DaemonRequest {
     },
     /// Star or unstar the song with this ID.
     ToggleStarSong(String),
+    /// Set (or clear, with `rating: 0`) the star rating of the song with this ID.
+    SetSongRating {
+        /// ID of the song to rate.
+        id: String,
+        /// Rating 1-5; `0` clears the rating.
+        rating: u8,
+    },
     /// Fetch the albums of the artist with this ID.
     LoadArtist(String),
     /// Fetch the entire album library for the flat album-list view.
@@ -174,6 +183,14 @@ pub enum DaemonRequest {
     SetCoverArtEnabled(bool),
     /// Set the cover art pane width in columns.
     SetCoverArtSize(u8),
+    /// Set the `ReplayGain` mode and push it live to mpv.
+    SetReplayGainMode(ReplayGainMode),
+    /// Set the `ReplayGain` preamp in dB (-15.0..=15.0) and push it live to mpv.
+    SetReplayGainPreamp(f64),
+    /// Enable or disable `ReplayGain` clip prevention and push it live to mpv.
+    SetReplayGainClip(bool),
+    /// Replace the playback-filter exclusion rules wholesale.
+    SetPlaybackFilters(crate::config::PlaybackFilters),
     /// Fetch cover art bytes for an item, scaled to `size` pixels.
     FetchCoverArt {
         /// Cover art ID from the owning item.
@@ -281,8 +298,17 @@ pub enum DaemonEvent {
         /// New star state.
         starred: bool,
     },
+    /// Rating of one song changed.
+    SongRatingChanged {
+        /// ID of the affected song.
+        id: String,
+        /// New rating (1-5), or `None` when cleared.
+        rating: Option<u8>,
+    },
     /// New random-songs list.
     RandomChanged(Vec<Child>),
+    /// Songs of a newly fetched random album (empty if the library has none).
+    RandomAlbumChanged(Vec<Child>),
     /// New artist index.
     ArtistsChanged(Vec<Artist>),
     /// Album list of one artist changed.
@@ -320,7 +346,7 @@ pub enum DaemonEvent {
     /// Repeat mode changed.
     RepeatModeChanged(RepeatMode),
     /// Persisted configuration changed.
-    ConfigChanged(Config),
+    ConfigChanged(Box<Config>),
     /// Daemon is shutting down; subscribers should disconnect.
     Shutdown,
     /// Opt-in pull-style alternative to the bulk `ArtistsChanged` etc events.

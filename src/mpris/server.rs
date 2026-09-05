@@ -298,41 +298,8 @@ impl PlayerInterface for MprisPlayer {
     async fn metadata(&self) -> fdo::Result<Metadata> {
         let (_now_playing, current_song, config) = self.get_state().await;
 
-        let mut metadata = Metadata::new();
-
-        if let Some(song) = current_song {
-            metadata.set_trackid(
-                Some(TrackId::try_from(format!("/org/mpris/MediaPlayer2/Track/{}", song.id)).ok())
-                    .flatten(),
-            );
-            metadata.set_title(Some(song.title));
-            metadata.set_artist(song.artist.map(|a| vec![a]));
-            metadata.set_album(song.album);
-
-            if let Some(duration) = song.duration {
-                metadata.set_length(Some(Time::from_micros(i64::from(duration) * 1_000_000)));
-            }
-
-            if let Some(track) = song.track {
-                metadata.set_track_number(Some(track));
-            }
-
-            if let Some(disc) = song.disc_number {
-                metadata.set_disc_number(Some(disc));
-            }
-
-            // Remote (authenticated) URL only. The local file:// swap happens in
-            // `update_mpris_properties`, which runs on the tokio runtime; doing
-            // the fetch here would run on zbus's executor where daemon I/O has
-            // no reactor (the same reason `fire` exists).
-            if let Some(ref cover_art_id) = song.cover_art {
-                if let Some(cover_url) = build_cover_art_url(&config, cover_art_id) {
-                    metadata.set_art_url(Some(cover_url));
-                }
-            }
-        }
-
-        Ok(metadata)
+        // Share metadata fields; cover downloads stay on the tokio runtime.
+        Ok(current_song.map_or_else(Metadata::new, |song| build_metadata_for(&song, &config)))
     }
 
     async fn volume(&self) -> fdo::Result<Volume> {
@@ -489,6 +456,14 @@ fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
         }
     }
 
+    metadata.set_track_number(song.track);
+    metadata.set_disc_number(song.disc_number);
+
+    if let Some(rating) = song.user_rating {
+        // MPRIS's xesam:userRating is 0.0-1.0; Subsonic's is an integer 1-5.
+        metadata.set_user_rating(Some(f64::from(rating) / 5.0));
+    }
+
     metadata
 }
 
@@ -512,17 +487,88 @@ pub async fn update_mpris_properties(
         ])
         .await?;
 
-    if let Some(mut metadata) = snap.metadata {
-        // Swap the remote art URL for a local file:// the widget can load.
-        if let Some(cid) = &snap.cover_id {
-            if let Some(file_url) = server.imp().cover_file_uri(cid).await {
-                metadata.set_art_url(Some(file_url));
-            }
-        }
-        server
-            .properties_changed([Property::Metadata(metadata)])
-            .await?;
+    if let Some(metadata) = snap.metadata {
+        push_metadata(server, metadata, snap.cover_id.as_deref()).await?;
     }
 
     Ok(())
+}
+
+/// Push a rating event directly, even if the TUI event pump has not yet applied
+/// it to the local state mirror. Rating changes must reach paused-track widgets.
+pub(crate) async fn update_mpris_rating(
+    server: &Server<MprisPlayer>,
+    daemon_state: &SharedDaemonState,
+    id: &str,
+    rating: Option<u8>,
+) -> Result<()> {
+    if let Some((metadata, cover_id)) = build_rating_metadata(daemon_state, id, rating).await {
+        push_metadata(server, metadata, cover_id.as_deref()).await?;
+    }
+    Ok(())
+}
+
+async fn build_rating_metadata(
+    daemon_state: &SharedDaemonState,
+    id: &str,
+    rating: Option<u8>,
+) -> Option<(Metadata, Option<String>)> {
+    let state = daemon_state.read().await;
+    let mut song = state.current_song()?.clone();
+    if song.id != id {
+        return None;
+    }
+    song.user_rating = rating;
+    Some((build_metadata_for(&song, &state.config), song.cover_id()))
+}
+
+async fn push_metadata(
+    server: &Server<MprisPlayer>,
+    mut metadata: Metadata,
+    cover_id: Option<&str>,
+) -> Result<()> {
+    if let Some(cid) = cover_id {
+        if let Some(file_url) = server.imp().cover_file_uri(cid).await {
+            metadata.set_art_url(Some(file_url));
+        }
+    }
+    server
+        .properties_changed([Property::Metadata(metadata)])
+        .await
+}
+
+#[cfg(test)]
+mod rating_event_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rating_event_metadata_does_not_depend_on_tui_pump_order() {
+        let state = crate::app::state::new_shared_daemon_state(Config::new());
+        {
+            let mut state = state.write().await;
+            let song = Child {
+                id: "rated".into(),
+                user_rating: Some(1),
+                ..Default::default()
+            };
+            state.queue = vec![song.clone()];
+            state.queue_position = Some(0);
+            state.now_playing.song = Some(song);
+            state.now_playing.state = PlaybackState::Paused;
+        }
+        for rating in [Some(5), None] {
+            let (metadata, _) = build_rating_metadata(&state, "rated", rating)
+                .await
+                .unwrap();
+            assert_eq!(metadata.user_rating(), rating.map(|r| f64::from(r) / 5.0));
+        }
+        assert!(build_rating_metadata(&state, "other", Some(3))
+            .await
+            .is_none());
+        assert_eq!(
+            state.read().await.queue[0].user_rating,
+            Some(1),
+            "MPRIS must not race the TUI by mutating its state mirror"
+        );
+    }
 }

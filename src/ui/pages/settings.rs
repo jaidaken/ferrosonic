@@ -70,6 +70,32 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let scrobble_val = if settings.scrobble { "On" } else { "Off" }.to_string();
     let daemon_val = if settings.daemon_enabled { "On" } else { "Off" }.to_string();
     let notifications_val = if settings.notifications { "On" } else { "Off" }.to_string();
+    let rg_mode_val = settings.replay_gain_mode.label().to_string();
+    let rg_preamp_val = format_preamp_db(settings.replay_gain_preamp);
+    let rg_clip_val = if settings.replay_gain_clip {
+        "On"
+    } else {
+        "Off"
+    }
+    .to_string();
+    let filters = &settings.playback_filters;
+    let min_rating_val = if filters.min_rating == 0 {
+        "Off".to_string()
+    } else {
+        format!("{}★ and below", filters.min_rating)
+    };
+    let year_min_val = filters
+        .year_min
+        .map_or_else(|| "Off".to_string(), |y| y.to_string());
+    let year_max_val = filters
+        .year_max
+        .map_or_else(|| "Off".to_string(), |y| y.to_string());
+    let duration_min_val = filters
+        .duration_min_secs
+        .map_or_else(|| "Off".to_string(), |s| format!("{s}s"));
+    let duration_max_val = filters
+        .duration_max_secs
+        .map_or_else(|| "Off".to_string(), |s| format!("{s}s"));
 
     let x = inner.x;
     let w = inner.width;
@@ -134,6 +160,50 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
             value: notifications_val,
             idx: 9,
         },
+        Item::Gap,
+        Item::Heading("ReplayGain"),
+        Item::Row {
+            label: "Mode",
+            value: rg_mode_val,
+            idx: 10,
+        },
+        Item::Row {
+            label: "Preamp",
+            value: rg_preamp_val,
+            idx: 11,
+        },
+        Item::Row {
+            label: "Prevent Clipping",
+            value: rg_clip_val,
+            idx: 12,
+        },
+        Item::Gap,
+        Item::Heading("Playback Filters"),
+        Item::Row {
+            label: "Min Rating",
+            value: min_rating_val,
+            idx: 13,
+        },
+        Item::Row {
+            label: "Year Min",
+            value: year_min_val,
+            idx: 14,
+        },
+        Item::Row {
+            label: "Year Max",
+            value: year_max_val,
+            idx: 15,
+        },
+        Item::Row {
+            label: "Duration Min",
+            value: duration_min_val,
+            idx: 16,
+        },
+        Item::Row {
+            label: "Duration Max",
+            value: duration_max_val,
+            idx: 17,
+        },
     ];
 
     {
@@ -177,7 +247,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
 }
 
 /// Help-line text for the selected settings field. Indices MUST track the
-/// `Item::Row { idx }` order in `render`: 7 Scrobble, 8 Daemon, 9 Notifications.
+/// `Item::Row { idx }` order in `render`: 7 Scrobble, 8 Daemon, 9
+/// Notifications, 10 `ReplayGain` Mode, 11 `ReplayGain` Preamp, 12 `ReplayGain`
+/// Prevent Clipping, 13 Min Rating, 14 Year Min, 15 Year Max, 16 Duration Min,
+/// 17 Duration Max.
 // Each setting's cava-ok/not-installed cases kept adjacent; merging would split setting 2.
 #[allow(clippy::match_same_arms)]
 const fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
@@ -194,7 +267,26 @@ const fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
         7 => "← → or Enter to toggle scrobbling (report plays to the server)",
         8 => "← → or Enter to toggle background daemon (takes effect on next launch)",
         9 => "← → or Enter to toggle desktop notifications on track change",
+        10 => "← → or Enter to cycle ReplayGain mode (off / track / album); applies live",
+        11 => "← → to adjust ReplayGain preamp (-15.0 to 15.0 dB, step 0.5); applies live",
+        12 => "← → or Enter to toggle clip prevention; applies live",
+        13 => "← → to exclude songs rated at or below this (0 = off, step 1)",
+        14 => "← → to exclude songs released before this year (off = no lower bound)",
+        15 => "← → to exclude songs released after this year (off = no upper bound)",
+        16 => "← → to exclude songs shorter than this (off = no lower bound, step 15s)",
+        17 => "← → to exclude songs longer than this (off = no upper bound, step 15s)",
         _ => "",
+    }
+}
+
+/// Format a `ReplayGain` preamp value for display, e.g. `+1.5 dB`, `-2.0 dB`, `0.0 dB`.
+/// Shared with `app::input_settings`'s change-notification toast so the row
+/// value and the toast text can never drift apart.
+pub(crate) fn format_preamp_db(db: f64) -> String {
+    if db > 0.0 {
+        format!("+{db:.1} dB")
+    } else {
+        format!("{db:.1} dB")
     }
 }
 
@@ -254,7 +346,7 @@ fn setting_row(
 
 #[cfg(test)]
 mod tests {
-    use super::settings_help_text;
+    use super::{format_preamp_db, settings_help_text};
 
     #[test]
     fn help_text_tracks_each_field_index() {
@@ -274,10 +366,42 @@ mod tests {
             settings_help_text(9, true).contains("notifications"),
             "idx 9 is Desktop Notifications"
         );
+        assert!(
+            settings_help_text(10, true).contains("ReplayGain mode"),
+            "idx 10 is ReplayGain Mode"
+        );
+        assert!(
+            settings_help_text(11, true).contains("preamp"),
+            "idx 11 is ReplayGain Preamp"
+        );
+        assert!(
+            settings_help_text(12, true).contains("clip prevention"),
+            "idx 12 is ReplayGain Prevent Clipping"
+        );
+        assert!(
+            settings_help_text(13, true).contains("rated at or below"),
+            "idx 13 is Min Rating"
+        );
+        assert!(
+            settings_help_text(14, true).contains("before this year"),
+            "idx 14 is Year Min"
+        );
+        assert!(
+            settings_help_text(15, true).contains("after this year"),
+            "idx 15 is Year Max"
+        );
+        assert!(
+            settings_help_text(16, true).contains("shorter than"),
+            "idx 16 is Duration Min"
+        );
+        assert!(
+            settings_help_text(17, true).contains("longer than"),
+            "idx 17 is Duration Max"
+        );
         assert_eq!(
-            settings_help_text(10, true),
+            settings_help_text(18, true),
             "",
-            "no field beyond Notifications"
+            "no field beyond Duration Max"
         );
     }
 
@@ -286,5 +410,12 @@ mod tests {
         assert!(settings_help_text(1, true).contains("cava visualizer"));
         assert!(settings_help_text(1, false).contains("not installed"));
         assert!(settings_help_text(2, false).contains("not installed"));
+    }
+
+    #[test]
+    fn preamp_formatting_signs_correctly() {
+        assert_eq!(format_preamp_db(1.5), "+1.5 dB");
+        assert_eq!(format_preamp_db(-2.0), "-2.0 dB");
+        assert_eq!(format_preamp_db(0.0), "0.0 dB");
     }
 }

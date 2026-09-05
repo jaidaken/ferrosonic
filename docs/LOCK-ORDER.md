@@ -11,6 +11,7 @@ call site.
 
 | # | Lock | Type | Field |
 |---|------|------|-------|
+| 0 | `rating_updates` | `Mutex<()>` | serializes rating RPC/cache transactions; playback never acquires it |
 | 1 | `state` | `RwLock<DaemonState>` | shared state machine, queue, library, now-playing |
 | 2 | `subsonic` | `RwLock<Option<SubsonicClient>>` | active Subsonic client (replaced on `update_server_config`) |
 | 3 | `mpv` | `Mutex<MpvController>` | mpv IPC controller |
@@ -22,6 +23,11 @@ call site.
 | 9 | `last_preload_attempt` | `std::sync::Mutex<Option<Instant>>` | retry-throttle for failed gapless preloads |
 | 10 | `cover_art_cache` | `RwLock<LruCache<Vec<u8>>>` | bounded LRU of cover-art bytes |
 | 11 | `scrobble_state` | `Mutex<ScrobbleState>` | per-play scrobble tracking; never held with any other lock |
+
+Rating changes hold lock 0 across their RPC to preserve server write and event
+order, but release state/subsonic before network I/O. Capturing and committing a
+rating takes locks 1 then 2 under lock 0 to keep the client generation consistent.
+No caller may acquire lock 0 while holding any other listed lock.
 
 ## Standard idioms
 

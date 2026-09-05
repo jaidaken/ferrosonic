@@ -31,6 +31,7 @@ fn song(id: &str, title: &str) -> Child {
         path: None,
         disc_number: None,
         starred: None,
+        user_rating: None,
     }
 }
 

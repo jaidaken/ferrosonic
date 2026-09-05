@@ -6,6 +6,7 @@ pub mod library_ops;
 pub mod loaders;
 pub mod notify;
 pub mod persistence;
+pub mod playback_filters;
 pub mod playback_ops;
 pub mod playback_tick;
 pub mod polling;

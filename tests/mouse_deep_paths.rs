@@ -33,6 +33,7 @@ fn song(id: &str) -> Child {
         path: None,
         disc_number: None,
         starred: None,
+        user_rating: None,
     }
 }
 
@@ -91,6 +92,18 @@ async fn quickplay_click_on_random_option_selects_random() {
     fx.app.handle_mouse(click(10, 3)).await.unwrap();
     let cs = fx.app.client_state.read().await;
     assert!(matches!(cs.songs.selected_option, Some(SongOption::Random)));
+}
+
+#[tokio::test]
+#[serial]
+async fn quickplay_click_on_random_album_option_selects_random_album() {
+    let mut fx = build_app(Page::QuickPlay).await;
+    fx.app.handle_mouse(click(10, 4)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert!(matches!(
+        cs.songs.selected_option,
+        Some(SongOption::RandomAlbum)
+    ));
 }
 
 #[tokio::test]

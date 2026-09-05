@@ -90,6 +90,7 @@ async fn n_with_current_song_stars_it() {
             path: None,
             disc_number: None,
             starred: None,
+            user_rating: None,
         });
     }
     app.handle_key(key(KeyCode::Char('n'))).await.unwrap();
@@ -99,7 +100,12 @@ async fn n_with_current_song_stars_it() {
 #[serial]
 async fn capital_t_triggers_shuffle_library_request() {
     let mut app = build_app().await;
-    app.handle_key(key(KeyCode::Char('T'))).await.unwrap();
+    // A real Shift+T keypress carries the SHIFT modifier (crossterm infers
+    // it from the uppercase char); `key()` alone doesn't match any real
+    // keypress for an uppercase char.
+    app.handle_key(key_with_mod(KeyCode::Char('T'), KeyModifiers::SHIFT))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

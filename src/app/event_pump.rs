@@ -41,6 +41,10 @@ pub(crate) async fn run_event_pump(
 /// Lock order: daemon, then client. Same everywhere - avoids deadlock.
 // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
 #[allow(clippy::significant_drop_tightening)]
+// Flat one-arm-per-DaemonEvent dispatcher; splitting would fragment one logical unit
+// (matches the too_many_lines exception already used for other flat routers, see
+// docs/KNOWN-ISSUES.md build-hygiene section).
+#[allow(clippy::too_many_lines)]
 pub async fn apply_event(
     daemon_state: &SharedDaemonState,
     client_state: &SharedClientState,
@@ -69,9 +73,16 @@ pub async fn apply_event(
         DaemonEvent::SongStarChanged { id, starred } => {
             apply_song_star_changed(daemon_state, client_state, id, starred).await;
         }
+        DaemonEvent::SongRatingChanged { id, rating } => {
+            apply_song_rating_changed(daemon_state, client_state, id, rating).await;
+        }
         DaemonEvent::RandomChanged(songs) => {
             let mut ds = daemon_state.write().await;
             ds.library.random_songs = songs;
+        }
+        DaemonEvent::RandomAlbumChanged(songs) => {
+            let mut ds = daemon_state.write().await;
+            ds.library.random_album_songs = songs;
         }
         DaemonEvent::ArtistsChanged(artists) => {
             let mut ds = daemon_state.write().await;
@@ -127,7 +138,7 @@ pub async fn apply_event(
             }
         }
         DaemonEvent::ConfigChanged(cfg) => {
-            apply_config_changed(daemon_state, client_state, client, cover_art, cfg).await;
+            apply_config_changed(daemon_state, client_state, client, cover_art, *cfg).await;
         }
         DaemonEvent::RepeatModeChanged(mode) => {
             {
@@ -226,6 +237,10 @@ async fn apply_config_changed(
     let auto_continue = cfg.auto_continue;
     let scrobble = cfg.scrobble;
     let notifications = cfg.notifications;
+    let replay_gain_mode = cfg.replay_gain_mode;
+    let replay_gain_preamp = cfg.replay_gain_preamp;
+    let replay_gain_clip = cfg.replay_gain_clip;
+    let playback_filters = cfg.playback_filters.clone();
     {
         let mut ds = daemon_state.write().await;
         ds.config = cfg;
@@ -238,6 +253,10 @@ async fn apply_config_changed(
         cs.settings_state.auto_continue = auto_continue;
         cs.settings_state.scrobble = scrobble;
         cs.settings_state.notifications = notifications;
+        cs.settings_state.replay_gain_mode = replay_gain_mode;
+        cs.settings_state.replay_gain_preamp = replay_gain_preamp;
+        cs.settings_state.replay_gain_clip = replay_gain_clip;
+        cs.settings_state.playback_filters = playback_filters;
     }
 
     if cover_art_enabled {
@@ -308,6 +327,9 @@ async fn apply_song_star_changed(
         for song in &mut ds.library.random_songs {
             update(song);
         }
+        for song in &mut ds.library.random_album_songs {
+            update(song);
+        }
         for list in ds.library.album_songs_cache.values_mut() {
             for song in list.iter_mut() {
                 update(song);
@@ -327,6 +349,62 @@ async fn apply_song_star_changed(
             ds.library.starred_ids.insert(id.clone());
         } else {
             ds.library.starred_ids.remove(&id);
+        }
+    }
+    {
+        let mut cs = client_state.write().await;
+        for song in &mut cs.artists.songs {
+            update(song);
+        }
+        for song in &mut cs.playlists.songs {
+            update(song);
+        }
+    }
+}
+
+/// Apply `SongRatingChanged`: set the rating across every cached copy of the
+/// song in daemon + client state. Unlike stars, there's no dedicated
+/// server-refreshable list to fall back on, so `starred_songs` is updated
+/// directly here too (stars rely on a separate `StarredChanged` bulk event).
+async fn apply_song_rating_changed(
+    daemon_state: &SharedDaemonState,
+    client_state: &SharedClientState,
+    id: String,
+    rating: Option<u8>,
+) {
+    let update = |song: &mut crate::subsonic::models::Child| {
+        if song.id == id {
+            song.user_rating = rating;
+        }
+    };
+    {
+        let mut ds = daemon_state.write().await;
+        for song in &mut ds.queue {
+            update(song);
+        }
+        for song in &mut ds.library.random_songs {
+            update(song);
+        }
+        for song in &mut ds.library.random_album_songs {
+            update(song);
+        }
+        for song in &mut ds.library.starred_songs {
+            update(song);
+        }
+        for list in ds.library.album_songs_cache.values_mut() {
+            for song in list.iter_mut() {
+                update(song);
+            }
+        }
+        for list in ds.library.playlist_songs_cache.values_mut() {
+            for song in list.iter_mut() {
+                update(song);
+            }
+        }
+        if let Some(np) = ds.now_playing.song.as_mut() {
+            if np.id == id {
+                np.user_rating = rating;
+            }
         }
     }
     {

@@ -286,6 +286,35 @@ async fn unstar_song_succeeds() {
 
 #[tokio::test]
 #[serial]
+async fn set_rating_succeeds() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_set_rating().await;
+    let c = build_client(&fake).await;
+    c.set_rating("s0", 4).await.expect("set_rating ok");
+}
+
+#[tokio::test]
+#[serial]
+async fn set_rating_clamps_above_five() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_set_rating().await;
+    let c = build_client(&fake).await;
+    c.set_rating("s0", 9).await.expect("set_rating ok");
+
+    let reqs = fake.received_requests().await;
+    let req = reqs
+        .iter()
+        .find(|r| r.url.path() == "/rest/setRating")
+        .expect("setRating endpoint hit");
+    assert!(
+        req.url.query().unwrap_or_default().contains("rating=5"),
+        "rating must clamp to 5: got {:?}",
+        req.url.query()
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn get_cover_art_returns_raw_bytes() {
     let fake = FakeSubsonic::start().await;
     let bytes = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];

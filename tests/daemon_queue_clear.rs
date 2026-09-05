@@ -29,6 +29,7 @@ fn snapshot() -> QueueSnapshot {
             path: None,
             disc_number: None,
             starred: None,
+            user_rating: None,
         }],
         position: Some(0),
     }

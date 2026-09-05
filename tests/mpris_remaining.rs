@@ -180,3 +180,29 @@ async fn root_supported_mime_types_lists_audio() {
     let mimes = player.supported_mime_types().await.unwrap();
     assert!(mimes.iter().any(|m| m.starts_with("audio/")));
 }
+
+#[tokio::test]
+async fn rating_getter_and_pushed_metadata_agree() {
+    let (player, _, ds) = build_player();
+    for rating in [Some(1), Some(5), None] {
+        let mut song = common::song("rated", "Rated");
+        song.user_rating = rating;
+        song.track = Some(3);
+        song.disc_number = Some(2);
+        {
+            let mut state = ds.write().await;
+            state.queue = vec![song.clone()];
+            state.queue_position = Some(0);
+            state.now_playing.song = Some(song);
+        }
+        let getter = player.metadata().await.unwrap();
+        let pushed = ferrosonic::mpris::server::build_property_snapshot(&ds)
+            .await
+            .metadata
+            .unwrap();
+        assert_eq!(getter.user_rating(), rating.map(|r| f64::from(r) / 5.0));
+        assert_eq!(getter.user_rating(), pushed.user_rating());
+        assert_eq!(getter.track_number(), pushed.track_number());
+        assert_eq!(getter.disc_number(), pushed.disc_number());
+    }
+}

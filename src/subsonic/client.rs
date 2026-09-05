@@ -153,6 +153,19 @@ impl SubsonicClient {
             .await
     }
 
+    /// Set the star rating (1-5) of the song with `id`; `0` clears the rating.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
+    pub async fn set_rating(&self, id: &str, rating: u8) -> Result<(), SubsonicError> {
+        self.request_action(&format!(
+            "setRating?id={}&rating={}",
+            urlencoding::encode(id),
+            rating.min(5)
+        ))
+        .await
+    }
+
     /// Create a new server-side playlist `name` containing `song_ids`, in order.
     ///
     /// # Errors
@@ -421,6 +434,18 @@ impl SubsonicClient {
             )))
             .await?;
         Ok(data.album_list2.album)
+    }
+
+    /// Fetch one random album, if the library has any.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
+    pub async fn get_random_album(&self) -> Result<Option<Album>, SubsonicError> {
+        Ok(self
+            .get_album_list2("random", 1, 0)
+            .await?
+            .into_iter()
+            .next())
     }
 
     /// Fetch the entire album library by paging `getAlbumList2` until a short page.

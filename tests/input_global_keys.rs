@@ -129,10 +129,60 @@ async fn n_stars_the_now_playing_song() {
 
 #[tokio::test]
 #[serial]
+async fn digit_keys_rate_the_now_playing_song() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    app.daemon_state.write().await.now_playing.song = Some(song("np-1"));
+    press(&mut app, key(KeyCode::Char('3'))).await;
+    assert!(
+        client.sent().iter().any(|r| matches!(
+            r,
+            DaemonRequest::SetSongRating { id, rating: 3 } if id == "np-1"
+        )),
+        "3 must rate the now-playing song 3"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn pressing_the_same_rating_again_clears_it() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    let mut rated = song("np-1");
+    rated.user_rating = Some(3);
+    app.daemon_state.write().await.now_playing.song = Some(rated);
+    press(&mut app, key(KeyCode::Char('3'))).await;
+    assert!(
+        client.sent().iter().any(|r| matches!(
+            r,
+            DaemonRequest::SetSongRating { id, rating: 0 } if id == "np-1"
+        )),
+        "pressing the already-set rating again must clear it (rating=0)"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn digit_key_with_no_track_playing_is_a_noop() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    press(&mut app, key(KeyCode::Char('4'))).await;
+    assert!(
+        client.sent().is_empty(),
+        "no now-playing song means nothing to rate"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn capital_t_shuffles_the_library() {
     let client = RecordingClient::new();
     let mut app = app_with(client.clone());
-    press(&mut app, key(KeyCode::Char('T'))).await;
+    // A real Shift+T keypress arrives as Char('T') with the SHIFT modifier
+    // set -- crossterm infers SHIFT from the uppercase char itself; see
+    // `char_code_to_event` in its unix parser. `key()` alone (modifiers
+    // NONE) doesn't correspond to any real keypress for an uppercase char.
+    press(&mut app, key_mod(KeyCode::Char('T'), KeyModifiers::SHIFT)).await;
     assert!(client
         .sent()
         .iter()

@@ -174,6 +174,7 @@ impl App {
             let option = match row_in_pane {
                 0 => Some(SongOption::Starred),
                 1 => Some(SongOption::Random),
+                2 => Some(SongOption::RandomAlbum),
                 _ => None,
             };
             if let Some(option) = option {
@@ -193,6 +194,7 @@ impl App {
                     let req = match option {
                         SongOption::Starred => DaemonRequest::RefreshStarred,
                         SongOption::Random => DaemonRequest::RefreshRandom,
+                        SongOption::RandomAlbum => DaemonRequest::RefreshRandomAlbum,
                     };
                     let _ = self.client.request(req).await;
                 }

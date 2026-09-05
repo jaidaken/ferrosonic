@@ -67,6 +67,54 @@ impl DaemonCore {
         }
     }
 
+    /// Fetch a random album's songs and broadcast the new list.
+    pub async fn refresh_random_album(self: &Arc<Self>) {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
+        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
+        let album = match client.get_random_album().await {
+            Ok(album) => album,
+            Err(e) => {
+                error!("Failed to load random album: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load random album: {e}"),
+                    is_error: true,
+                });
+                return;
+            }
+        };
+        if self.config_gen_changed(gen_at_start) {
+            debug!("refresh_random_album: config changed mid-request, discarding");
+            return;
+        }
+        let Some(album) = album else {
+            self.state.write().await.library.random_album_songs.clear();
+            self.emit(DaemonEvent::RandomAlbumChanged(Vec::new()));
+            return;
+        };
+        match client.get_album(&album.id).await {
+            Ok((_album, songs)) => {
+                if self.config_gen_changed(gen_at_start) {
+                    debug!("refresh_random_album: config changed mid-request, discarding");
+                    return;
+                }
+                let mut state = self.state.write().await;
+                state.library.random_album_songs.clone_from(&songs);
+                drop(state);
+                self.emit(DaemonEvent::RandomAlbumChanged(songs));
+                self.bump_library_version();
+            }
+            Err(e) => {
+                error!("Failed to load random album songs: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load random album: {e}"),
+                    is_error: true,
+                });
+            }
+        }
+    }
+
     /// Re-fetch the artist index and broadcast the new list.
     pub async fn refresh_artists(self: &Arc<Self>) {
         let Some(client) = self.subsonic.read().await.clone() else {
@@ -384,6 +432,64 @@ impl DaemonCore {
         Ok(new_starred)
     }
 
+    /// Set (or clear, with `rating: 0`) the star rating of `song_id`; returns the new rating.
+    ///
+    /// Simpler than [`toggle_star_song`](Self::toggle_star_song): Subsonic has no
+    /// `getRated`-style endpoint, so there's no dedicated "rated songs" list to
+    /// resync -- just an optimistic update across every cache that may hold a
+    /// copy of the song, rolled back on RPC failure.
+    ///
+    /// # Errors
+    /// Returns an `Error` if the server request fails.
+    pub async fn set_song_rating(
+        self: &Arc<Self>,
+        song_id: &str,
+        rating: u8,
+    ) -> Result<Option<u8>, Error> {
+        // Order 0 -> 1 -> 2: serialize rating transactions, then capture the
+        // client generation and optimistic cache update together. Only the
+        // rating lock remains held during the RPC, so playback stays responsive.
+        let _rating_update = self.rating_updates.lock().await;
+        let rating = rating.min(5);
+        let new_rating = if rating == 0 { None } else { Some(rating) };
+        let (client, generation, old_rating) = {
+            let mut state = self.state.write().await;
+            let slot = self.subsonic.read().await;
+            let client = slot
+                .clone()
+                .ok_or(crate::error::SubsonicError::NotConfigured)?;
+            let generation = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
+            let old_rating = apply_rating_to_cached(&mut state, song_id, new_rating);
+            drop(slot);
+            drop(state);
+            (client, generation, old_rating)
+        };
+
+        let result = client.set_rating(song_id, rating).await;
+        // Order 0 -> 1 -> 2: prevent a server replacement between generation
+        // validation and cache commit/rollback. No network I/O under these locks.
+        let mut state = self.state.write().await;
+        let _slot = self.subsonic.read().await;
+        if self.config_gen_changed(generation) {
+            // Neither old-server rollback nor success belongs in the new
+            // server's caches or event stream.
+            result?;
+            return Ok(new_rating);
+        }
+        if let Err(error) = result {
+            apply_rating_to_cached(&mut state, song_id, old_rating);
+            return Err(Error::Subsonic(error));
+        }
+        // A library refresh may have replaced cached copies while the RPC
+        // was in flight. Commit the confirmed value to those copies too.
+        apply_rating_to_cached(&mut state, song_id, new_rating);
+        self.emit(DaemonEvent::SongRatingChanged {
+            id: song_id.to_string(),
+            rating: new_rating,
+        });
+        Ok(new_rating)
+    }
+
     /// Fetch one artist's albums into the cache and broadcast them.
     pub async fn load_artist(self: &Arc<Self>, artist_id: &str) {
         let Some(client) = self.subsonic.read().await.clone() else {
@@ -457,6 +563,7 @@ fn song_is_starred(daemon: &DaemonState, song_id: &str) -> bool {
         .iter()
         .chain(daemon.queue.iter())
         .chain(daemon.library.random_songs.iter())
+        .chain(daemon.library.random_album_songs.iter())
         .chain(daemon.library.album_songs_cache.values().flatten())
         .chain(daemon.library.playlist_songs_cache.values().flatten())
         .any(|s| s.id == song_id && s.starred.is_some())
@@ -464,8 +571,11 @@ fn song_is_starred(daemon: &DaemonState, song_id: &str) -> bool {
 
 fn apply_star_to_cached(daemon: &mut DaemonState, song_id: &str, starred: bool) {
     let marker = if starred { Some("1".to_string()) } else { None };
-    let lists: [&mut Vec<crate::subsonic::models::Child>; 2] =
-        [&mut daemon.queue, &mut daemon.library.random_songs];
+    let lists: [&mut Vec<crate::subsonic::models::Child>; 3] = [
+        &mut daemon.queue,
+        &mut daemon.library.random_songs,
+        &mut daemon.library.random_album_songs,
+    ];
     for list in lists {
         for song in list.iter_mut() {
             if song.id == song_id {
@@ -515,6 +625,7 @@ fn sync_starred_songs(
                 .queue
                 .iter()
                 .chain(daemon.library.random_songs.iter())
+                .chain(daemon.library.random_album_songs.iter())
                 .chain(daemon.library.album_songs_cache.values().flatten())
                 .chain(daemon.library.playlist_songs_cache.values().flatten())
                 .find(|s| s.id == song_id)
@@ -528,4 +639,85 @@ fn sync_starred_songs(
         daemon.library.starred_ids.remove(song_id);
         daemon.library.starred_songs.retain(|s| s.id != song_id);
     }
+}
+
+/// Set `rating` on every matching song in `list`; if this is the first
+/// match seen so far (tracked via `found`), captures its pre-update rating
+/// into `old_rating` for the caller's rollback-on-failure path.
+fn update_rating_in_list(
+    list: &mut [crate::subsonic::models::Child],
+    song_id: &str,
+    rating: Option<u8>,
+    old_rating: &mut Option<u8>,
+    found: &mut bool,
+) {
+    for song in list.iter_mut() {
+        if song.id == song_id {
+            if !*found {
+                *old_rating = song.user_rating;
+                *found = true;
+            }
+            song.user_rating = rating;
+        }
+    }
+}
+
+/// Set `rating` across every cache that may hold a copy of `song_id`,
+/// returning its rating from just before this update (there is no single
+/// source of truth for ratings the way `starred_ids` is for stars, since
+/// Subsonic has no dedicated "rated songs" endpoint) -- folded into this
+/// same pass rather than a separate full scan so a rating keypress walks
+/// every cache once, not twice, under the write lock.
+fn apply_rating_to_cached(
+    daemon: &mut DaemonState,
+    song_id: &str,
+    rating: Option<u8>,
+) -> Option<u8> {
+    let mut old_rating = None;
+    let mut found = false;
+    // Priority order (first match wins for `old_rating`) mirrors the
+    // dedicated read helper this replaced.
+    update_rating_in_list(
+        &mut daemon.library.starred_songs,
+        song_id,
+        rating,
+        &mut old_rating,
+        &mut found,
+    );
+    update_rating_in_list(
+        &mut daemon.queue,
+        song_id,
+        rating,
+        &mut old_rating,
+        &mut found,
+    );
+    update_rating_in_list(
+        &mut daemon.library.random_songs,
+        song_id,
+        rating,
+        &mut old_rating,
+        &mut found,
+    );
+    update_rating_in_list(
+        &mut daemon.library.random_album_songs,
+        song_id,
+        rating,
+        &mut old_rating,
+        &mut found,
+    );
+    for list in daemon.library.album_songs_cache.values_mut() {
+        update_rating_in_list(list, song_id, rating, &mut old_rating, &mut found);
+    }
+    for list in daemon.library.playlist_songs_cache.values_mut() {
+        update_rating_in_list(list, song_id, rating, &mut old_rating, &mut found);
+    }
+    if let Some(np) = daemon.now_playing.song.as_mut() {
+        if np.id == song_id {
+            if !found {
+                old_rating = np.user_rating;
+            }
+            np.user_rating = rating;
+        }
+    }
+    old_rating
 }

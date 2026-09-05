@@ -17,6 +17,7 @@ use tokio::time::{sleep, timeout};
 use tracing::{debug, info, trace, warn};
 
 use crate::config::paths::mpv_socket_path;
+use crate::config::ReplayGainMode;
 use crate::error::AudioError;
 use crate::proc_util::set_die_with_parent;
 
@@ -82,6 +83,22 @@ pub struct MpvController {
     /// `(major, minor)` from `mpv-version`, probed on connect. `None` until
     /// probed or if the probe fails; gates the 0.38+ 5-arg loadfile form.
     mpv_version: Option<(u16, u16)>,
+    /// `ReplayGain` settings applied as `start()` CLI args and pushed live via
+    /// `set_replaygain_*`; a respawned mpv (crash recovery) restarts with
+    /// whatever was last set here, not the value at controller construction.
+    replaygain_mode: ReplayGainMode,
+    replaygain_preamp: f64,
+    /// Our "prevent clipping" sense (`true` = prevent); see [`mpv_allow_clip`].
+    replaygain_clip: bool,
+}
+
+/// mpv's `--replaygain-clip` / `replaygain-clip` means "allow clip" (`true`
+/// = permit clipping, the opposite of mpv's own default). Our
+/// `replaygain_clip` field/config means "prevent clipping" (`true` =
+/// prevent). Convert at the mpv boundary so this doesn't get re-inverted
+/// (or un-inverted) by accident at a call site.
+const fn mpv_allow_clip(prevent_clipping: bool) -> bool {
+    !prevent_clipping
 }
 
 /// Parse `(major, minor)` from an mpv version string such as `mpv 0.41.0`.
@@ -124,7 +141,35 @@ impl MpvController {
             reader_handle: None,
             event_tx,
             mpv_version: None,
+            replaygain_mode: ReplayGainMode::Off,
+            replaygain_preamp: 0.0,
+            replaygain_clip: false,
         }
+    }
+
+    /// Set the `ReplayGain` args used by the next `start()`, without touching a
+    /// live IPC connection. Used at daemon construction to seed mpv's
+    /// startup command line from the persisted config; for a running mpv use
+    /// [`set_replaygain_mode`](Self::set_replaygain_mode) and friends instead,
+    /// which also push the change live via `set_property`.
+    ///
+    /// `preamp` is clamped here (not just in the daemon settings layer) so a
+    /// hand-edited or corrupted config's out-of-range `ReplayGainPreamp`
+    /// can never reach mpv's `--replaygain-preamp` command-line arg raw.
+    /// Non-finite values from direct callers are warned about and leave the
+    /// last valid preamp unchanged (initially 0 dB). Config loading rejects them.
+    pub fn set_replaygain_startup(&mut self, mode: ReplayGainMode, preamp: f64, clip: bool) {
+        self.replaygain_mode = mode;
+        if preamp.is_finite() {
+            self.replaygain_preamp = preamp.clamp(
+                crate::config::REPLAY_GAIN_PREAMP_MIN,
+                crate::config::REPLAY_GAIN_PREAMP_MAX,
+            );
+        } else {
+            // Config loading rejects these; protect direct library callers too.
+            warn!("Ignoring non-finite ReplayGain preamp; retaining the last valid value");
+        }
+        self.replaygain_clip = clip;
     }
 
     /// `(major, minor)` of the connected mpv, or `None` if not yet probed.
@@ -214,6 +259,16 @@ impl MpvController {
             .arg("--cache-pause-initial=no")
             // And don't pause on cache underrun later either.
             .arg("--cache-pause=no")
+            .arg(format!("--replaygain={}", self.replaygain_mode.mpv_value()))
+            .arg(format!("--replaygain-preamp={}", self.replaygain_preamp))
+            .arg(format!(
+                "--replaygain-clip={}",
+                if mpv_allow_clip(self.replaygain_clip) {
+                    "yes"
+                } else {
+                    "no"
+                }
+            ))
             .arg(format!("--input-ipc-server={}", self.socket_path.display()))
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -629,6 +684,66 @@ impl MpvController {
         Ok(())
     }
 
+    /// Push the `ReplayGain` mode live via `set_property`, so a track already
+    /// playing re-applies gain immediately. Also stores the value so a
+    /// respawned mpv restarts with it.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
+    pub async fn set_replaygain_mode(&mut self, mode: ReplayGainMode) -> Result<(), AudioError> {
+        debug!("Setting replaygain mode to {}", mode.mpv_value());
+        self.replaygain_mode = mode;
+        self.send_command(vec![
+            json!("set_property"),
+            json!("replaygain"),
+            json!(mode.mpv_value()),
+        ])
+        .await?;
+        Ok(())
+    }
+
+    /// Push the `ReplayGain` preamp (dB) live via `set_property`, clamped to
+    /// mpv's accepted range (like [`set_volume`](Self::set_volume) clamps).
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
+    pub async fn set_replaygain_preamp(&mut self, preamp: f64) -> Result<(), AudioError> {
+        crate::config::validate_replay_gain_preamp(preamp)
+            .map_err(|error| AudioError::MpvIpc(error.to_string()))?;
+        let preamp = preamp.clamp(
+            crate::config::REPLAY_GAIN_PREAMP_MIN,
+            crate::config::REPLAY_GAIN_PREAMP_MAX,
+        );
+        debug!("Setting replaygain preamp to {:.1}dB", preamp);
+        self.replaygain_preamp = preamp;
+        self.send_command(vec![
+            json!("set_property"),
+            json!("replaygain-preamp"),
+            json!(preamp),
+        ])
+        .await?;
+        Ok(())
+    }
+
+    /// Push the `ReplayGain` clipping-prevention toggle live via `set_property`.
+    ///
+    /// `clip` is our "prevent clipping" sense (`true` = prevent); see
+    /// [`mpv_allow_clip`] for the inversion to mpv's own "allow clip" sense.
+    ///
+    /// # Errors
+    /// Returns an `AudioError` if the mpv IPC command fails.
+    pub async fn set_replaygain_clip(&mut self, clip: bool) -> Result<(), AudioError> {
+        debug!("Setting replaygain clip prevention to {}", clip);
+        self.replaygain_clip = clip;
+        self.send_command(vec![
+            json!("set_property"),
+            json!("replaygain-clip"),
+            json!(mpv_allow_clip(clip)),
+        ])
+        .await?;
+        Ok(())
+    }
+
     /// Decoded sample rate in Hz of the playing track.
     ///
     /// # Errors
@@ -851,5 +966,37 @@ mod version_tests {
         assert!(c.supports_loadfile_index());
         c.mpv_version = Some((0, 41));
         assert!(c.supports_loadfile_index());
+    }
+}
+
+#[cfg(test)]
+mod replaygain_tests {
+    use super::*;
+
+    #[test]
+    fn nonfinite_startup_gain_retains_last_finite_value() {
+        let mut mpv = MpvController::with_socket_path(std::path::PathBuf::new());
+        mpv.set_replaygain_startup(ReplayGainMode::Track, 2.0, false);
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            mpv.set_replaygain_startup(ReplayGainMode::Track, value, false);
+            assert!((mpv.replaygain_preamp - 2.0).abs() < f64::EPSILON);
+        }
+    }
+
+    // Regression: mpv's `replaygain-clip` is phrased as "allow clip", the
+    // opposite of ferrosonic's "prevent clipping" field/UI label. Getting
+    // this backwards means clip PREVENTION being turned on in the UI
+    // silently tells mpv to ALLOW clipping (and vice versa) -- audible only
+    // as unexpected distortion, not a crash or test failure anywhere else.
+    #[test]
+    fn mpv_allow_clip_is_the_inverse_of_prevent_clipping() {
+        assert!(
+            !mpv_allow_clip(true),
+            "prevent_clipping=true must send mpv \"don't allow clip\" (false)"
+        );
+        assert!(
+            mpv_allow_clip(false),
+            "prevent_clipping=false must send mpv \"allow clip\" (true)"
+        );
     }
 }

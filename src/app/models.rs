@@ -9,4 +9,7 @@ pub enum SongOption {
     Starred,
     /// Random songs list.
     Random,
+    /// Songs of one randomly-picked album.
+    #[strum(to_string = "Random Album")]
+    RandomAlbum,
 }

@@ -33,6 +33,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use tracing::{info, warn};
 
 use crate::app::models::SongOption;
+use crate::config::keybind::{resolve as resolve_keybindings, GlobalAction, KeyChord};
 use crate::config::Config;
 use crate::daemon::DaemonCore;
 use crate::error::{Error, UiError};
@@ -64,6 +65,10 @@ pub struct App {
     pub(crate) last_click: Option<(u16, u16, std::time::Instant)>,
     /// Guard must never span an .await; `clippy::await_holding_lock` enforces.
     pub(crate) cover_art: std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
+    /// Resolved global-action keymap: `config.keybindings` merged onto the
+    /// defaults, built once at startup. Picking up `config.toml` edits
+    /// requires restarting the app; this is not live-reloaded.
+    pub(crate) keymap: std::collections::HashMap<KeyChord, GlobalAction>,
 }
 
 impl App {
@@ -72,8 +77,10 @@ impl App {
     // By-value ownership-transfer constructor; config is the owned input.
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(config: Config) -> Self {
+        let (keymap, keybinding_warnings) = resolve_keybindings(&config.keybindings);
         let daemon_state = new_shared_daemon_state_with_restored_queue(config.clone());
         let client_state = new_shared_client_state(&config);
+        Self::notify_keybinding_conflicts(&client_state, &keybinding_warnings);
         let core = DaemonCore::new(daemon_state.clone(), &config);
         let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(core.clone()));
 
@@ -98,6 +105,7 @@ impl App {
                     chafa_cache: None,
                 },
             )),
+            keymap,
         }
     }
 
@@ -106,8 +114,10 @@ impl App {
     // By-value ownership-transfer constructor; config is the owned input.
     #[allow(clippy::needless_pass_by_value)]
     pub fn with_remote_client(client: Arc<dyn DaemonClient>, config: Config) -> Self {
+        let (keymap, keybinding_warnings) = resolve_keybindings(&config.keybindings);
         let daemon_state = new_shared_daemon_state(config.clone());
         let client_state = new_shared_client_state(&config);
+        Self::notify_keybinding_conflicts(&client_state, &keybinding_warnings);
         Self {
             core: None,
             client,
@@ -129,11 +139,29 @@ impl App {
                     chafa_cache: None,
                 },
             )),
+            keymap,
         }
     }
 
     fn spawn_signal_quit(&self) {
         spawn_quit_listener(self.client_state.clone(), wait_for_unix_quit_signal());
+    }
+
+    /// Seed the startup notification banner with any `[Keybindings]`
+    /// collisions found while resolving the keymap, so a typo'd config
+    /// isn't only visible in the logs. `client_state` was just constructed
+    /// and isn't shared yet, so `try_write` cannot contend.
+    fn notify_keybinding_conflicts(client_state: &SharedClientState, warnings: &[String]) {
+        if warnings.is_empty() {
+            return;
+        }
+        if let Ok(mut cs) = client_state.try_write() {
+            let suffix = if warnings.len() > 1 { "s" } else { "" };
+            cs.notify_error(format!(
+                "{} keybinding conflict{suffix} in config.toml (see logs for details)",
+                warnings.len()
+            ));
+        }
     }
 
     /// Test seam: load themes and set the active one from daemon config.
@@ -425,6 +453,15 @@ impl App {
                 match rx.recv().await {
                     Ok(DaemonEvent::NowPlayingChanged(_) | DaemonEvent::QueueChanged { .. }) => {
                         let _ = update_mpris_properties(&server, &daemon_state).await;
+                    }
+                    Ok(DaemonEvent::SongRatingChanged { id, rating }) => {
+                        let _ = crate::mpris::server::update_mpris_rating(
+                            &server,
+                            &daemon_state,
+                            &id,
+                            rating,
+                        )
+                        .await;
                     }
                     Ok(DaemonEvent::Shutdown) => break,
                     Ok(_) => {}

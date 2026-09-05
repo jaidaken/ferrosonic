@@ -80,6 +80,10 @@ impl DaemonClient for InProcessClient {
                 core.refresh_random().await;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::RefreshRandomAlbum => {
+                core.refresh_random_album().await;
+                Ok(DaemonResponse::Ok)
+            }
             DaemonRequest::RefreshArtists => {
                 core.refresh_artists().await;
                 core.refresh_music_folders().await;
@@ -121,6 +125,9 @@ impl DaemonClient for InProcessClient {
                     .map_err(err)?,
             )),
             DaemonRequest::ToggleStarSong(id) => ok_response(core.toggle_star_song(&id).await),
+            DaemonRequest::SetSongRating { id, rating } => {
+                ok_response(core.set_song_rating(&id, rating).await)
+            }
             DaemonRequest::LoadArtist(id) => self.handle_load_artist(&id).await,
             DaemonRequest::LoadAllAlbums => {
                 Ok(DaemonResponse::AllAlbums(core.load_all_albums().await))
@@ -172,6 +179,18 @@ impl DaemonClient for InProcessClient {
                 ok_response(core.set_cover_art_enabled(on).await)
             }
             DaemonRequest::SetCoverArtSize(sz) => ok_response(core.set_cover_art_size(sz).await),
+            DaemonRequest::SetReplayGainMode(mode) => {
+                ok_response(core.set_replay_gain_mode(mode).await)
+            }
+            DaemonRequest::SetReplayGainPreamp(db) => {
+                ok_response(core.set_replay_gain_preamp(db).await)
+            }
+            DaemonRequest::SetReplayGainClip(on) => {
+                ok_response(core.set_replay_gain_clip(on).await)
+            }
+            DaemonRequest::SetPlaybackFilters(filters) => {
+                ok_response(core.set_playback_filters(filters).await)
+            }
             DaemonRequest::FetchCoverArt { id, size } => {
                 self.handle_fetch_cover_art(&id, size).await
             }
@@ -202,6 +221,27 @@ impl InProcessClient {
     ) -> Result<DaemonResponse, IpcError> {
         match mode {
             EnqueueMode::Replace { play_from } => {
+                // An empty `songs` is a deliberate "clear the queue" request
+                // and must fall through, not be confused with "everything
+                // got filtered out" below (had_songs is false either way at
+                // that point, so this distinction has to be captured first).
+                let had_songs = !songs.is_empty();
+                // play_from is an index into `songs`; track it through
+                // filtering by original position rather than song id, since
+                // an id-based re-lookup would always land on the first
+                // occurrence when `songs` contains duplicate track ids.
+                let (songs, new_play_from) = self
+                    .core
+                    .filter_for_playback_tracking_index(songs, play_from)
+                    .await;
+                if had_songs && songs.is_empty() {
+                    return Ok(DaemonResponse::Ok);
+                }
+                // The exact targeted song may itself have been filtered out;
+                // fall back to the first remaining song when the caller asked
+                // to start playing (play_from was Some) rather than silently
+                // leaving the queue stopped.
+                let play_from = new_play_from.or_else(|| play_from.map(|_| 0));
                 self.core
                     .replace_queue_and_play(
                         songs,
@@ -212,6 +252,11 @@ impl InProcessClient {
                     .map_err(err)?;
             }
             EnqueueMode::Append => {
+                let had_songs = !songs.is_empty();
+                let songs = self.core.filter_for_playback(songs).await;
+                if had_songs && songs.is_empty() {
+                    return Ok(DaemonResponse::Ok);
+                }
                 let resync = {
                     let mut state = self.core.state.write().await;
                     let old_len = state.queue.len();
@@ -226,6 +271,11 @@ impl InProcessClient {
                 }
             }
             EnqueueMode::InsertAfter(pos) => {
+                let had_songs = !songs.is_empty();
+                let songs = self.core.filter_for_playback(songs).await;
+                if had_songs && songs.is_empty() {
+                    return Ok(DaemonResponse::Ok);
+                }
                 // The Some arm updates queue_position in place; if-let reads clearer than map_or_else.
                 #[allow(clippy::option_if_let_else)]
                 let resync = {

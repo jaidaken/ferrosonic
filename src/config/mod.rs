@@ -3,9 +3,14 @@
 /// Well-known config and data directory paths.
 pub mod paths;
 
+pub mod keybind;
+
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, info, warn};
+
+use keybind::{GlobalAction, KeyChord};
 
 use crate::error::ConfigError;
 use crate::io_util::{atomic_write_bytes_private, fsync_parent_dir};
@@ -34,6 +39,11 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "RateSwitchDelayMs",
     "MusicFolderId",
     "MusicFolderChosen",
+    "ReplayGainMode",
+    "ReplayGainPreamp",
+    "ReplayGainClip",
+    "PlaybackFilters",
+    "Keybindings",
 ];
 
 /// A command run to obtain the password: a shell string or an argv array.
@@ -147,6 +157,71 @@ pub struct Config {
     /// to the server's first (default) library rather than all libraries.
     #[serde(rename = "MusicFolderChosen", default)]
     pub music_folder_chosen: bool,
+
+    /// `ReplayGain` mode passed to mpv's `--replaygain` / `replaygain` property.
+    #[serde(rename = "ReplayGainMode", default)]
+    pub replay_gain_mode: ReplayGainMode,
+
+    /// `ReplayGain` preamp in dB, mpv's `--replaygain-preamp` / `replaygain-preamp`
+    /// property. Range -15.0..=15.0.
+    #[serde(
+        rename = "ReplayGainPreamp",
+        default,
+        deserialize_with = "deserialize_replay_gain_preamp"
+    )]
+    pub replay_gain_preamp: f64,
+
+    /// Prevent clipping from `ReplayGain` amplification; mpv's `--replaygain-clip`
+    /// / `replaygain-clip` property.
+    #[serde(rename = "ReplayGainClip", default)]
+    pub replay_gain_clip: bool,
+
+    /// Exclusion rules applied when songs are added to the queue (not when
+    /// browsing the library). See [`PlaybackFilters`].
+    #[serde(rename = "PlaybackFilters", default)]
+    pub playback_filters: PlaybackFilters,
+
+    /// Overrides for the global (page-independent) keybindings, keyed by
+    /// action; any action absent here keeps its default chord. Config-file
+    /// only for now — no TUI editor. Picked up at startup; changing this
+    /// requires restarting the app, it is not live-reloaded. See
+    /// [`keybind`] for the chord string format and the full action list.
+    #[serde(rename = "Keybindings", default)]
+    pub keybindings: HashMap<GlobalAction, KeyChord>,
+}
+
+/// Playback queue exclusion rules: a song failing any set criterion never
+/// makes it into the queue.
+///
+/// Applied only when songs are added to the queue (`enqueue_songs`,
+/// `shuffle_library`, auto-continue's random pick), not retroactively to an
+/// already-persisted queue and not when browsing the library.
+/// `excluded_genres`/`excluded_artists` are `config.toml`-only for now;
+/// there's no TUI list editor yet.
+#[derive(Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
+pub struct PlaybackFilters {
+    /// Exclude songs rated `1..=min_rating`; `0` disables the rating filter.
+    /// Unrated songs are never excluded by this criterion.
+    #[serde(rename = "MinRating", default)]
+    pub min_rating: u8,
+    /// Exclude songs released before this year, when known.
+    #[serde(rename = "YearMin", default)]
+    pub year_min: Option<i32>,
+    /// Exclude songs released after this year, when known.
+    #[serde(rename = "YearMax", default)]
+    pub year_max: Option<i32>,
+    /// Exclude songs shorter than this, in seconds, when duration is known.
+    #[serde(rename = "DurationMinSecs", default)]
+    pub duration_min_secs: Option<u32>,
+    /// Exclude songs longer than this, in seconds, when duration is known.
+    #[serde(rename = "DurationMaxSecs", default)]
+    pub duration_max_secs: Option<u32>,
+    /// Exclude songs whose genre case-insensitively matches one of these.
+    #[serde(rename = "ExcludedGenres", default)]
+    pub excluded_genres: Vec<String>,
+    /// Exclude songs whose artist case-insensitively matches one of these.
+    #[serde(rename = "ExcludedArtists", default)]
+    pub excluded_artists: Vec<String>,
 }
 
 // Serialization mirror of Config; same independent TOML setting keys.
@@ -194,6 +269,25 @@ struct ConfigOnDisk<'a> {
         skip_serializing_if = "std::ops::Not::not"
     )]
     music_folder_chosen: bool,
+    #[serde(rename = "ReplayGainMode")]
+    replay_gain_mode: ReplayGainMode,
+    #[serde(rename = "ReplayGainPreamp")]
+    replay_gain_preamp: f64,
+    #[serde(rename = "ReplayGainClip")]
+    replay_gain_clip: bool,
+    #[serde(
+        rename = "PlaybackFilters",
+        skip_serializing_if = "PlaybackFilters::is_default"
+    )]
+    playback_filters: PlaybackFilters,
+    #[serde(rename = "Keybindings", skip_serializing_if = "HashMap::is_empty")]
+    keybindings: &'a HashMap<GlobalAction, KeyChord>,
+}
+
+impl PlaybackFilters {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 // Serializes the revealed secret. Replaces a serialize_with fn whose
@@ -236,6 +330,11 @@ impl Config {
             rate_switch_delay_ms: self.rate_switch_delay_ms,
             music_folder_id: self.music_folder_id,
             music_folder_chosen: self.music_folder_chosen,
+            replay_gain_mode: self.replay_gain_mode,
+            replay_gain_preamp: self.replay_gain_preamp,
+            replay_gain_clip: self.replay_gain_clip,
+            playback_filters: self.playback_filters.clone(),
+            keybindings: &self.keybindings,
         }
     }
 }
@@ -347,6 +446,84 @@ impl RepeatMode {
     }
 }
 
+/// `ReplayGain` adjustment mode, passed straight through as mpv's
+/// `--replaygain` value / `replaygain` property.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReplayGainMode {
+    /// No `ReplayGain` adjustment.
+    #[default]
+    #[serde(rename = "no")]
+    Off,
+    /// Adjust to the per-track `ReplayGain` value.
+    #[serde(rename = "track")]
+    Track,
+    /// Adjust to the per-album `ReplayGain` value.
+    #[serde(rename = "album")]
+    Album,
+}
+
+impl ReplayGainMode {
+    /// mpv's `--replaygain` / `replaygain` property value; identical to the
+    /// TOML value (`"no"` / `"track"` / `"album"`).
+    #[must_use]
+    pub const fn mpv_value(self) -> &'static str {
+        match self {
+            Self::Off => "no",
+            Self::Track => "track",
+            Self::Album => "album",
+        }
+    }
+
+    /// Label shown in the settings TUI.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Track => "Track",
+            Self::Album => "Album",
+        }
+    }
+
+    /// Step through `Off -> Track -> Album -> Off` for UI cycling.
+    ///
+    /// ```
+    /// use ferrosonic::config::ReplayGainMode;
+    /// assert_eq!(ReplayGainMode::Off.cycle(), ReplayGainMode::Track);
+    /// assert_eq!(ReplayGainMode::Track.cycle(), ReplayGainMode::Album);
+    /// assert_eq!(ReplayGainMode::Album.cycle(), ReplayGainMode::Off);
+    /// ```
+    #[must_use]
+    pub const fn cycle(self) -> Self {
+        match self {
+            Self::Off => Self::Track,
+            Self::Track => Self::Album,
+            Self::Album => Self::Off,
+        }
+    }
+
+    /// Step backward through the same cycle, for the settings page's Left key.
+    ///
+    /// ```
+    /// use ferrosonic::config::ReplayGainMode;
+    /// assert_eq!(ReplayGainMode::Off.prev(), ReplayGainMode::Album);
+    /// assert_eq!(ReplayGainMode::Album.prev(), ReplayGainMode::Track);
+    /// assert_eq!(ReplayGainMode::Track.prev(), ReplayGainMode::Off);
+    /// ```
+    #[must_use]
+    pub const fn prev(self) -> Self {
+        match self {
+            Self::Off => Self::Album,
+            Self::Track => Self::Off,
+            Self::Album => Self::Track,
+        }
+    }
+}
+
+/// Minimum `ReplayGain` preamp in dB, matching mpv's `--replaygain-preamp` range.
+pub const REPLAY_GAIN_PREAMP_MIN: f64 = -15.0;
+/// Maximum `ReplayGain` preamp in dB, matching mpv's `--replaygain-preamp` range.
+pub const REPLAY_GAIN_PREAMP_MAX: f64 = 15.0;
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -369,6 +546,11 @@ impl Default for Config {
             music_folder_chosen: false,
             password_eval: None,
             password_keyring: false,
+            replay_gain_mode: ReplayGainMode::Off,
+            replay_gain_preamp: 0.0,
+            replay_gain_clip: false,
+            playback_filters: PlaybackFilters::default(),
+            keybindings: HashMap::new(),
         }
     }
 }
@@ -566,6 +748,7 @@ impl Config {
     /// # Errors
     /// Returns a `ConfigError` if the file cannot be read, written, or parsed.
     pub fn save_to_file(&self, path: &Path) -> Result<(), ConfigError> {
+        validate_replay_gain_preamp(self.replay_gain_preamp)?;
         debug!("Saving config to {}", path.display());
         // ConfigOnDisk uses the real password and obeys password_file indirection so neither the redacted-serializer nor a caller mistake can leak or omit the secret.
         let contents = toml::to_string_pretty(&self.as_on_disk())?;
@@ -611,6 +794,7 @@ impl Config {
     /// # Errors
     /// Returns a `ConfigError` if the file cannot be read, written, or parsed.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_replay_gain_preamp(self.replay_gain_preamp)?;
         if self.base_url.is_empty() {
             return Err(ConfigError::MissingField {
                 field: "BaseURL".to_string(),
@@ -823,6 +1007,25 @@ pub fn write_password_file_atomic(path: &str, password: &Secret) -> std::io::Res
     Ok(())
 }
 
+/// Reject non-finite gain before persistence, IPC, or mpv command construction.
+pub(crate) const fn validate_replay_gain_preamp(value: f64) -> Result<(), ConfigError> {
+    if !value.is_finite() {
+        return Err(ConfigError::InvalidValue {
+            field: "ReplayGainPreamp",
+            reason: "must be finite",
+        });
+    }
+    Ok(())
+}
+
+fn deserialize_replay_gain_preamp<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<f64, D::Error> {
+    let value = f64::deserialize(deserializer)?;
+    validate_replay_gain_preamp(value).map_err(serde::de::Error::custom)?;
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -999,6 +1202,59 @@ Password = "testpass"
         assert!(!c.cover_art);
         assert!(!c.auto_continue);
         assert_eq!(c.repeat_mode, RepeatMode::Off);
+        assert_eq!(c.replay_gain_mode, ReplayGainMode::Off);
+        assert_eq!(c.replay_gain_preamp, 0.0);
+        assert!(!c.replay_gain_clip);
+        assert_eq!(c.playback_filters, PlaybackFilters::default());
+        assert_eq!(
+            c.playback_filters.min_rating, 0,
+            "rating filter off by default"
+        );
+        assert!(c.playback_filters.excluded_genres.is_empty());
+        assert!(c.playback_filters.excluded_artists.is_empty());
+    }
+
+    #[test]
+    fn default_playback_filters_are_omitted_from_saved_toml() {
+        let c = Config {
+            base_url: "https://x".into(),
+            ..Default::default()
+        };
+        let f = NamedTempFile::new().unwrap();
+        c.save_to_file(f.path()).unwrap();
+        let written = std::fs::read_to_string(f.path()).unwrap();
+        assert!(
+            !written.contains("PlaybackFilters"),
+            "default (all-off) filters must not clutter a fresh config.toml:\n{written}"
+        );
+    }
+
+    #[test]
+    fn non_default_playback_filters_round_trip() {
+        let toml = "BaseURL = \"x\"\n\
+             [PlaybackFilters]\n\
+             MinRating = 2\n\
+             YearMin = 1970\n\
+             YearMax = 2020\n\
+             DurationMinSecs = 60\n\
+             DurationMaxSecs = 600\n\
+             ExcludedGenres = [\"Podcast\"]\n\
+             ExcludedArtists = [\"Nickelback\"]\n";
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(toml.as_bytes()).unwrap();
+        let c = Config::load_from_file(file.path()).unwrap();
+        assert_eq!(c.playback_filters.min_rating, 2);
+        assert_eq!(c.playback_filters.year_min, Some(1970));
+        assert_eq!(c.playback_filters.year_max, Some(2020));
+        assert_eq!(c.playback_filters.duration_min_secs, Some(60));
+        assert_eq!(c.playback_filters.duration_max_secs, Some(600));
+        assert_eq!(c.playback_filters.excluded_genres, vec!["Podcast"]);
+        assert_eq!(c.playback_filters.excluded_artists, vec!["Nickelback"]);
+
+        let f2 = NamedTempFile::new().unwrap();
+        c.save_to_file(f2.path()).unwrap();
+        let c2 = Config::load_from_file(f2.path()).unwrap();
+        assert_eq!(c2.playback_filters, c.playback_filters);
     }
 
     #[test]
@@ -1011,6 +1267,58 @@ Password = "testpass"
         assert_eq!(c.cava_size, 40, "CavaSize falls back");
         assert_eq!(c.cover_art_size, 16, "CoverArtSize falls back");
         assert!(c.daemon, "Daemon defaults true");
+        assert_eq!(
+            c.replay_gain_mode,
+            ReplayGainMode::Off,
+            "ReplayGainMode falls back"
+        );
+        assert_eq!(c.replay_gain_preamp, 0.0, "ReplayGainPreamp falls back");
+        assert!(!c.replay_gain_clip, "ReplayGainClip falls back");
+    }
+
+    #[test]
+    fn replay_gain_mode_serializes_to_mpv_vocabulary() {
+        for (mode, expected) in [
+            (ReplayGainMode::Off, "\"no\""),
+            (ReplayGainMode::Track, "\"track\""),
+            (ReplayGainMode::Album, "\"album\""),
+        ] {
+            let s = toml::Value::try_from(mode).unwrap();
+            assert_eq!(s.to_string(), expected, "{mode:?} serializes as {expected}");
+            assert_eq!(mode.mpv_value(), expected.trim_matches('"'));
+        }
+    }
+
+    #[test]
+    fn replay_gain_mode_cycle_visits_all_three_and_reverses() {
+        assert_eq!(ReplayGainMode::Off.cycle(), ReplayGainMode::Track);
+        assert_eq!(ReplayGainMode::Track.cycle(), ReplayGainMode::Album);
+        assert_eq!(ReplayGainMode::Album.cycle(), ReplayGainMode::Off);
+        for m in [
+            ReplayGainMode::Off,
+            ReplayGainMode::Track,
+            ReplayGainMode::Album,
+        ] {
+            assert_eq!(m.cycle().prev(), m, "prev undoes cycle for {m:?}");
+        }
+    }
+
+    #[test]
+    fn replay_gain_explicit_values_round_trip() {
+        let toml = "BaseURL = \"x\"\nReplayGainMode = \"album\"\nReplayGainPreamp = -3.5\nReplayGainClip = true\n";
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(toml.as_bytes()).unwrap();
+        let c = Config::load_from_file(file.path()).unwrap();
+        assert_eq!(c.replay_gain_mode, ReplayGainMode::Album);
+        assert_eq!(c.replay_gain_preamp, -3.5);
+        assert!(c.replay_gain_clip);
+
+        let f2 = NamedTempFile::new().unwrap();
+        c.save_to_file(f2.path()).unwrap();
+        let c2 = Config::load_from_file(f2.path()).unwrap();
+        assert_eq!(c2.replay_gain_mode, ReplayGainMode::Album);
+        assert_eq!(c2.replay_gain_preamp, -3.5);
+        assert!(c2.replay_gain_clip);
     }
 
     #[test]

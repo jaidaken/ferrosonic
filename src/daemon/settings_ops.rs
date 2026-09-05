@@ -269,4 +269,88 @@ impl DaemonCore {
         self.emit_config_changed().await;
         Ok(())
     }
+
+    /// Persist the `ReplayGain` mode and push it live to mpv via `set_property`,
+    /// so an already-playing track re-applies gain immediately.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_replay_gain_mode(
+        self: &Arc<Self>,
+        mode: crate::config::ReplayGainMode,
+    ) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.config.replay_gain_mode = mode;
+            state.config.save_default().map_err(Error::Config)?;
+        }
+        // Best-effort like set_volume: mpv is always running (--idle) once
+        // start_mpv has succeeded, but a not-yet-started mpv should not
+        // block persisting the setting.
+        let mut mpv = self.mpv.lock().await;
+        let _ = mpv.set_replaygain_mode(mode).await;
+        drop(mpv);
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the `ReplayGain` preamp (dB, clamped to -15.0..=15.0) and push it
+    /// live to mpv via `set_property`.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_replay_gain_preamp(self: &Arc<Self>, preamp: f64) -> Result<(), Error> {
+        crate::config::validate_replay_gain_preamp(preamp)?;
+        let clamped = preamp.clamp(
+            crate::config::REPLAY_GAIN_PREAMP_MIN,
+            crate::config::REPLAY_GAIN_PREAMP_MAX,
+        );
+        {
+            let mut state = self.state.write().await;
+            state.config.replay_gain_preamp = clamped;
+            state.config.save_default().map_err(Error::Config)?;
+        }
+        let mut mpv = self.mpv.lock().await;
+        let _ = mpv.set_replaygain_preamp(clamped).await;
+        drop(mpv);
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the `ReplayGain` clip-prevention toggle and push it live to mpv
+    /// via `set_property`.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_replay_gain_clip(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.config.replay_gain_clip = on;
+            state.config.save_default().map_err(Error::Config)?;
+        }
+        let mut mpv = self.mpv.lock().await;
+        let _ = mpv.set_replaygain_clip(on).await;
+        drop(mpv);
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the playback-filter exclusion rules. Takes effect the next
+    /// time songs are added to the queue; does not retroactively filter an
+    /// already-persisted queue.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_playback_filters(
+        self: &Arc<Self>,
+        filters: crate::config::PlaybackFilters,
+    ) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            state.config.playback_filters = filters;
+            state.config.save_default().map_err(Error::Config)?;
+        }
+        self.emit_config_changed().await;
+        Ok(())
+    }
 }

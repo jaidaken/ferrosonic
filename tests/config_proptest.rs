@@ -1,6 +1,6 @@
 //! Random Config + RepeatMode values round-trip through TOML and JSON.
 
-use ferrosonic::config::{Config, RepeatMode};
+use ferrosonic::config::{Config, RepeatMode, ReplayGainMode};
 use proptest::prelude::*;
 
 fn arb_repeat_mode() -> impl Strategy<Value = RepeatMode> {
@@ -8,6 +8,14 @@ fn arb_repeat_mode() -> impl Strategy<Value = RepeatMode> {
         Just(RepeatMode::Off),
         Just(RepeatMode::One),
         Just(RepeatMode::All),
+    ]
+}
+
+fn arb_replay_gain_mode() -> impl Strategy<Value = ReplayGainMode> {
+    prop_oneof![
+        Just(ReplayGainMode::Off),
+        Just(ReplayGainMode::Track),
+        Just(ReplayGainMode::Album),
     ]
 }
 
@@ -30,6 +38,9 @@ fn arb_config() -> impl Strategy<Value = Config> {
             any::<u32>(),
             any::<Option<i64>>(),
             any::<bool>(),
+            arb_replay_gain_mode(),
+            -15.0f64..=15.0f64,
+            any::<bool>(),
         ),
     )
         .prop_map(
@@ -51,6 +62,9 @@ fn arb_config() -> impl Strategy<Value = Config> {
                     rate_switch_delay_ms,
                     music_folder_id,
                     music_folder_chosen,
+                    replay_gain_mode,
+                    replay_gain_preamp,
+                    replay_gain_clip,
                 ),
             )| Config {
                 base_url,
@@ -72,6 +86,16 @@ fn arb_config() -> impl Strategy<Value = Config> {
                 rate_switch_delay_ms,
                 music_folder_id,
                 music_folder_chosen,
+                replay_gain_mode,
+                replay_gain_preamp,
+                replay_gain_clip,
+                // PlaybackFilters has its own dedicated round-trip test
+                // (non_default_playback_filters_round_trip in config/mod.rs);
+                // default here keeps this proptest's tuple arity manageable.
+                playback_filters: ferrosonic::config::PlaybackFilters::default(),
+                // Keybindings has its own dedicated round-trip test in
+                // config/keybind.rs; default here for the same reason.
+                keybindings: std::collections::HashMap::new(),
             },
         )
 }
@@ -97,6 +121,9 @@ fn config_round_trips_through_toml() {
             prop_assert_eq!(parsed.scrobble, c.scrobble);
             prop_assert_eq!(parsed.notifications, c.notifications);
             prop_assert_eq!(parsed.rate_switch_delay_ms, c.rate_switch_delay_ms);
+            prop_assert_eq!(parsed.replay_gain_mode, c.replay_gain_mode);
+            prop_assert_eq!(parsed.replay_gain_preamp, c.replay_gain_preamp);
+            prop_assert_eq!(parsed.replay_gain_clip, c.replay_gain_clip);
             Ok(())
         })
         .unwrap();

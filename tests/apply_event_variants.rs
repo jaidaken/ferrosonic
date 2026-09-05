@@ -326,7 +326,7 @@ async fn config_changed_event_overwrites_daemon_config() {
         &h.client_state,
         &h.client,
         &h.cover_art,
-        DaemonEvent::ConfigChanged(cfg),
+        DaemonEvent::ConfigChanged(Box::new(cfg)),
     )
     .await;
     let ds = h.daemon.read().await;
@@ -364,4 +364,104 @@ async fn shutdown_event_sets_should_quit() {
     .await;
     let cs = h.client_state.read().await;
     assert!(cs.should_quit);
+}
+
+#[tokio::test]
+#[serial]
+async fn rating_events_update_all_client_copies_and_clear() {
+    let h = build_harness();
+    let list = vec![
+        song("target", "One"),
+        song("other", "Other"),
+        song("target", "Duplicate"),
+    ];
+    {
+        let mut state = h.daemon.write().await;
+        state.queue = list.clone();
+        state.library.starred_songs = list.clone();
+        state.library.random_songs = list.clone();
+        state.library.random_album_songs = list.clone();
+        state
+            .library
+            .album_songs_cache
+            .insert("album".into(), list.clone());
+        state
+            .library
+            .playlist_songs_cache
+            .insert("playlist".into(), list.clone());
+        state.now_playing.song = Some(list[0].clone());
+    }
+    {
+        let mut client = h.client_state.write().await;
+        client.artists.songs = list.clone();
+        client.playlists.songs = list;
+    }
+    for rating in [Some(4), None] {
+        apply_event(
+            &h.daemon,
+            &h.client_state,
+            &h.client,
+            &h.cover_art,
+            DaemonEvent::SongRatingChanged {
+                id: "target".into(),
+                rating,
+            },
+        )
+        .await;
+        let state = h.daemon.read().await;
+        let client = h.client_state.read().await;
+        for list in [
+            &state.queue,
+            &state.library.starred_songs,
+            &state.library.random_songs,
+            &state.library.random_album_songs,
+            &state.library.album_songs_cache["album"],
+            &state.library.playlist_songs_cache["playlist"],
+            &client.artists.songs,
+            &client.playlists.songs,
+        ] {
+            assert_eq!(list[0].user_rating, rating);
+            assert_eq!(list[1].user_rating, None);
+            assert_eq!(list[2].user_rating, rating);
+        }
+        assert_eq!(state.now_playing.song.as_ref().unwrap().user_rating, rating);
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn config_event_synchronizes_new_settings_without_purging_queue() {
+    use ferrosonic::config::{PlaybackFilters, ReplayGainMode};
+    let h = build_harness();
+    let mut config = Config::new();
+    config.cover_art = false;
+    config.replay_gain_mode = ReplayGainMode::Album;
+    config.replay_gain_preamp = 2.5;
+    config.replay_gain_clip = true;
+    config.playback_filters = PlaybackFilters {
+        min_rating: 5,
+        ..Default::default()
+    };
+    let mut queued = song("low", "Low rated");
+    queued.user_rating = Some(1);
+    h.daemon.write().await.queue = vec![queued];
+    apply_event(
+        &h.daemon,
+        &h.client_state,
+        &h.client,
+        &h.cover_art,
+        DaemonEvent::ConfigChanged(Box::new(config)),
+    )
+    .await;
+    let state = h.daemon.read().await;
+    let client = h.client_state.read().await;
+    assert_eq!(
+        client.settings_state.replay_gain_mode,
+        ReplayGainMode::Album
+    );
+    assert_eq!(client.settings_state.replay_gain_preamp, 2.5);
+    assert!(client.settings_state.replay_gain_clip);
+    assert_eq!(client.settings_state.playback_filters.min_rating, 5);
+    assert_eq!(state.config.playback_filters.min_rating, 5);
+    assert_eq!(state.queue[0].id, "low");
 }

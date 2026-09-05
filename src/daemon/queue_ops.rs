@@ -9,6 +9,54 @@ use crate::error::Error;
 use crate::ipc::protocol::DaemonEvent;
 
 impl DaemonCore {
+    /// Filter `songs` by the configured `PlaybackFilters`, notifying the
+    /// user when every song in a non-empty input was excluded. The single
+    /// shared choke point for all three places songs enter the queue
+    /// (`enqueue_songs`'s three modes, `shuffle_library`, and auto-continue's
+    /// `pick_unplayed_random`) so the filter logic and the empty-result
+    /// safeguard live in one place.
+    pub(crate) async fn filter_for_playback(
+        self: &Arc<Self>,
+        songs: Vec<crate::subsonic::models::Child>,
+    ) -> Vec<crate::subsonic::models::Child> {
+        self.filter_for_playback_tracking_index(songs, None).await.0
+    }
+
+    /// Same filtering as `filter_for_playback`, but also re-resolves
+    /// `track_index` (an index into the *input* `songs`) to its new index in
+    /// the filtered output. Tracking the original index rather than the
+    /// song's id keeps duplicate-id occurrences (e.g. the same track queued
+    /// twice from a playlist) distinguishable — an id-based re-lookup would
+    /// always land on the first occurrence regardless of which one was
+    /// targeted.
+    pub(crate) async fn filter_for_playback_tracking_index(
+        self: &Arc<Self>,
+        songs: Vec<crate::subsonic::models::Child>,
+        track_index: Option<usize>,
+    ) -> (Vec<crate::subsonic::models::Child>, Option<usize>) {
+        if songs.is_empty() {
+            return (songs, None);
+        }
+        let filters = self.state.read().await.config.playback_filters.clone();
+        let mut new_index = None;
+        let mut filtered = Vec::with_capacity(songs.len());
+        for (i, s) in songs.into_iter().enumerate() {
+            if crate::daemon::playback_filters::passes_filters(&s, &filters) {
+                if Some(i) == track_index {
+                    new_index = Some(filtered.len());
+                }
+                filtered.push(s);
+            }
+        }
+        if filtered.is_empty() {
+            self.emit(DaemonEvent::Notification {
+                message: "All selected songs are excluded by your playback filters".to_string(),
+                is_error: true,
+            });
+        }
+        (filtered, new_index)
+    }
+
     /// Replace queue + play target under a single state write lock so the queue cannot be mutated between the swap and the play setup. If `play_from` is None, only the queue is replaced.
     ///
     /// # Errors
@@ -133,6 +181,10 @@ impl DaemonCore {
                 return Ok(());
             }
         };
+        let songs = self.filter_for_playback(songs).await;
+        if songs.is_empty() {
+            return Ok(());
+        }
         {
             let mut state = self.state.write().await;
             state.library.random_songs.clone_from(&songs);

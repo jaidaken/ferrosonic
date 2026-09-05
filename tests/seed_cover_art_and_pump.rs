@@ -30,6 +30,7 @@ fn song_with_cover(id: &str, cover_id: &str) -> Child {
         path: None,
         disc_number: None,
         starred: None,
+        user_rating: None,
     }
 }
 
@@ -180,6 +181,7 @@ async fn apply_event_now_playing_clears_cover_when_no_cover_id() {
             path: None,
             disc_number: None,
             starred: None,
+            user_rating: None,
         }),
         state: ferrosonic::daemon::state::PlaybackState::Playing,
         position: 0.0,
@@ -220,7 +222,7 @@ async fn apply_event_config_changed_enables_cover_art_fetches() {
     cfg.base_url = td.fake_subsonic.url();
     cfg.username = "u".into();
     cfg.password = "p".into();
-    let ev = DaemonEvent::ConfigChanged(cfg);
+    let ev = DaemonEvent::ConfigChanged(Box::new(cfg));
     let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> =
         std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone()));
     let cover = std::sync::Arc::new(std::sync::Mutex::new(
@@ -243,7 +245,7 @@ async fn apply_event_config_changed_disables_cover_art_clears_guard() {
     let (app, td) = build_app().await;
     let mut cfg = ferrosonic::config::Config::new();
     cfg.cover_art = false;
-    let ev = DaemonEvent::ConfigChanged(cfg);
+    let ev = DaemonEvent::ConfigChanged(Box::new(cfg));
     let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> =
         std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone()));
     let cover = std::sync::Arc::new(std::sync::Mutex::new(

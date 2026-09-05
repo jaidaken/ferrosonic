@@ -298,3 +298,14 @@ async fn is_running_with_no_process_and_no_ipc_returns_false() {
     let mut ctrl = MpvController::new();
     assert!(!ctrl.is_running());
 }
+
+#[tokio::test]
+#[serial]
+async fn nonfinite_live_gain_never_reaches_mpv() {
+    let (mut ctrl, fake) = ctrl_and_fake().await;
+    let before = fake.commands().await;
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(ctrl.set_replaygain_preamp(value).await.is_err());
+    }
+    assert_eq!(fake.commands().await, before);
+}

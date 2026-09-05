@@ -55,7 +55,7 @@ async fn up_stays_at_zero_field() {
 #[serial]
 async fn down_stops_at_max_field() {
     let mut fx = build_app().await;
-    for _ in 0..15 {
+    for _ in 0..25 {
         fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
     }
     assert_eq!(
@@ -65,7 +65,7 @@ async fn down_stops_at_max_field() {
             .await
             .settings_state
             .selected_field,
-        9
+        17
     );
 }
 
@@ -196,6 +196,80 @@ async fn right_at_max_cover_art_size_is_clamped() {
             .settings_state
             .cover_art_size,
         24
+    );
+}
+
+// Regression: h/l/space are global Previous/Next/Pause bindings everywhere
+// else, but on Settings they are the page's own field-navigation keys and
+// must reach handle_settings_key instead of firing a daemon request.
+#[tokio::test]
+#[serial]
+async fn l_key_on_cover_art_size_field_advances_it_like_right() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 4;
+        cs.settings_state.cover_art_size = 10;
+    }
+    fx.app.handle_key(key(KeyCode::Char('l'))).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .cover_art_size,
+        12,
+        "l must be routed to Settings' Right-equivalent action, not stolen as global Next"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn h_key_on_cover_art_size_field_reduces_it_like_left() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 4;
+        cs.settings_state.cover_art_size = 12;
+    }
+    fx.app.handle_key(key(KeyCode::Char('h'))).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .cover_art_size,
+        10,
+        "h must be routed to Settings' Left-equivalent action, not stolen as global Previous"
+    );
+}
+
+// Regression: the h/l/space carve-out for Settings must stay narrow — q
+// (and other truly-global bindings) must still reach the global quit
+// handler instead of being silently swallowed as an unhandled Settings key.
+#[tokio::test]
+#[serial]
+async fn q_key_still_quits_from_settings_page() {
+    let mut fx = build_app().await;
+    fx.app.handle_key(key(KeyCode::Char('q'))).await.unwrap();
+    assert!(fx.app.client_state.read().await.should_quit);
+}
+
+#[tokio::test]
+#[serial]
+async fn space_key_toggles_cover_art_on_field_three_like_enter() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 3;
+        cs.settings_state.cover_art = false;
+    }
+    fx.app.handle_key(key(KeyCode::Char(' '))).await.unwrap();
+    assert!(
+        fx.app.client_state.read().await.settings_state.cover_art,
+        "space must be routed to Settings' Enter-equivalent action, not stolen as global Pause"
     );
 }
 
@@ -392,6 +466,228 @@ async fn cava_size_clamps_at_max() {
     assert_eq!(
         fx.app.client_state.read().await.settings_state.cava_size,
         80
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn replay_gain_mode_field_ten_cycles_forward_with_right() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 10;
+        cs.settings_state.replay_gain_mode = ferrosonic::config::ReplayGainMode::Off;
+    }
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .replay_gain_mode,
+        ferrosonic::config::ReplayGainMode::Track
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn replay_gain_mode_field_ten_cycles_backward_with_left() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 10;
+        cs.settings_state.replay_gain_mode = ferrosonic::config::ReplayGainMode::Off;
+    }
+    fx.app.handle_key(key(KeyCode::Left)).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .replay_gain_mode,
+        ferrosonic::config::ReplayGainMode::Album
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn replay_gain_preamp_field_eleven_adjusts_by_half_db() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 11;
+        cs.settings_state.replay_gain_preamp = 0.0;
+    }
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .replay_gain_preamp,
+        0.5
+    );
+    fx.app.handle_key(key(KeyCode::Left)).await.unwrap();
+    fx.app.handle_key(key(KeyCode::Left)).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .replay_gain_preamp,
+        -0.5
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn replay_gain_preamp_field_eleven_clamps_at_bounds() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 11;
+        cs.settings_state.replay_gain_preamp = 15.0;
+    }
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .replay_gain_preamp,
+        15.0,
+        "preamp must clamp at the mpv maximum of 15.0 dB"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn replay_gain_clip_field_twelve_toggles() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 12;
+        cs.settings_state.replay_gain_clip = false;
+    }
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .replay_gain_clip
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn min_rating_field_thirteen_adjusts_and_clamps() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 13;
+        cs.settings_state.playback_filters.min_rating = 0;
+    }
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .playback_filters
+            .min_rating,
+        1
+    );
+    // Hold well past the ceiling; must clamp at 5, not wrap or overflow.
+    for _ in 0..10 {
+        fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    }
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .playback_filters
+            .min_rating,
+        5
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn year_min_field_fourteen_cycles_off_to_a_year_and_back() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 14;
+        cs.settings_state.playback_filters.year_min = None;
+    }
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .playback_filters
+            .year_min
+            .is_some(),
+        "Right from Off must set a concrete year"
+    );
+    fx.app.handle_key(key(KeyCode::Left)).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .playback_filters
+            .year_min,
+        None,
+        "Left back to the floor must return to Off"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn duration_max_field_seventeen_cycles_off_to_a_value_and_back() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 17;
+        cs.settings_state.playback_filters.duration_max_secs = None;
+    }
+    fx.app.handle_key(key(KeyCode::Left)).await.unwrap();
+    assert!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .playback_filters
+            .duration_max_secs
+            .is_some(),
+        "Left from Off must set a concrete duration (Left starts at the ceiling)"
+    );
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert_eq!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .playback_filters
+            .duration_max_secs,
+        None,
+        "Right back to the ceiling must return to Off"
     );
 }
 

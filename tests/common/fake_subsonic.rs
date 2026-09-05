@@ -80,6 +80,33 @@ impl FakeSubsonic {
             .await;
     }
 
+    /// Like `expect_random_songs` but each song carries the given rating
+    /// (1-5), for playback-filter tests.
+    pub async fn expect_random_songs_rated(&self, songs: &[(&str, u8)]) {
+        let song_list: Vec<Value> = songs
+            .iter()
+            .enumerate()
+            .map(|(i, (title, rating))| {
+                json!({
+                    "id": format!("song-{}", i),
+                    "title": title,
+                    "artist": "Test Artist",
+                    "album": "Test Album",
+                    "duration": 180,
+                    "isDir": false,
+                    "userRating": rating,
+                })
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getRandomSongs"))
+            .respond_with(ok_body(json!({
+                "randomSongs": { "song": song_list }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_starred(&self) {
         self.expect_starred_with(&[]).await;
     }
@@ -225,6 +252,35 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_rating_response(&self, rating: u8, status: u16, delay_ms: u64) {
+        Mock::given(method("GET"))
+            .and(path("/rest/setRating"))
+            .and(wiremock::matchers::query_param(
+                "rating",
+                rating.to_string(),
+            ))
+            .respond_with(
+                ResponseTemplate::new(status)
+                    .set_body_json(if status == 200 {
+                        json!({"subsonic-response": {"status": "ok", "version": "1.16.1"}})
+                    } else {
+                        json!({"subsonic-response": {"status": "failed", "version": "1.16.1",
+                        "error": {"code": 0, "message": "rating rejected"}}})
+                    })
+                    .set_delay(std::time::Duration::from_millis(delay_ms)),
+            )
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_set_rating(&self) {
+        Mock::given(method("GET"))
+            .and(path("/rest/setRating"))
+            .respond_with(ok_body(json!({})))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_search3(&self, artists: &[&str], albums: &[&str], songs: &[&str]) {
         let artist_list: Vec<Value> = artists
             .iter()
@@ -336,6 +392,39 @@ impl FakeSubsonic {
                     "song": song_list
                 }
             })))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Mocks `getAlbumList2?type=random` returning one album, plus `getAlbum`
+    /// for that album's id returning `songs`.
+    pub async fn expect_random_album(&self, id: &str, name: &str, songs: &[&str]) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumList2"))
+            .and(wiremock::matchers::query_param("type", "random"))
+            .respond_with(ok_body(json!({
+                "albumList2": { "album": [{"id": id, "name": name}] }
+            })))
+            .mount(&self.server)
+            .await;
+        self.expect_get_album(id, name, songs).await;
+    }
+
+    /// Mocks `getAlbumList2?type=random` returning no albums (empty library).
+    pub async fn expect_no_random_album(&self) {
+        self.expect_no_random_album_with_delay(0).await;
+    }
+
+    pub async fn expect_no_random_album_with_delay(&self, delay_ms: u64) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumList2"))
+            .and(wiremock::matchers::query_param("type", "random"))
+            .respond_with(
+                ok_body(json!({
+                    "albumList2": { "album": [] }
+                }))
+                .set_delay(std::time::Duration::from_millis(delay_ms)),
+            )
             .mount(&self.server)
             .await;
     }

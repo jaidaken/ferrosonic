@@ -36,6 +36,7 @@ fn song(id: &str) -> Child {
         path: None,
         disc_number: None,
         starred: None,
+        user_rating: None,
     }
 }
 
@@ -73,7 +74,7 @@ async fn down_in_option_pane_starred_to_random_triggers_refresh() {
 
 #[tokio::test]
 #[serial]
-async fn down_at_random_option_is_noop() {
+async fn down_at_random_triggers_random_album_refresh() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
@@ -81,6 +82,38 @@ async fn down_at_random_option_is_noop() {
         cs.songs.selected_option = Some(SongOption::Random);
     }
     fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+    assert!(matches!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::RandomAlbum)
+    ));
+}
+
+#[tokio::test]
+#[serial]
+async fn down_at_random_album_option_is_noop() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 0;
+        cs.songs.selected_option = Some(SongOption::RandomAlbum);
+    }
+    fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+    assert!(matches!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::RandomAlbum)
+    ));
+}
+
+#[tokio::test]
+#[serial]
+async fn up_at_random_album_triggers_random_refresh() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 0;
+        cs.songs.selected_option = Some(SongOption::RandomAlbum);
+    }
+    fx.app.handle_key(key(KeyCode::Up)).await.unwrap();
     assert!(matches!(
         fx.app.client_state.read().await.songs.selected_option,
         Some(SongOption::Random)
@@ -216,6 +249,33 @@ async fn enter_with_valid_index_plays_song() {
     fx.app.handle_key(key(KeyCode::Enter)).await.unwrap();
     let ds = fx.app.daemon_state.read().await;
     assert!(ds.queue.iter().any(|s| s.id == "rs1"));
+}
+
+// Proves songs_list() dispatches to random_album_songs (not starred/random)
+// when RandomAlbum is selected, not just that RandomAlbum can be selected.
+#[tokio::test]
+#[serial]
+async fn enter_with_random_album_selected_plays_from_random_album_songs() {
+    let mut fx = build_app().await;
+    {
+        let mut ds = fx.app.daemon_state.write().await;
+        ds.library.starred_songs = vec![song("starred0")];
+        ds.library.random_songs = vec![song("rand0")];
+        ds.library.random_album_songs = vec![song("alb0"), song("alb1")];
+    }
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 1;
+        cs.songs.selected_option = Some(SongOption::RandomAlbum);
+        cs.songs.selected_index = Some(1);
+    }
+    fx.app.handle_key(key(KeyCode::Enter)).await.unwrap();
+    let ds = fx.app.daemon_state.read().await;
+    assert!(ds.queue.iter().any(|s| s.id == "alb1"));
+    assert!(!ds
+        .queue
+        .iter()
+        .any(|s| s.id == "starred0" || s.id == "rand0"));
 }
 
 #[tokio::test]
@@ -470,4 +530,19 @@ async fn enter_with_out_of_range_selection_does_not_enqueue() {
         td.state.read().await.queue.is_empty(),
         "Enter on an out-of-range selection must not enqueue"
     );
+}
+
+#[tokio::test]
+async fn returning_to_quick_play_retains_random_album_without_refresh() {
+    let rec = common::RecordingClient::new();
+    let mut app = App::with_remote_client(rec.clone(), Config::new());
+    app.client_state.write().await.songs.selected_option = Some(SongOption::RandomAlbum);
+    app.handle_key(key(KeyCode::F(3))).await.unwrap();
+    app.handle_key(key(KeyCode::F(1))).await.unwrap();
+    app.handle_key(key(KeyCode::F(3))).await.unwrap();
+    assert_eq!(
+        app.client_state.read().await.songs.selected_option,
+        Some(SongOption::RandomAlbum)
+    );
+    assert!(rec.requests().await.is_empty());
 }

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Song ratings.** Rate the currently-playing track 1-5 with the `1`-`5`
+  keys (press the current rating again to clear it). Synced to the server
+  and exposed to desktop media controls via MPRIS's `userRating`.
+- **Playback filters.** Exclude songs from ever entering the queue by
+  minimum rating, year range, or duration (`F6` Settings page), or by genre
+  or artist exclude-list (`[PlaybackFilters]` in `config.toml`). Applies
+  wherever songs enter the queue - adding, shuffling, and auto-continue's
+  random pick - not retroactively to an already-persisted queue.
+- **Random Album quick play.** A third Quick Play (`F3`) mode alongside
+  Starred and Random: loads a full random album, re-rolled when switching
+  into the option from another one. Returning to `F3`, or clicking the
+  already-selected option, keeps the current album.
+- **Configurable global keybindings.** The ~14 page-independent shortcuts
+  (quit, play/pause, next/previous, star-playing, shuffle-library,
+  cycle-repeat, refresh, and the six `F1`-`F6` page switches) can be
+  remapped via a `[Keybindings]` table in `config.toml`. A chord collision
+  is reported both in the log and as a startup notification in the TUI.
+- **ReplayGain.** Persisted `ReplayGainMode` (`"no"`/`"track"`/`"album"`),
+  `ReplayGainPreamp` (clamped to -15..+15 dB), and `ReplayGainClip`
+  clipping prevention, with three `F6` Settings rows. Applied to mpv at
+  startup and pushed live while a track is playing; the latest values are
+  reapplied if mpv restarts.
+
 ## [0.6.1] - 2026-06-27
 
 ### Fixed

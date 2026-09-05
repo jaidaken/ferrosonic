@@ -111,8 +111,16 @@ async fn controller_respawns_mpv_after_an_external_kill() {
     let tempdir = common::tempdir();
     let socket = tempdir.path().join("respawn.sock");
     let socket_str = socket.to_string_lossy().to_string();
-    let mut mpv = MpvController::with_socket_path(socket);
+    let mut mpv = MpvController::with_socket_path(socket.clone());
+    mpv.set_replaygain_startup(ferrosonic::config::ReplayGainMode::Track, 99.0, true);
     mpv.start().await.expect("first start");
+    assert_replaygain_properties(&socket, "track", 15.0, false).await;
+    mpv.set_replaygain_mode(ferrosonic::config::ReplayGainMode::Album)
+        .await
+        .unwrap();
+    mpv.set_replaygain_preamp(-99.0).await.unwrap();
+    mpv.set_replaygain_clip(false).await.unwrap();
+    assert_replaygain_properties(&socket, "album", -15.0, true).await;
     assert!(mpv.is_running(), "running after first start");
 
     // Simulate a crash: kill the process out from under the controller.
@@ -134,8 +142,44 @@ async fn controller_respawns_mpv_after_an_external_kill() {
 
     // start() must tear the dead connection down and bring mpv back.
     mpv.start().await.expect("respawn");
+    assert_replaygain_properties(&socket, "album", -15.0, true).await;
     assert!(
         mpv.is_running(),
         "start() must tear down the dead connection and respawn mpv"
     );
+}
+
+async fn assert_replaygain_properties(
+    socket: &std::path::Path,
+    mode: &str,
+    preamp: f64,
+    allow_clip: bool,
+) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let stream = tokio::net::UnixStream::connect(socket).await.unwrap();
+    let (read, mut write) = stream.into_split();
+    let mut lines = BufReader::new(read).lines();
+    for (name, expected) in [
+        ("replaygain", serde_json::json!(mode)),
+        ("replaygain-preamp", serde_json::json!(preamp)),
+        ("replaygain-clip", serde_json::json!(allow_clip)),
+    ] {
+        let command = serde_json::json!({"command": ["get_property", name], "request_id": 99});
+        write
+            .write_all(format!("{command}\n").as_bytes())
+            .await
+            .unwrap();
+        let response = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let line = lines.next_line().await.unwrap().unwrap();
+                let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+                if value["request_id"] == 99 {
+                    break value;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(response["data"], expected, "{name}");
+    }
 }

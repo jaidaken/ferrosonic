@@ -206,6 +206,15 @@ pub struct SettingsState {
     pub scrobble: bool,
     /// Show a desktop notification on track change.
     pub notifications: bool,
+    /// `ReplayGain` adjustment mode, pushed live to mpv.
+    pub replay_gain_mode: crate::config::ReplayGainMode,
+    /// `ReplayGain` preamp in dB (-15.0..=15.0), pushed live to mpv.
+    pub replay_gain_preamp: f64,
+    /// Prevent clipping from `ReplayGain` amplification, pushed live to mpv.
+    pub replay_gain_clip: bool,
+    /// Queue exclusion rules (rating/year/duration get TUI rows here;
+    /// genre/artist exclude lists are `config.toml`-only for now).
+    pub playback_filters: crate::config::PlaybackFilters,
 }
 
 impl Default for SettingsState {
@@ -223,6 +232,10 @@ impl Default for SettingsState {
             cover_art_size: 16,
             scrobble: true,
             notifications: true,
+            replay_gain_mode: crate::config::ReplayGainMode::Off,
+            replay_gain_preamp: 0.0,
+            replay_gain_clip: false,
+            playback_filters: crate::config::PlaybackFilters::default(),
         }
     }
 }

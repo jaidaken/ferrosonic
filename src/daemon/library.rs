@@ -181,6 +181,9 @@ pub struct LibraryCache {
     /// LRU order for `playlist_songs_cache`, least-recent first.
     #[serde(default)]
     pub playlist_songs_cache_order: VecDeque<String>,
+    /// Songs of the most recently fetched random album (Quick Play mode).
+    #[serde(default)]
+    pub random_album_songs: Vec<Child>,
 }
 
 impl LibraryCache {
