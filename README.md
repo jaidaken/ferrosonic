@@ -137,7 +137,7 @@ ReplayGainClip = false
 
 | Field | Description |
 |---|---|
-| `BaseURL` | URL of your Subsonic-compatible server (Navidrome, Airsonic, Gonic, etc.) |
+| `BaseURL` | URL of your Subsonic-compatible server (Navidrome, Airsonic, Gonic, etc.). May include a path prefix if the server sits behind a reverse proxy, e.g. `https://example.com/music` - with or without a trailing slash |
 | `Username` | Your server username |
 | `Password` | Your server password. Used inline only as a last resort; the Server page prefers the OS keychain. |
 | `PasswordKeyring` | Set to `true` automatically when the password lives in the OS keychain; no plaintext is then written to the config. See below. |

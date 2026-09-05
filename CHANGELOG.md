@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Server URLs with a path prefix.** A `BaseURL` such as
+  `https://example.com/music` had its last path segment dropped when
+  endpoints were resolved, so requests went to `/rest/...` at the domain
+  root and a reverse proxy's HTML 404 surfaced as "Failed to parse
+  response". Base URLs are now normalized to end in `/`, so both spellings
+  address the same server.
+
 ### Added
 
 - **Song ratings.** Rate the currently-playing track 1-5 with the `1`-`5`

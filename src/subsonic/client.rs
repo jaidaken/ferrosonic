@@ -34,10 +34,24 @@ pub struct SubsonicClient {
 impl SubsonicClient {
     /// Build a client for `base_url` with token-auth credentials.
     ///
+    /// A base URL is normalized to end in `/` so that a server hosted under a
+    /// path prefix keeps it. Endpoints are resolved with [`Url::join`], which
+    /// follows RFC 3986 relative resolution: without the trailing slash the
+    /// final segment counts as a file name and is replaced, turning
+    /// `https://host/music` + `rest/ping` into `https://host/rest/ping`
+    /// instead of `https://host/music/rest/ping`. Both spellings of the
+    /// configured URL therefore address the same server.
+    ///
     /// # Errors
     /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
     pub fn new(base_url: &str, username: &str, password: &Secret) -> Result<Self, SubsonicError> {
-        let base_url = Url::parse(base_url)?;
+        let mut base_url = Url::parse(base_url)?;
+        // A cannot-be-a-base URL (`mailto:` and friends) has no path to fix up;
+        // `set_path` ignores it and the later `join` fails as it always has.
+        if !base_url.path().ends_with('/') {
+            let with_slash = format!("{}/", base_url.path());
+            base_url.set_path(&with_slash);
+        }
 
         let http = Client::builder()
             .user_agent(CLIENT_NAME)
@@ -714,5 +728,58 @@ mod tests {
         let url = "https://example.com/rest/stream?u=user";
         let id = SubsonicClient::parse_song_id_from_url(url);
         assert_eq!(id, None);
+    }
+
+    fn endpoint_path(base: &str) -> String {
+        let client = SubsonicClient::new(base, "u", &"p".into()).expect("client builds");
+        let url = client.build_url("ping").expect("endpoint url builds");
+        format!("{}{}", url.host_str().unwrap_or_default(), url.path())
+    }
+
+    /// A server under a path prefix keeps it. `Url::join` resolves relatively,
+    /// so an un-slashed base would drop its last segment and address
+    /// `/rest/ping` at the domain root -- reaching the reverse proxy rather
+    /// than the Subsonic server, whose HTML 404 then fails JSON parsing.
+    #[test]
+    fn subpath_base_url_keeps_its_prefix_with_or_without_a_trailing_slash() {
+        assert_eq!(
+            endpoint_path("https://example.com/music"),
+            "example.com/music/rest/ping"
+        );
+        assert_eq!(
+            endpoint_path("https://example.com/music/"),
+            "example.com/music/rest/ping"
+        );
+    }
+
+    #[test]
+    fn nested_subpath_base_url_keeps_every_segment() {
+        assert_eq!(
+            endpoint_path("https://example.com/apps/navidrome"),
+            "example.com/apps/navidrome/rest/ping"
+        );
+    }
+
+    #[test]
+    fn root_base_url_is_unchanged_by_normalization() {
+        assert_eq!(
+            endpoint_path("https://example.com"),
+            "example.com/rest/ping"
+        );
+        assert_eq!(
+            endpoint_path("https://example.com/"),
+            "example.com/rest/ping"
+        );
+        assert_eq!(
+            endpoint_path("http://127.0.0.1:4533"),
+            "127.0.0.1/rest/ping"
+        );
+    }
+
+    /// The normalization must not swallow a malformed URL into a silent
+    /// success; construction still rejects what it always rejected.
+    #[test]
+    fn invalid_base_url_still_fails_construction() {
+        assert!(SubsonicClient::new("not a url", "u", &"p".into()).is_err());
     }
 }
