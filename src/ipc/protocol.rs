@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::config::{Config, RepeatMode, ReplayGainMode};
 use crate::daemon::state::{DaemonState, NowPlaying};
 use crate::secret::{deserialize_secret, serialize_revealed, Secret};
-use crate::subsonic::models::{Album, Artist, Child, MusicFolder, Playlist, SearchResult3};
+use crate::subsonic::models::{
+    Album, Artist, Child, LyricsSource, MusicFolder, Playlist, SearchResult3,
+};
 
 /// Client-to-daemon command sent over the IPC socket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,12 +193,28 @@ pub enum DaemonRequest {
     SetReplayGainClip(bool),
     /// Replace the playback-filter exclusion rules wholesale.
     SetPlaybackFilters(crate::config::PlaybackFilters),
+    /// Replace global keybinding overrides wholesale.
+    SetKeybindings(
+        std::collections::HashMap<
+            crate::config::keybind::GlobalAction,
+            crate::config::keybind::KeyChord,
+        >,
+    ),
     /// Fetch cover art bytes for an item, scaled to `size` pixels.
     FetchCoverArt {
         /// Cover art ID from the owning item.
         id: String,
         /// Requested edge length in pixels.
         size: u32,
+    },
+    /// Fetch lyrics for a song, preferring structured lyrics when supported.
+    FetchLyrics {
+        /// Song ID used by the `OpenSubsonic` structured endpoint.
+        id: String,
+        /// Artist used by the classic Subsonic fallback.
+        artist: Option<String>,
+        /// Title used by the classic Subsonic fallback.
+        title: String,
     },
 
     /// Register this connection for `DaemonEvent` broadcasts.
@@ -269,6 +287,8 @@ pub enum DaemonResponse {
     SearchResults(SearchResult3),
     /// Raw cover art image bytes.
     CoverArt(Vec<u8>),
+    /// Available lyric sources for the requested song.
+    Lyrics(Vec<LyricsSource>),
     /// Reply to `Ping`.
     Pong,
 }

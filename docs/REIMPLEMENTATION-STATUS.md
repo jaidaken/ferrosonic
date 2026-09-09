@@ -1,8 +1,9 @@
 # Custom feature reimplementation status
 
-Implemented on upstream `39abd072167e585c0016747a770b32337c9782ab`, 2026-09-05.
-Recovered the custom implementation from local commits `daad264` and `7d20e96`
-as an uncommitted patch, retaining upstream dependencies and metadata.
+Implemented on branch `personal-features`, based on upstream
+`39abd072167e585c0016747a770b32337c9782ab`, beginning 2026-09-05. The branch
+contains the feature commit `06a2a44` plus six focused correctness commits
+through `06fa94a`; upstream dependencies and metadata are retained.
 
 - [x] Song ratings: API, playing-song keys, cached copies, UI suffixes, rollback,
   events, and MPRIS metadata.
@@ -12,6 +13,20 @@ as an uncommitted patch, retaining upstream dependencies and metadata.
   separate cache, snapshots, star/rating synchronization, stale-empty protection.
 - [x] Configurable global keys: defaults and overrides, persistence, conflict
   notifications, reserved keys, modal/Settings priority, page-edit cleanup.
+- [x] In-app excluded-genre/artist editors: staged add/remove, validation,
+  atomic persistence, cancellation, and narrow-terminal rendering.
+- [x] In-app global-keybinding editor: chord capture, conflict rejection,
+  one/all reset, daemon IPC persistence, immediate application, and effective
+  footer hints.
+- [x] Responsive footer: measured height and complete wrapped shortcut pairs on
+  narrow/tall terminals, retaining notifications and sample-rate status.
+- [x] Responsive layout pass: measured wrapping for all header tabs and
+  transport controls, vertically stacked two-pane pages at narrow widths,
+  shared render/mouse rectangles, and bounded cava/cover-art space.
+- [x] Lyrics overlay: OpenSubsonic structured/synchronized lyrics, classic
+  fallback, client-side caching, exact synchronized follow, proportional
+  untimed follow, manual scrolling, source selection, and responsive
+  loading/empty/error views.
 - [x] ReplayGain: configuration, Settings, startup and live mpv properties,
   preamp clamping, clipping inversion, latest values retained on restart.
 
@@ -32,6 +47,10 @@ Follow-up correctness review:
   changes during a request, invalid gains, and complete client-cache/Settings
   synchronization. Rating and invalid-gain defects were reproduced with
   failing tests before their fixes.
+- Server base URLs retain an existing path prefix, rating failures reach the
+  user, `Alt+1`-`Alt+5` rate the highlighted song, Library search rows update
+  after star/rating events, and queue copies of ratings/stars persist across a
+  daemon restart.
 
 Random Album refreshes when switching into that option from another option.
 Returning to F3 or clicking the selected option keeps the current album; this
@@ -41,22 +60,29 @@ remains a historical description, not a runtime verification report.
 Tests cover the restored features plus socket requests/reconnect, small Settings
 layouts, duplicate caches, stale responses, MPRIS parity, and real-mpv
 ReplayGain startup/live/restart properties. See the workspace-root HANDOFF.md
-for logs and manual verification limitations.
+for the detailed verification record.
 
-Verification (2026-09-05, final run):
+Verification (2026-09-07, stages 1 through 4 checkpoint):
 
-- `cargo fmt --all -- --check` and `git diff --check`: pass.
+- `cargo fmt --all -- --check`: pass.
 - `cargo clippy --all-targets --all-features`: passes with warnings.
 - `cargo clippy --lib --bins --all-features -D clippy::unwrap_used
-  -D clippy::expect_used`: passes with 34 production warnings. The untouched
-  upstream baseline produces the same 34, so this work adds none. They concern
-  pre-existing wildcard and async-trait code under this toolchain; do not
-  clean them up as part of this feature work.
+  -D clippy::expect_used`: passes with 34 production warnings. They are
+  warning-level wildcard, lock-scope, and async-trait findings under this
+  toolchain; do not broaden this feature work into a lint cleanup.
 - `cargo test --doc`: 37 passed.
-- `cargo nextest run --profile ci --all-targets --test-threads 4`:
-  **1,659 of 1,659 passed**.
+- `cargo nextest run --profile ci --all-targets --test-threads 1`: 1,704/1,704
+  passed in 215.411 seconds. The two known host-load-sensitive concurrency
+  checks passed on their third attempts and also passed together in a focused
+  single-thread run.
+- `cargo build --release`: pass; `target/release/ferrosonic` rebuilt at 19:45
+  (13,400,248 bytes; SHA-256
+  `873be2ad1713822eced6dbd00f2c7c3d0387051a338dbda98171c240e0e186f7`).
+- `cargo deny check --all-features` was not run locally because `cargo-deny`
+  is not installed. No dependency files changed; the configured hosted CI job
+  remains the final check for this gate.
 
-An earlier run of the same suite failed
+Earlier runs of the same suite failed
 `lock_order::pause_resume_under_replace_storm_stays_consistent` on all three
 retries and marked `state_invariant::r1_toggle_pause_state_stays_consistent_under_replace`
 flaky. Both are pre-existing upstream stress tests, byte-identical to the
@@ -69,10 +95,30 @@ change in this tree:
   (0.278 s in one, 18.157 s in another) and this tree passes the test in
   0.283 s in isolation.
 - A back-to-back pair of full suites finished 1,659/1,659 (55.1 s) here and
-  1,558/1,558 (54.0 s) on the baseline.
+  1,558/1,558 (54.0 s) on the baseline during the initial feature review. The
+  earlier post-fix suite was independently green at 1,676/1,676.
 
-Treat these two tests as load-sensitive on a desktop machine. Run the suite
-with a raised descriptor limit and modest concurrency, and re-check a failure
-in isolation before treating it as a regression.
+These tests remain sensitive to extreme desktop load. The post-removal suite
+passed both on retry, and its focused rerun passed in 0.278 and 0.201 seconds.
+Run the suite with a raised descriptor limit and modest concurrency, and
+re-check future timing failures on an idle host.
 
-Live listening and interactive UI smoke checks were not performed.
+Live verification against Navidrome is complete for all five feature areas.
+The final rating-persistence fix was exercised with a real `setRating` request:
+the isolated queue stored the latest value (5), a forced daemon restart restored
+all 15 queue items, and the restored song retained rating 5.
+
+Playback smoke testing covered daemon-backed and standalone modes, TUI
+reconnection to a playing daemon, pause/resume, live ReplayGain changes, two
+natural gapless advances, and PipeWire switching among 44.1, 88.2, and 96 kHz.
+The listener confirmed clean audio, seamless transitions, and expected gain
+behavior. Test profiles were isolated; the normal config and installed binary
+were unchanged.
+
+Roadmap stages 1 through 4 are implemented and live-verified. The user confirmed
+the editors, responsive layouts, and lyrics retrieval/rendering and following.
+The previously verified audiobook integration was subsequently removed at the
+user's request. Audiobook and direct-RSS podcast work has moved to the separate,
+portable Podsonic planning package at the workspace root. This work is recorded
+on the `personal-features` branch and has not been pushed or deployed; the
+installed binary and personal configuration are unchanged.

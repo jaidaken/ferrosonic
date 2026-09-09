@@ -90,22 +90,6 @@ async fn down_at_random_triggers_random_album_refresh() {
 
 #[tokio::test]
 #[serial]
-async fn down_at_random_album_option_is_noop() {
-    let mut fx = build_app().await;
-    {
-        let mut cs = fx.app.client_state.write().await;
-        cs.songs.focus = 0;
-        cs.songs.selected_option = Some(SongOption::RandomAlbum);
-    }
-    fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
-    assert!(matches!(
-        fx.app.client_state.read().await.songs.selected_option,
-        Some(SongOption::RandomAlbum)
-    ));
-}
-
-#[tokio::test]
-#[serial]
 async fn up_at_random_album_triggers_random_refresh() {
     let mut fx = build_app().await;
     {

@@ -96,7 +96,13 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     let duration_max_val = filters
         .duration_max_secs
         .map_or_else(|| "Off".to_string(), |s| format!("{s}s"));
-
+    let excluded_genres_val = format!("{} entries", filters.excluded_genres.len());
+    let excluded_artists_val = format!("{} entries", filters.excluded_artists.len());
+    let keybindings_val = if settings.keybindings.is_empty() {
+        "Defaults".to_string()
+    } else {
+        format!("{} overrides", settings.keybindings.len())
+    };
     let x = inner.x;
     let w = inner.width;
 
@@ -204,6 +210,23 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
             value: duration_max_val,
             idx: 17,
         },
+        Item::Row {
+            label: "Excluded Genres",
+            value: excluded_genres_val,
+            idx: 18,
+        },
+        Item::Row {
+            label: "Excluded Artists",
+            value: excluded_artists_val,
+            idx: 19,
+        },
+        Item::Gap,
+        Item::Heading("Controls"),
+        Item::Row {
+            label: "Global Keybinds",
+            value: keybindings_val,
+            idx: 20,
+        },
     ];
 
     {
@@ -275,6 +298,9 @@ const fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
         15 => "← → to exclude songs released after this year (off = no upper bound)",
         16 => "← → to exclude songs shorter than this (off = no lower bound, step 15s)",
         17 => "← → to exclude songs longer than this (off = no upper bound, step 15s)",
+        18 => "Enter to edit excluded genres",
+        19 => "Enter to edit excluded artists",
+        20 => "Enter to edit global keybindings",
         _ => "",
     }
 }
@@ -399,9 +425,9 @@ mod tests {
             "idx 17 is Duration Max"
         );
         assert_eq!(
-            settings_help_text(18, true),
+            settings_help_text(21, true),
             "",
-            "no field beyond Duration Max"
+            "no field beyond keybindings"
         );
     }
 

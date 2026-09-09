@@ -9,6 +9,21 @@ status: historical
 
 STATUS 2026-06-15: test phase CONCLUDED, content-driven (no %-gate; see `CLAUDE.md` rule 8). The `>=92` / `>=75` floor language, the STATUS LEGEND, and the P1-P5 plan below are the SUPERSEDED gate from the original sprint, retained as the historical work record. The kill-% numbers are point-in-time measurements, not targets.
 
+CURRENT NOTE 2026-09-07: the uncommitted `personal-features` tree includes
+the responsive layout pass, in-app filter/keybinding editors, and Stage 4
+lyrics. Focused coverage includes staged
+save/cancel, input validation, key capture/reset, conflict rejection,
+failed-write consistency and daemon rollback, socket IPC, effective footer
+hints, wrapped-header hit regions, stacked panes, and wide/standard/narrow
+render snapshots, structured/classic lyric responses, missing and malformed
+lyrics, non-blocking retrieval, cache reuse, error state, and narrow overlay
+rendering, including exact synchronized following and proportional scrolling
+for untimed lyrics. The former Stage 5 audiobook implementation and its focused
+tests were removed when long-form playback moved to the separate Podsonic
+project. Current broad verification is recorded in the workspace-root
+`HANDOFF.md`. Labels such as `NEXT`, `CURRENT`, and `remaining` below describe
+the 2026-06 mutation campaign and do not identify active work.
+
 scope: every `src/*.rs` file. **NO percentage gate** (user 2026-06-14: "every percent is pointless, tests should be decided based on the actual contents"). goal = strong asserts (A1) on logic that can break in a way that MATTERS (state transitions, parsing, IO, arithmetic feeding a decision, protocol framing, security boundaries); trivial getters / pure render / log-only / provably-equivalent code get no new test. mutation = DISCOVERY tool to find code that runs unchecked, then judge each survivor; kill the real ones, document equivalents, leave unreachable-boundary + timing-only mutants. supersedes the missing `TESTING-PLAN.md` referenced by [mutation baseline](MUTATION-BASELINE.md).
 
 ## MUTATION RUNNER GOTCHAS (learned 2026-06-14)
@@ -169,7 +184,7 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
 - daemon core.rs partial kills (PREPPED, verify in overnight core run): broadcast_now_playing, emit_config_changed, bump_library_version (`tests/daemon_core_effects.rs`), dispatch_play `>` boundary (`tests/playback_resume.rs`).
 - flaky `mpris_handler_off_tokio_runtime` excluded from mutation baseline (passes solo, fails under parallel load; CLAUDE.md known-flaky). FIX-LATER: real flakiness.
 
-### CURRENT (resume here, updated)
+### Historical final mutation status (2026-06-22)
 
 - **DECISION RESOLVED (user: "whatever is the most professional, complete way forward"):** kill core.rs's cheap real survivors now, log the seam-required real gaps as known-open (NOT as equivalents, they change behaviour), then sweep the ~55 unmeasured files breadth-first, returning for the expensive core.rs seams as a final depth pass.
 - core.rs CHEAP REAL KILLS LANDED (scoped verify `/tmp/core-kill-verify.log`: 9/9 caught): 378 bump_library_version value (assert emitted == 1, `tests/daemon_core_effects.rs`), 391 extend_with_random_and_play empty-guard (auto-continue error notification, same file), 235 sweep_orphan_prebuffer_files (`tests/daemon_startup_sweep.rs` backdated orphan fixture).
@@ -182,14 +197,17 @@ append `file | date | before% -> after% | commit` as each file reaches the floor
   - prebuffer streaming 606/619/680/693/705/707: detached HTTP-streaming task; threshold/trigger mutants change buffering latency but load the same song. needs a >512KB FakeSubsonic byte-stream + chunk-timing control. low correctness value (perf-timing, not song selection).
   - dispatch_play 514 (`&&`->`||`): best-effort stop before reload; mutant sends an extra harmless stop when idle (same end state). killable by asserting the command stream; low value.
   - config_gen_for_test / bump_config_gen_for_test: `#[doc(hidden)]` test-only accessors, no production caller; `#[mutants::skip]` candidates.
-- NEXT: playback_ops.rs (heavily tested already, measure, expect strong), playback_tick.rs, then ipc/subsonic/audio re-verify/app/ui-remaining per priority list below.
+- The next planned sweep at that time was playback_ops.rs, playback_tick.rs,
+  then ipc/subsonic/audio re-verification and the remaining app/UI files.
 
-### OLD CURRENT
+### Earlier mutation work log
 
 - daemon small-files TESTS WRITTEN (committed): daemon_star_sync (apply_star_to_cached/sync_starred_songs + song.id==id), daemon_queue_ops_more (move-position adjust, shuffle_library body+guard, shuffle_queue), daemon_core_effects (broadcast_now_playing, emit_config_changed, refresh playlists/starred/random/artists events). playback_resume +zero-offset boundary.
 - RUNNING scoped verification `/tmp/daemon-small3.log` (test phase scoped to daemon binaries, ~20min). expect most survivors killed; known-equivalent: persistence:24 + run:85 (NotFound guard = log-only, same return), queue move 69/71 + shuffle_queue 146 (boundary guards for states the queue-position invariant prevents).
 - DEFERRED: settings_ops:24 (password_file filter; update_server_config blocks ~10s on connection probe, fiddly).
-- NEXT: big-daemon run = core.rs (~30 survivors in `/tmp/daemon-mutants.log`, 4 pre-killed), playback_ops.rs, playback_tick.rs. USE scoped test phase + clean scratch.
+- The next planned run at that point was core.rs (~30 survivors in
+  `/tmp/daemon-mutants.log`, 4 pre-killed), playback_ops.rs, and
+  playback_tick.rs, using a scoped test phase and clean scratch space.
 
 ### daemon T0 batch (RUNNING `/tmp/daemon-mutants.log`, 285 mutants ~3h)
 
@@ -202,7 +220,10 @@ core.rs shows a high early miss rate: integration tests exercise it (coverage) b
 
 approach: let batch finish -> full survivor list -> group by category -> write effect/boundary tests -> re-run daemon files to verify -> document equivalents. then P2 ipc/subsonic, P3 app, P4 ui-remaining.
 
-### remaining (priority order)
+### Historical remaining plan (superseded)
+
+The following list is retained as the mutation campaign's closing plan. It is
+not required to complete or release the `personal-features` work.
 
 - P2 daemon: triage full survivor set (above) to >=92.
 - P2 ipc/subsonic/misc batch: ipc server/client/socket_client/path/frame, subsonic client/auth/models, config/paths, secret, io_util, error, proc_util.

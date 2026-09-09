@@ -209,6 +209,8 @@ pub enum GlobalAction {
     TogglePause,
     /// Toggle the star on the currently-playing song.
     StarPlaying,
+    /// Open or close lyrics for the currently-playing song.
+    ToggleLyrics,
     /// Replace the queue with a fresh shuffled batch from the library.
     ShuffleLibrary,
     /// Step the repeat mode: Off -> One -> All -> Off.
@@ -230,6 +232,28 @@ pub enum GlobalAction {
 }
 
 impl GlobalAction {
+    /// Stable user-facing label used by the in-app keybinding editor.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Quit => "Quit",
+            Self::NextTrack => "Next track",
+            Self::PreviousTrack => "Previous track",
+            Self::TogglePause => "Pause / resume",
+            Self::StarPlaying => "Star playing song",
+            Self::ToggleLyrics => "Show lyrics",
+            Self::ShuffleLibrary => "Shuffle library",
+            Self::CycleRepeat => "Cycle repeat mode",
+            Self::Refresh => "Refresh library",
+            Self::GoToLibrary => "Go to Library",
+            Self::GoToQueue => "Go to Queue",
+            Self::GoToQuickPlay => "Go to Quick Play",
+            Self::GoToPlaylists => "Go to Playlists",
+            Self::GoToServer => "Go to Server",
+            Self::GoToSettings => "Go to Settings",
+        }
+    }
+
     /// Whether this action switches the active page. `app::input` uses
     /// this to run each page's "revert unsaved edits" cleanup based on the
     /// resolved action rather than the literal key, so remapping a page
@@ -248,10 +272,33 @@ impl GlobalAction {
     }
 }
 
+/// Effective chord for an action after applying the supplied overrides.
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn effective_chord(
+    overrides: &HashMap<GlobalAction, KeyChord>,
+    action: GlobalAction,
+) -> KeyChord {
+    overrides
+        .get(&action)
+        .copied()
+        .unwrap_or_else(|| default_chord(action))
+}
+
+/// Built-in chord for an action before config overrides are applied.
+#[must_use]
+pub fn default_chord(action: GlobalAction) -> KeyChord {
+    DEFAULT_BINDINGS
+        .iter()
+        .find_map(|(candidate, chord)| (*candidate == action).then_some(*chord))
+        // Every public GlobalAction is represented in DEFAULT_BINDINGS.
+        .unwrap_or(KeyChord::plain(KeyCode::Null))
+}
+
 /// Default key chord for each global action, in a fixed order used to
 /// resolve chord collisions deterministically when merging in overrides
 /// (see [`resolve`]).
-pub const DEFAULT_BINDINGS: [(GlobalAction, KeyChord); 14] = [
+pub const DEFAULT_BINDINGS: [(GlobalAction, KeyChord); 15] = [
     (GlobalAction::Quit, KeyChord::plain(KeyCode::Char('q'))),
     (GlobalAction::GoToLibrary, KeyChord::plain(KeyCode::F(1))),
     (GlobalAction::GoToQueue, KeyChord::plain(KeyCode::F(2))),
@@ -284,6 +331,10 @@ pub const DEFAULT_BINDINGS: [(GlobalAction, KeyChord); 14] = [
         KeyChord::plain(KeyCode::Char('r')),
     ),
     (GlobalAction::Refresh, KeyChord::ctrl(KeyCode::Char('r'))),
+    (
+        GlobalAction::ToggleLyrics,
+        KeyChord::plain(KeyCode::Char('y')),
+    ),
 ];
 
 /// Merge user overrides onto [`DEFAULT_BINDINGS`], then invert into a

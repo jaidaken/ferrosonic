@@ -6,6 +6,7 @@ pub mod event_pump;
 pub mod event_source;
 mod input;
 mod input_library;
+mod input_lyrics;
 mod input_playlists;
 mod input_queue;
 mod input_server;
@@ -563,9 +564,9 @@ impl App {
         self.client_state.read().await.should_quit
     }
 
-    /// Test seam: per-tick post-event work (notification expiry).
+    /// Test seam: per-tick post-event work.
     pub async fn tick_post(&mut self) {
-        let mut cs = self.client_state.write().await;
-        cs.check_notification_timeout();
+        self.client_state.write().await.check_notification_timeout();
+        self.ensure_open_lyrics().await;
     }
 }

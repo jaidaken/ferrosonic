@@ -4,14 +4,34 @@
 
 ### Fixed
 
+- **Shortcut hints on narrow terminals.** The footer now wraps complete
+  key/description pairs across the extra rows available on tall, narrow
+  displays, while keeping notifications and sample-rate status visible.
+- **Narrow and vertical terminal layouts.** Header tabs wrap so every page and
+  transport control remains visible; Library, Playlists, and Quick Play panes
+  stack when horizontal space is limited. Content, cover art, now-playing, and
+  cava now share the available height without blanking short form pages.
+- **Settings label spacing.** The controls row now uses the shorter “Global
+  Keybinds” label so its value keeps the same visual gap as other settings.
 - **Server URLs with a path prefix.** A `BaseURL` such as
   `https://example.com/music` had its last path segment dropped when
   endpoints were resolved, so requests went to `/rest/...` at the domain
   root and a reverse proxy's HTML 404 surfaced as "Failed to parse
   response". Base URLs are now normalized to end in `/`, so both spellings
   address the same server.
+- **Rating and star synchronization.** Failed rating writes are reported,
+  Library search rows update immediately, and queue copies are persisted so
+  confirmed rating/star changes survive a daemon restart. `Alt+1`-`Alt+5`
+  can rate the highlighted row, with a clear notification when no song is
+  highlighted.
 
 ### Added
+
+- **Lyrics overlay.** Press `y` from any page to show lyrics for the playing
+  track. Structured and synchronized OpenSubsonic lyrics are preferred, with
+  classic Subsonic fallback, per-song caching, manual scrolling,
+  exact timestamp following or estimated progress following for untimed lyrics,
+  source/language selection, and explicit loading, empty, and error states.
 
 - **Song ratings.** Rate the currently-playing track 1-5 with the `1`-`5`
   keys, or the highlighted row with `Alt+1`-`Alt+5` (press the current
@@ -23,15 +43,21 @@
   or artist exclude-list (`[PlaybackFilters]` in `config.toml`). Applies
   wherever songs enter the queue - adding, shuffling, and auto-continue's
   random pick - not retroactively to an already-persisted queue.
+- **In-app filter editors.** Excluded genre and artist lists can now be
+  added to, removed from, cancelled, and saved from Settings. Entries are
+  trimmed and checked for empty or case-insensitive duplicates.
 - **Random Album quick play.** A third Quick Play (`F3`) mode alongside
   Starred and Random: loads a full random album, re-rolled when switching
   into the option from another one. Returning to `F3`, or clicking the
   already-selected option, keeps the current album.
-- **Configurable global keybindings.** The ~14 page-independent shortcuts
+- **Configurable global keybindings.** The 15 page-independent shortcuts
   (quit, play/pause, next/previous, star-playing, shuffle-library,
   cycle-repeat, refresh, and the six `F1`-`F6` page switches) can be
   remapped via a `[Keybindings]` table in `config.toml`. A chord collision
   is reported both in the log and as a startup notification in the TUI.
+- **In-app keybinding editor.** Global shortcuts can now be captured, reset,
+  persisted, and applied immediately from Settings. Reserved keys and chord
+  collisions are rejected before save, and footer hints show active bindings.
 - **ReplayGain.** Persisted `ReplayGainMode` (`"no"`/`"track"`/`"album"`),
   `ReplayGainPreamp` (clamped to -15..+15 dB), and `ReplayGainClip`
   clipping prevention, with three `F6` Settings rows. Applied to mpv at

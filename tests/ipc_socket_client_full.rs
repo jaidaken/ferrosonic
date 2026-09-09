@@ -113,12 +113,25 @@ async fn multiple_concurrent_requests_resolve_independently() {
 #[tokio::test]
 #[serial]
 async fn custom_features_round_trip_over_socket_and_reconnect() {
+    use ferrosonic::config::keybind::{GlobalAction, KeyChord};
     use ferrosonic::config::{PlaybackFilters, ReplayGainMode};
     use ferrosonic::ipc::{DaemonResponse, EnqueueMode};
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_set_rating().await;
     td.fake_subsonic
         .expect_random_album("album", "Album", &["Track"])
+        .await;
+    td.fake_subsonic
+        .expect_open_subsonic_extensions(&["songLyrics"])
+        .await;
+    td.fake_subsonic
+        .expect_structured_lyrics(
+            "song-0",
+            serde_json::json!([{
+                "lang": "en", "synced": false,
+                "line": [{"value": "Socket lyric"}]
+            }]),
+        )
         .await;
     let socket = td.config_dir.path().join("features.sock");
     let core = td.core.clone();
@@ -131,6 +144,10 @@ async fn custom_features_round_trip_over_socket_and_reconnect() {
             min_rating: 2,
             ..Default::default()
         }),
+        DaemonRequest::SetKeybindings(std::collections::HashMap::from([(
+            GlobalAction::Quit,
+            "z".parse::<KeyChord>().unwrap(),
+        )])),
         DaemonRequest::SetReplayGainMode(ReplayGainMode::Album),
         DaemonRequest::SetReplayGainPreamp(1.5),
         DaemonRequest::SetReplayGainClip(true),
@@ -145,6 +162,18 @@ async fn custom_features_round_trip_over_socket_and_reconnect() {
             DaemonResponse::Ok
         ));
     }
+    let lyrics = client
+        .request(DaemonRequest::FetchLyrics {
+            id: "song-0".into(),
+            artist: Some("Test Artist".into()),
+            title: "Track".into(),
+        })
+        .await
+        .unwrap();
+    let DaemonResponse::Lyrics(lyrics) = lyrics else {
+        panic!("expected lyrics response");
+    };
+    assert_eq!(lyrics[0].lines[0].value, "Socket lyric");
     let mut excluded = common::song("excluded", "Excluded");
     excluded.user_rating = Some(1);
     let included = td.state.read().await.library.random_album_songs[0].clone();
@@ -163,6 +192,10 @@ async fn custom_features_round_trip_over_socket_and_reconnect() {
     };
     assert_eq!(state.queue.len(), 1);
     assert_eq!(state.queue[0].user_rating, Some(4));
+    assert_eq!(
+        state.config.keybindings.get(&GlobalAction::Quit),
+        Some(&"z".parse::<KeyChord>().unwrap())
+    );
     assert_eq!(state.library.random_album_songs.len(), 1);
     assert_eq!(state.config.playback_filters.min_rating, 2);
     assert_eq!(state.config.replay_gain_mode, ReplayGainMode::Album);

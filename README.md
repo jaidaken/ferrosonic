@@ -22,7 +22,7 @@ It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termson
 - **Quick Play** - jump straight into your Starred songs, a fresh Random roll, or a Random Album, no browsing.
 - **Stars** - favourite tracks with `n` (playing) or `m` (highlighted); shown with a star everywhere.
 - **Ratings** - rate the playing track 1-5 (`1`-`5`) or the highlighted one (`Alt+1`-`Alt+5`); press the current rating again to clear it. Synced to the server and exposed via MPRIS.
-- **Playback filters** - exclude songs from the queue by minimum rating, year range, or duration from Settings (`F6`); genre and artist exclude-lists via `config.toml`. Applies wherever songs enter the queue (enqueue, shuffle, auto-continue).
+- **Playback filters** - exclude songs from the queue by rating, year, duration, genre, or artist from Settings (`F6`) or `config.toml`. Applies wherever songs enter the queue (enqueue, shuffle, auto-continue).
 - **Shuffle and repeat** - shuffle any artist, album, or the whole library; cycle repeat Off/One/All with `r`.
 - **Queue** - add, remove, reorder, shuffle, and clear history; persists across daemon restarts; save as a server playlist with `s`.
 - **Playlists** - browse, play, and fully edit server playlists (rename, delete, add/remove/reorder songs).
@@ -37,10 +37,13 @@ It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termson
 
 ### Interface
 
+- **Responsive layouts** - page tabs and transport controls wrap on narrow
+  terminals; Library, Playlists, and Quick Play stack their panes when a
+  side-by-side split would make the content too narrow.
 - **13 themes** - Default, Monokai, Dracula, Nord, Gruvbox, Catppuccin, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, One Dark, Ayu Dark; plus custom TOML themes in `~/.config/ferrosonic/themes/`.
 - **Cover art** - kitty / iTerm2 / sixel image protocols, with a chafa-enhanced half-block fallback.
 - **Mouse support** - clickable tabs, buttons, lists, and progress-bar seeking.
-- **Keyboard-driven** - Vim-style `j`/`k` alongside arrow keys; the global shortcuts (quit, play/pause, page switches, ...) are remappable via a `[Keybindings]` table in `config.toml`.
+- **Keyboard-driven** - Vim-style `j`/`k` alongside arrow keys; global shortcuts (quit, play/pause, page switches, ...) are remappable from Settings or via `[Keybindings]` in `config.toml`.
 
 ## Screenshots
 
@@ -161,7 +164,7 @@ Logs are written to `~/.config/ferrosonic/ferrosonic.log` (TUI) and `~/.config/f
 
 ### Playback filters
 
-Exclude songs from ever entering the queue - whether from adding a song/album/playlist, shuffling the library, or auto-continue's random pick - by rating, year, duration, genre, or artist. `MinRating`, the year range, and the duration range have Settings-page rows (`F6`); `ExcludedGenres`/`ExcludedArtists` are `config.toml`-only for now, since there's no in-app list editor yet. Filters are not applied retroactively to an already-persisted queue or when just browsing the library - they only govern what gets added going forward. If a filter excludes everything from a given add, ferrosonic shows a notification instead of silently doing nothing.
+Exclude songs from ever entering the queue - whether from adding a song/album/playlist, shuffling the library, or auto-continue's random pick - by rating, year, duration, genre, or artist. All filters have Settings-page rows (`F6`); select Excluded Genres or Excluded Artists and press Enter for the list editor. Filters are not applied retroactively to an already-persisted queue or when just browsing the library - they only govern what gets added going forward. If a filter excludes everything from a given add, ferrosonic shows a notification instead of silently doing nothing.
 
 ```toml
 [PlaybackFilters]
@@ -178,7 +181,7 @@ All fields are optional and independently combinable; omit a field (or the whole
 
 ### Custom keybindings
 
-The ~14 global (page-independent) shortcuts - quit, play/pause, next/previous track, star-playing, shuffle-library, cycle-repeat, refresh, and the six `F1`-`F6` page switches - can be remapped in a `[Keybindings]` table, keyed by action name with a key-chord string value (`"q"`, `"F1"`, `"Space"`, `"Ctrl+r"`; a shifted letter can be written as `"T"` or `"Shift+t"`). Per-page bindings and modal overlays (quit-confirm, the add-to-playlist picker, Settings' own `h`/`l`/`Space` field navigation) are not configurable. `p` (secondary pause alias) and the rating keys (`1`-`5` and `Alt+1`-`Alt+5`) are always reserved and can't be remapped or shadowed.
+The 15 global (page-independent) shortcuts - quit, play/pause, next/previous track, star-playing, lyrics, shuffle-library, cycle-repeat, refresh, and the six `F1`-`F6` page switches - can be remapped from Settings (`F6` → Global Keybinds) or in a `[Keybindings]` table. The editor captures the next pressed chord, rejects collisions and reserved keys, can reset one action or all actions, and applies saved changes immediately. Config values use chord strings such as `"q"`, `"F1"`, `"Space"`, and `"Ctrl+r"`; a shifted letter can be written as `"T"` or `"Shift+t"`. Per-page bindings and modal overlays remain fixed. `p` (secondary pause alias) and the rating keys (`1`-`5` and `Alt+1`-`Alt+5`) are always reserved and can't be remapped or shadowed.
 
 ```toml
 [Keybindings]
@@ -188,7 +191,7 @@ PreviousTrack = "k"
 ShuffleLibrary = "s"
 ```
 
-An override using a reserved key is also logged and reported as unreachable. Any action left out keeps its default binding. Config is read once at startup; picking up an edit needs an app restart. A key chord claimed by two actions is a config error, logged and reported once in the TUI at startup - the action earlier in `[Keybindings]`'s internal default order wins, the later one is unreachable until the collision is fixed.
+An override using a reserved key is logged and reported as unreachable. Any action left out keeps its default binding. Manual `config.toml` edits are read at startup; changes saved through the in-app editor take effect immediately. A key chord claimed by two actions is a config error, logged and reported once in the TUI at startup; the editor prevents creating these conflicts.
 
 ### Where your password is stored
 
@@ -233,6 +236,7 @@ The bindings in this section (except `p`/`Space` for pause and the `1`-`5` / `Al
 | `l` | Next track |
 | `h` | Previous track |
 | `n` | Star/unstar currently-playing song |
+| `y` | Open lyrics for the currently-playing song |
 | `1`-`5` | Rate the currently-playing song 1-5; press the current rating again to clear it |
 | `Alt+1`-`Alt+5` | Rate the *highlighted* song instead. On the Library page the song list must have focus (`→`), the same rule `m` follows - ferrosonic tells you if nothing is highlighted |
 | `r` | Cycle repeat mode (Off → One → All) |
@@ -244,6 +248,19 @@ The bindings in this section (except `p`/`Space` for pause and the `1`-`5` / `Al
 | `F4` | Playlists page |
 | `F5` | Server configuration page |
 | `F6` | Settings page |
+
+### Lyrics overlay
+
+Press `y` from any page while a track is loaded. Ferrosonic prefers structured
+and synchronized OpenSubsonic lyrics when the server advertises `songLyrics`,
+and falls back to the classic Subsonic lyrics endpoint on compatible older
+servers. Results are cached for the current TUI session.
+
+Use `j`/`k`, the arrow keys, or Page Up/Page Down to scroll; `f` toggles
+follow-current-line mode. Timestamped lyrics follow the exact active line;
+untimed lyrics scroll proportionally with track progress and label this as an
+estimate. Left/Right selects another language or source, `r` retries, and `y`
+or Escape closes the overlay.
 
 ### Library Page (F1)
 
@@ -334,7 +351,9 @@ F-keys still switch pages from the Server page; any unsaved edits are discarded 
 | `Left` | Previous option |
 | `Right` / `Enter` | Next option |
 
-Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, scrobbling, desktop notifications, ReplayGain mode/preamp/clip prevention, playback filters (min rating, year range, duration range), and the daemon-mode preference. Changes are saved automatically and, for ReplayGain, applied live to mpv if a track is playing. The daemon-mode toggle takes effect on the next launch. Note `h`/`l`/`Space` are hardcoded to move between options on this page, not the global previous/pause/next bindings.
+The genre, artist, and global-keybind rows open modal editors with Enter. In the filter editors use `a` to add, `d` to remove, `Ctrl+S` to save, and `Esc` to cancel. In the keybinding editor use Enter to capture a chord, `d` to reset one action, `D` to reset all, `Ctrl+S` to save, and `Esc` to cancel.
+
+Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, scrobbling, desktop notifications, ReplayGain mode/preamp/clip prevention, all playback filters, global keybindings, and the daemon-mode preference. Scalar changes save automatically; the two list editors save with `Ctrl+S`. ReplayGain applies live to mpv where relevant, and saved keybindings apply live to the TUI. The daemon-mode toggle takes effect on the next launch. Note `h`/`l`/`Space` are fixed field controls on this page.
 
 ## Mouse Support
 

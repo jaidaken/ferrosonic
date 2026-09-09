@@ -171,7 +171,15 @@ impl App {
 
         if in_pane(left) {
             let row_in_pane = y.saturating_sub(left.y + 1) as usize;
-            let option = match row_in_pane {
+            let option_index = if left.height < 6 {
+                let midpoint = left.x + 1 + left.width.saturating_sub(2) / 2;
+                row_in_pane
+                    .saturating_mul(2)
+                    .saturating_add(usize::from(x >= midpoint))
+            } else {
+                row_in_pane
+            };
+            let option = match option_index {
                 0 => Some(SongOption::Starred),
                 1 => Some(SongOption::Random),
                 2 => Some(SongOption::RandomAlbum),

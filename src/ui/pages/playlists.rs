@@ -1,7 +1,7 @@
 //! Playlists page with dual-panel browser
 
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
@@ -15,17 +15,19 @@ use crate::ui::theme::ThemeColors;
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
-    let chunks =
-        Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).split(area);
-
-    render_playlists(frame, chunks[0], state, &colors);
-    render_songs(frame, chunks[1], state, &colors);
+    let (Some(playlist_area), Some(song_area)) =
+        crate::ui::layout::content_panes(state.client.page, area)
+    else {
+        return;
+    };
+    render_playlists(frame, playlist_area, state, &colors);
+    render_songs(frame, song_area, state, &colors);
 
     if state.client.playlists.renaming {
         let content = format!("{}\u{2588}", state.client.playlists.rename_buf);
         render_edit_box(
             frame,
-            chunks[0],
+            playlist_area,
             &content,
             " Rename playlist  (Enter: save  Esc: cancel) ",
             &colors,
@@ -38,7 +40,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
             .and_then(|i| state.daemon.library.playlists.get(i))
             .map_or("", |p| p.name.as_str());
         let content = format!("Delete '{name}'?  (y: confirm  n: cancel)");
-        render_edit_box(frame, chunks[0], &content, " Delete playlist ", &colors);
+        render_edit_box(frame, playlist_area, &content, " Delete playlist ", &colors);
     }
 }
 

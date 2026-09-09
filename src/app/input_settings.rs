@@ -1,4 +1,4 @@
-use crossterm::event::{self, KeyCode};
+use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::error::Error;
 
@@ -24,7 +24,7 @@ enum SettingChange {
     PlaybackFilters,
 }
 
-const SETTINGS_FIELD_COUNT: usize = 18;
+const SETTINGS_FIELD_COUNT: usize = 21;
 /// `adjust_setting`'s Left/Right step for the `ReplayGain` preamp, in dB.
 const REPLAY_GAIN_PREAMP_STEP: f64 = 0.5;
 /// `adjust_setting`'s Left/Right step for the Year Min/Max filters.
@@ -45,7 +45,6 @@ impl App {
         let mut change: Option<SettingChange> = None;
 
         {
-            let _ds = self.daemon_state.read().await;
             let mut cs = self.client_state.write().await;
             let field = cs.settings_state.selected_field;
             let cava_ok = cs.cava_available;
@@ -64,6 +63,37 @@ impl App {
                         cs.notify(msg);
                     }
                 }
+                KeyCode::Enter if (18..=20).contains(&field) => match field {
+                    18 | 19 => {
+                        let kind = if field == 18 {
+                            crate::app::state::FilterListKind::Genres
+                        } else {
+                            crate::app::state::FilterListKind::Artists
+                        };
+                        let entries = if field == 18 {
+                            cs.settings_state.playback_filters.excluded_genres.clone()
+                        } else {
+                            cs.settings_state.playback_filters.excluded_artists.clone()
+                        };
+                        cs.settings_state.filter_editor =
+                            Some(crate::app::state::FilterListEditor {
+                                kind,
+                                entries,
+                                selected: 0,
+                                adding: false,
+                                input: String::new(),
+                            });
+                    }
+                    20 => {
+                        cs.settings_state.keybinding_editor =
+                            Some(crate::app::state::KeybindingEditor {
+                                bindings: cs.settings_state.keybindings.clone(),
+                                selected: 0,
+                                capturing: false,
+                            });
+                    }
+                    _ => {}
+                },
                 KeyCode::Right | KeyCode::Char('l' | ' ') | KeyCode::Enter => {
                     change = adjust_setting(&mut cs.settings_state, field, 1, cava_ok);
                     if let Some(c) = change {
@@ -188,6 +218,235 @@ impl App {
             | SettingChange::PlaybackFilters => {}
         }
 
+        Ok(())
+    }
+
+    /// Handle either Settings editor overlay. Edits stay local until Ctrl+S.
+    pub(super) async fn handle_settings_editor_key(
+        &mut self,
+        key: event::KeyEvent,
+    ) -> Result<(), Error> {
+        if self
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .filter_editor
+            .is_some()
+        {
+            return self.handle_filter_editor_key(key).await;
+        }
+        self.handle_keybinding_editor_key(key).await
+    }
+
+    // One modal state machine; keeping key handling together makes add/list/save
+    // ownership explicit.
+    #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
+    async fn handle_filter_editor_key(&self, key: event::KeyEvent) -> Result<(), Error> {
+        let save = key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL);
+        if save {
+            let (kind, entries, mut filters) = {
+                let cs = self.client_state.read().await;
+                let Some(editor) = cs.settings_state.filter_editor.as_ref() else {
+                    return Ok(());
+                };
+                (
+                    editor.kind,
+                    editor.entries.clone(),
+                    cs.settings_state.playback_filters.clone(),
+                )
+            };
+            match kind {
+                crate::app::state::FilterListKind::Genres => {
+                    filters.excluded_genres.clone_from(&entries);
+                }
+                crate::app::state::FilterListKind::Artists => {
+                    filters.excluded_artists.clone_from(&entries);
+                }
+            }
+            if let Err(error) = self
+                .client
+                .request(DaemonRequest::SetPlaybackFilters(filters.clone()))
+                .await
+            {
+                self.client_state
+                    .write()
+                    .await
+                    .notify_error(format!("Failed to save filters: {error}"));
+                return Ok(());
+            }
+            let mut cs = self.client_state.write().await;
+            cs.settings_state.playback_filters = filters;
+            cs.settings_state.filter_editor = None;
+            cs.notify("Playback filters saved");
+            return Ok(());
+        }
+
+        let mut cs = self.client_state.write().await;
+        let mut notice = None;
+        let Some(editor) = cs.settings_state.filter_editor.as_mut() else {
+            return Ok(());
+        };
+        if editor.adding {
+            match key.code {
+                KeyCode::Esc => {
+                    editor.adding = false;
+                    editor.input.clear();
+                }
+                KeyCode::Backspace => {
+                    editor.input.pop();
+                }
+                KeyCode::Enter => {
+                    let value = editor.input.trim().to_string();
+                    if value.is_empty() {
+                        notice = Some((true, "Exclusion cannot be empty".to_string()));
+                    } else if editor
+                        .entries
+                        .iter()
+                        .any(|entry| entry.eq_ignore_ascii_case(&value))
+                    {
+                        notice = Some((true, format!("'{value}' is already excluded")));
+                    } else {
+                        editor.entries.push(value);
+                        editor.selected = editor.entries.len().saturating_sub(1);
+                        editor.adding = false;
+                        editor.input.clear();
+                    }
+                }
+                KeyCode::Char(character)
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                {
+                    editor.input.push(character);
+                }
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Esc => cs.settings_state.filter_editor = None,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    editor.selected = editor.selected.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if editor.selected + 1 < editor.entries.len() {
+                        editor.selected += 1;
+                    }
+                }
+                KeyCode::Char('a') => {
+                    editor.adding = true;
+                    editor.input.clear();
+                }
+                KeyCode::Char('d') if !editor.entries.is_empty() => {
+                    editor
+                        .entries
+                        .remove(editor.selected.min(editor.entries.len() - 1));
+                    editor.selected = editor.selected.min(editor.entries.len().saturating_sub(1));
+                }
+                _ => {}
+            }
+        }
+        if let Some((is_error, message)) = notice {
+            if is_error {
+                cs.notify_error(message);
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::significant_drop_tightening)]
+    async fn handle_keybinding_editor_key(&mut self, key: event::KeyEvent) -> Result<(), Error> {
+        use crate::config::keybind::{resolve, KeyChord, DEFAULT_BINDINGS};
+
+        let capturing = self
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .keybinding_editor
+            .as_ref()
+            .is_some_and(|editor| editor.capturing);
+        let save = !capturing
+            && key.code == KeyCode::Char('s')
+            && key.modifiers.contains(KeyModifiers::CONTROL);
+        if save {
+            let bindings = {
+                let cs = self.client_state.read().await;
+                let Some(editor) = cs.settings_state.keybinding_editor.as_ref() else {
+                    return Ok(());
+                };
+                editor.bindings.clone()
+            };
+            let (keymap, warnings) = resolve(&bindings);
+            if let Some(warning) = warnings.first() {
+                self.client_state
+                    .write()
+                    .await
+                    .notify_error(warning.clone());
+                return Ok(());
+            }
+            if let Err(error) = self
+                .client
+                .request(DaemonRequest::SetKeybindings(bindings.clone()))
+                .await
+            {
+                self.client_state
+                    .write()
+                    .await
+                    .notify_error(format!("Failed to save keybindings: {error}"));
+                return Ok(());
+            }
+            self.keymap = keymap;
+            let mut cs = self.client_state.write().await;
+            cs.settings_state.keybindings = bindings;
+            cs.settings_state.keybinding_editor = None;
+            cs.notify("Keybindings saved and applied");
+            return Ok(());
+        }
+
+        let mut cs = self.client_state.write().await;
+        let mut notice = None;
+        let Some(editor) = cs.settings_state.keybinding_editor.as_mut() else {
+            return Ok(());
+        };
+        if editor.capturing {
+            if key.code == KeyCode::Esc {
+                editor.capturing = false;
+            } else {
+                let (action, _) = DEFAULT_BINDINGS[editor.selected];
+                let chord = KeyChord::from(key);
+                let mut candidate = editor.bindings.clone();
+                candidate.insert(action, chord);
+                let (resolved, warnings) = resolve(&candidate);
+                if warnings.is_empty() && resolved.get(&chord) == Some(&action) {
+                    editor.bindings = candidate;
+                    editor.capturing = false;
+                } else {
+                    notice = Some(warnings.first().cloned().unwrap_or_else(|| {
+                        format!("{chord} cannot be used for {}", action.label())
+                    }));
+                }
+            }
+        } else {
+            match key.code {
+                KeyCode::Esc => cs.settings_state.keybinding_editor = None,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    editor.selected = editor.selected.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    editor.selected = (editor.selected + 1).min(DEFAULT_BINDINGS.len() - 1);
+                }
+                KeyCode::Enter => editor.capturing = true,
+                KeyCode::Char('d') => {
+                    editor.bindings.remove(&DEFAULT_BINDINGS[editor.selected].0);
+                }
+                KeyCode::Char('D') => editor.bindings.clear(),
+                _ => {}
+            }
+        }
+        if let Some(message) = notice {
+            cs.notify_error(message);
+        }
         Ok(())
     }
 }

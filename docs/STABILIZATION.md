@@ -51,7 +51,7 @@ authoritative current status.
 
 ### Worth doing, value-ranked
 
-All non-feature stabilization items are DONE: P8 KNOWN-ISSUES, P9 CI gates + clippy deny, P10 0.6.0 release, and the test-fixture /tmp leak (now self-cleaning via the swept `common::tempdir()` root). Remaining open work is feature requests (`#25` ReplayGain, `#14` star/ratings, `#12` random album + keybinds, `#7` playback filters) and the documented mutation depth-pass items below.
+All non-feature stabilization items are DONE: P8 KNOWN-ISSUES, P9 CI gates + clippy deny, P10 0.6.0 release, and the test-fixture /tmp leak (now self-cleaning via the swept `common::tempdir()` root). At the time of this stabilization pass, the remaining feature requests were `#25` ReplayGain, `#14` star/ratings, `#12` random album + keybinds, and `#7` playback filters. They were implemented and live-verified on branch `personal-features` in September 2026; see [REIMPLEMENTATION-STATUS](REIMPLEMENTATION-STATUS.md). The mutation depth-pass entries below remain a historical/accepted testing tail, not a feature-completion blocker.
 
 ### Low-value / defer (localhost single-user IPC; defense-in-depth)
 

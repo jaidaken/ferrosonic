@@ -5,6 +5,81 @@ use crate::secret::Secret;
 use crate::subsonic::models::Child;
 use crate::ui::theme::{ThemeColors, ThemeData};
 
+/// Current result state for the lyrics overlay.
+#[derive(Debug, Clone, Default)]
+pub enum LyricsStatus {
+    /// No request has been made for the current track.
+    #[default]
+    Idle,
+    /// A background request is in flight.
+    Loading,
+    /// One or more lyric sources are available.
+    Ready(Vec<crate::subsonic::models::LyricsSource>),
+    /// The server returned no lyrics for the track.
+    Empty,
+    /// Retrieval failed; contains a user-facing reason.
+    Error(String),
+}
+
+/// Client-owned lyrics overlay and per-song cache.
+#[derive(Debug, Clone, Default)]
+pub struct LyricsState {
+    /// Whether the overlay is visible.
+    pub open: bool,
+    /// Song currently represented by `status`.
+    pub song_id: Option<String>,
+    /// Loading/result state for the displayed song.
+    pub status: LyricsStatus,
+    /// Successful results, including empty vectors, keyed by song ID.
+    pub cache: std::collections::HashMap<String, Vec<crate::subsonic::models::LyricsSource>>,
+    /// Selected language/source index.
+    pub selected_source: usize,
+    /// First lyric row displayed.
+    pub scroll: usize,
+    /// Follow the active synchronized line during playback.
+    pub follow: bool,
+    /// Guards against stale background replies replacing a newer track.
+    pub request_generation: u64,
+}
+
+/// Which playback-filter name list is being edited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilterListKind {
+    /// Song genre exclusions.
+    Genres,
+    /// Song artist exclusions.
+    Artists,
+}
+
+/// Staged playback-filter list edits. The daemon config is untouched until Save.
+#[derive(Debug, Clone)]
+pub struct FilterListEditor {
+    /// Target list.
+    pub kind: FilterListKind,
+    /// Staged entries.
+    pub entries: Vec<String>,
+    /// Highlighted entry index.
+    pub selected: usize,
+    /// Whether the add-entry input owns keystrokes.
+    pub adding: bool,
+    /// New entry input buffer.
+    pub input: String,
+}
+
+/// Staged global keybinding edits. The running keymap is untouched until Save.
+#[derive(Debug, Clone)]
+pub struct KeybindingEditor {
+    /// Staged config overrides.
+    pub bindings: std::collections::HashMap<
+        crate::config::keybind::GlobalAction,
+        crate::config::keybind::KeyChord,
+    >,
+    /// Highlighted action in `DEFAULT_BINDINGS` order.
+    pub selected: usize,
+    /// Whether the next key event should become the highlighted binding.
+    pub capturing: bool,
+}
+
 /// UI state of the Songs page.
 #[derive(Debug, Clone, Default)]
 pub struct SongsState {
@@ -215,6 +290,15 @@ pub struct SettingsState {
     /// Queue exclusion rules (rating/year/duration get TUI rows here;
     /// genre/artist exclude lists are `config.toml`-only for now).
     pub playback_filters: crate::config::PlaybackFilters,
+    /// Persisted global keybinding overrides currently active in the TUI.
+    pub keybindings: std::collections::HashMap<
+        crate::config::keybind::GlobalAction,
+        crate::config::keybind::KeyChord,
+    >,
+    /// Active excluded-genre/artist editor overlay.
+    pub filter_editor: Option<FilterListEditor>,
+    /// Active global-keybinding editor overlay.
+    pub keybinding_editor: Option<KeybindingEditor>,
 }
 
 impl Default for SettingsState {
@@ -236,6 +320,9 @@ impl Default for SettingsState {
             replay_gain_preamp: 0.0,
             replay_gain_clip: false,
             playback_filters: crate::config::PlaybackFilters::default(),
+            keybindings: std::collections::HashMap::new(),
+            filter_editor: None,
+            keybinding_editor: None,
         }
     }
 }

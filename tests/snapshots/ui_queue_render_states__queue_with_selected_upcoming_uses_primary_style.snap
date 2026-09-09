@@ -2,14 +2,12 @@
 source: tests/ui_queue_render_states.rs
 expression: frame
 ---
- F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
+ F1 Library   F2 Queue   F3 Quick Play   F4 Playlists   F5 Server   F6 Settings 
+                                                              ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
 ┌ Queue (3) ───────────────────────────────────────────────────────────────────┐
 │    1. ▶   A - Artist [03:00]                                                 │
 │    2.     B - Artist [03:00]                                                 │
 │▸   3.     C - Artist [03:00]                                                 │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -24,5 +22,7 @@ expression: frame
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-q:Quit │ p/Space:Pause │ h:Prev │ l:Next                                        
-n:Star playing │ m:Star selected │ d:Rem
+q:Quit │ p/Space:Pause │ h:Prev │ l:Next │ r:Repeat (off) │ y:Lyrics            
+Shift+T:Shuffle library                                                         
+n:Star playing │ m:Star selected │ d:Remove │ J/K:Move │ t:Shuffle              
+s:Save playlist │ c:Clear history │ Enter:Play

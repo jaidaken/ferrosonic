@@ -53,13 +53,6 @@ async fn rate_returns_one() {
 }
 
 #[tokio::test]
-async fn set_rate_is_silent_noop() {
-    let (player, _, _) = build_player();
-    player.set_rate(2.0).await.unwrap();
-    assert!((player.rate().await.unwrap() - 1.0).abs() < 1e-9);
-}
-
-#[tokio::test]
 async fn minimum_and_maximum_rate_match() {
     let (player, _, _) = build_player();
     assert!((player.minimum_rate().await.unwrap() - 1.0).abs() < 1e-9);

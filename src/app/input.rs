@@ -115,6 +115,26 @@ impl App {
             return self.handle_playlist_picker_key(key).await;
         }
 
+        // Lyrics is global and modal while visible, including on narrow pages.
+        if state.client.lyrics.open {
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            self.handle_lyrics_key(key).await;
+            return Ok(());
+        }
+
+        // Settings editors are modal and must receive keys such as q, Space,
+        // and function keys before the configurable global dispatcher.
+        if state.client.settings_state.filter_editor.is_some()
+            || state.client.settings_state.keybinding_editor.is_some()
+        {
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            return self.handle_settings_editor_key(key).await;
+        }
+
         // Settings' own h/l/space field-navigation bindings are checked
         // ahead of everything else below: they must win even when a
         // `[Keybindings]` override happens to resolve one of these keys to
@@ -259,6 +279,13 @@ impl App {
                 if let Some(id) = song_id {
                     let _ = self.client.request(DaemonRequest::ToggleStarSong(id)).await;
                 }
+                return Ok(());
+            }
+            Some(GlobalAction::ToggleLyrics) => {
+                let _ = state;
+                drop(cs);
+                drop(ds);
+                self.toggle_lyrics().await;
                 return Ok(());
             }
             Some(GlobalAction::ShuffleLibrary) => {

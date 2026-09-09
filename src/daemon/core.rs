@@ -405,7 +405,7 @@ impl DaemonCore {
     /// would otherwise keep whatever value was current at the last real
     /// queue mutation and revert on the next start. The channel has
     /// capacity 1, so repeated pokes coalesce into one write.
-    pub(super) fn schedule_queue_save(&self) {
+    pub(crate) fn schedule_queue_save(&self) {
         let _ = self.queue_save_tx.try_send(());
     }
 

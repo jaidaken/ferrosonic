@@ -11,8 +11,8 @@ use crate::config::Config;
 use crate::subsonic::models::Child;
 
 pub use crate::app::page_state::{
-    ArtistsState, PlaylistPicker, PlaylistsState, QueueState, ServerState, SettingsState,
-    SongsState,
+    ArtistsState, FilterListEditor, FilterListKind, KeybindingEditor, LyricsState, LyricsStatus,
+    PlaylistPicker, PlaylistsState, QueueState, ServerState, SettingsState, SongsState,
 };
 
 /// Top-level TUI page selected via the header tabs.
@@ -258,6 +258,10 @@ pub fn new_shared_client_state(config: &Config) -> SharedClientState {
     client.settings_state.replay_gain_preamp = config.replay_gain_preamp;
     client.settings_state.replay_gain_clip = config.replay_gain_clip;
     client.settings_state.playback_filters = config.playback_filters.clone();
+    client
+        .settings_state
+        .keybindings
+        .clone_from(&config.keybindings);
     client.songs.selected_option = Some(SongOption::Starred);
     Arc::new(RwLock::new(client))
 }

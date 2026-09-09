@@ -5,7 +5,8 @@
 mod common;
 
 use common::TestDaemon;
-use ferrosonic::config::{RepeatMode, ReplayGainMode};
+use ferrosonic::config::keybind::{GlobalAction, KeyChord};
+use ferrosonic::config::{PlaybackFilters, RepeatMode, ReplayGainMode};
 use serial_test::serial;
 
 #[tokio::test]
@@ -212,4 +213,28 @@ fn nonfinite_preamp_config_is_rejected() {
             "{value} must not load"
         );
     }
+}
+
+#[tokio::test]
+#[serial]
+async fn filter_and_keybinding_write_failures_restore_daemon_config() {
+    let td = TestDaemon::new().await;
+    let invalid_dir = td.config_dir.path().join("not-a-directory");
+    std::fs::write(&invalid_dir, b"file").unwrap();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", &invalid_dir);
+
+    let filters = PlaybackFilters {
+        excluded_genres: vec!["Podcast".into()],
+        ..PlaybackFilters::default()
+    };
+    assert!(td.core.set_playback_filters(filters).await.is_err());
+    assert_eq!(
+        td.state.read().await.config.playback_filters,
+        PlaybackFilters::default()
+    );
+
+    let bindings =
+        std::collections::HashMap::from([(GlobalAction::Quit, "z".parse::<KeyChord>().unwrap())]);
+    assert!(td.core.set_keybindings(bindings).await.is_err());
+    assert!(td.state.read().await.config.keybindings.is_empty());
 }

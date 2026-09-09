@@ -241,6 +241,7 @@ async fn apply_config_changed(
     let replay_gain_preamp = cfg.replay_gain_preamp;
     let replay_gain_clip = cfg.replay_gain_clip;
     let playback_filters = cfg.playback_filters.clone();
+    let keybindings = cfg.keybindings.clone();
     {
         let mut ds = daemon_state.write().await;
         ds.config = cfg;
@@ -257,6 +258,7 @@ async fn apply_config_changed(
         cs.settings_state.replay_gain_preamp = replay_gain_preamp;
         cs.settings_state.replay_gain_clip = replay_gain_clip;
         cs.settings_state.playback_filters = playback_filters;
+        cs.settings_state.keybindings = keybindings;
     }
 
     if cover_art_enabled {

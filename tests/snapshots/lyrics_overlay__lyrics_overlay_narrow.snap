@@ -1,0 +1,22 @@
+---
+source: tests/lyrics_overlay.rs
+expression: frame
+---
+ F1 Library   F2 Queue   F3 Quick Play            
+ ┌ Lyrics — A fairly long song title ───────────┐ 
+ │ Source 1/1 · unspecified · synced            │ 
+┌│  First line                                  │┐
+││▶ Current line                                ││
+└│  Last line                                   │┘
+┌│                                              │┐
+││                                              ││
+││                                              ││
+││                                              ││
+└│                                              │┘
+ │                                              │ 
+q│                                              │ 
+r│                                              │ 
+S│ j/k:Scroll · f:Follow on · ←/→:Source        │ 
+n│ r:Retry · y/Esc:Close                        │ 
+←└──────────────────────────────────────────────┘ 
+e:Add │ i:Add next │ t:Shuffle │ Enter:Play

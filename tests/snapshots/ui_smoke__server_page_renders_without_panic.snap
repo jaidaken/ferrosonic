@@ -2,7 +2,8 @@
 source: tests/ui_smoke.rs
 expression: frame
 ---
- F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
+ F1 Library   F2 Queue   F3 Quick Play   F4 Playlists   F5 Server   F6 Settings 
+                                                              ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
 ┌ Server Connection ───────────────────────────────────────────────────────────┐
 │                                                                              │
 │Server URL                                                                    │
@@ -10,9 +11,8 @@ expression: frame
 ││▏                                                         │                  │
 │└──────────────────────────────────────────────────────────┘                  │
 │Username                                                                      │
-│┌──────────────────────────────────────────────────────────┐                  │
-││                                                          │                  │
-│└──────────────────────────────────────────────────────────┘                  │
+│                                                                              │
+│                                                                              │
 │Password                                                                      │
 │┌──────────────────────────────────────────────────────────┐                  │
 ││                                                          │                  │
@@ -23,6 +23,6 @@ expression: frame
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
-                                                                                
-                                                                                
-q:Quit │ p/Space:Pause │ h:Prev │ l:Next
+q:Quit │ p/Space:Pause │ h:Prev │ l:Next │ r:Repeat (off) │ y:Lyrics            
+Shift+T:Shuffle library │ n:Star playing                                        
+Tab:Next field │ Enter:Test/Save │ Ctrl+r:Refresh

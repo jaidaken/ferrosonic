@@ -212,15 +212,18 @@ async fn r1_toggle_pause_state_stays_consistent_under_replace() {
     }
     let client = Arc::new(InProcessClient::new(td.core.clone())) as Arc<dyn DaemonClient>;
 
+    let toggle_progress = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let toggle_progress_task = toggle_progress.clone();
     let c1 = client.clone();
-    let toggler = tokio::spawn(async move {
-        for _ in 0..40 {
+    let mut toggler = tokio::spawn(async move {
+        for i in 0..40 {
             let _ = c1.request(DaemonRequest::TogglePause).await;
+            toggle_progress_task.store(i + 1, std::sync::atomic::Ordering::Relaxed);
         }
     });
 
     let c2 = client.clone();
-    let replacer = tokio::spawn(async move {
+    let mut replacer = tokio::spawn(async move {
         for i in 0..20 {
             let payload: Vec<_> = (0..3)
                 .map(|j| song(&format!("song-{}", (i + j) % 16), "x"))
@@ -234,13 +237,15 @@ async fn r1_toggle_pause_state_stays_consistent_under_replace() {
         }
     });
 
-    let work = async {
-        let _ = toggler.await;
-        let _ = replacer.await;
-    };
-    timeout(Duration::from_secs(10), work)
-        .await
-        .expect("workload exceeded budget");
+    let work = async { tokio::join!(&mut toggler, &mut replacer) };
+    if timeout(Duration::from_secs(10), work).await.is_err() {
+        panic!(
+            "workload exceeded budget (toggle progress: {}/40, toggler finished: {}, replacer finished: {})",
+            toggle_progress.load(std::sync::atomic::Ordering::Relaxed),
+            toggler.is_finished(),
+            replacer.is_finished()
+        );
+    }
 
     let s = td.state.read().await;
     if let Some(pos) = s.queue_position {

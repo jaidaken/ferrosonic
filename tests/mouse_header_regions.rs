@@ -37,8 +37,8 @@ fn click(x: u16, y: u16) -> MouseEvent {
 
 async fn seed_header(app: &App) {
     let mut cs = app.client_state.write().await;
-    cs.layout.header = Rect::new(0, 0, 80, 1);
-    cs.layout.content = Rect::new(0, 1, 80, 20);
+    cs.layout.header = Rect::new(0, 0, 80, 2);
+    cs.layout.content = Rect::new(0, 2, 80, 19);
     cs.layout.now_playing = Rect::new(0, 21, 80, 7);
 }
 
@@ -47,7 +47,7 @@ async fn seed_header(app: &App) {
 async fn click_on_f2_tab_switches_to_queue() {
     let mut fx = build_app().await;
     seed_header(&fx.app).await;
-    fx.app.handle_mouse(click(15, 0)).await.unwrap();
+    fx.app.handle_mouse(click(13, 0)).await.unwrap();
     let cs = fx.app.client_state.read().await;
     assert!(
         matches!(cs.page, Page::Queue | Page::Library | Page::QuickPlay),
@@ -61,13 +61,9 @@ async fn click_on_f2_tab_switches_to_queue() {
 async fn click_on_f4_tab_switches_to_playlists() {
     let mut fx = build_app().await;
     seed_header(&fx.app).await;
-    fx.app.handle_mouse(click(38, 0)).await.unwrap();
+    fx.app.handle_mouse(click(40, 0)).await.unwrap();
     let cs = fx.app.client_state.read().await;
-    assert_ne!(
-        cs.page,
-        Page::Library,
-        "clicking some tab should switch off the default page"
-    );
+    assert_eq!(cs.page, Page::Playlists);
 }
 
 #[tokio::test]
@@ -75,7 +71,7 @@ async fn click_on_f4_tab_switches_to_playlists() {
 async fn click_on_play_button_dispatches_toggle() {
     let mut fx = build_app().await;
     seed_header(&fx.app).await;
-    fx.app.handle_mouse(click(66, 0)).await.unwrap();
+    fx.app.handle_mouse(click(65, 1)).await.unwrap();
 }
 
 #[tokio::test]
@@ -91,7 +87,7 @@ async fn click_on_stop_button_clears_the_queue() {
         ds.queue_position = Some(1);
     }
 
-    fx.app.handle_mouse(click(74, 0)).await.unwrap();
+    fx.app.handle_mouse(click(73, 1)).await.unwrap();
 
     let ds = fx.app.daemon_state.read().await;
     assert!(ds.queue.is_empty(), "toolbar Stop must clear the queue");
@@ -106,7 +102,7 @@ async fn click_on_stop_button_clears_the_queue() {
 async fn click_on_next_button_dispatches_next() {
     let mut fx = build_app().await;
     seed_header(&fx.app).await;
-    fx.app.handle_mouse(click(78, 0)).await.unwrap();
+    fx.app.handle_mouse(click(77, 1)).await.unwrap();
 }
 
 #[tokio::test]
@@ -114,7 +110,7 @@ async fn click_on_next_button_dispatches_next() {
 async fn click_on_prev_button_dispatches_previous() {
     let mut fx = build_app().await;
     seed_header(&fx.app).await;
-    fx.app.handle_mouse(click(62, 0)).await.unwrap();
+    fx.app.handle_mouse(click(61, 1)).await.unwrap();
 }
 
 #[tokio::test]

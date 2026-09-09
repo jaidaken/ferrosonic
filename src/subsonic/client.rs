@@ -9,9 +9,10 @@ use url::Url;
 
 use super::auth::generate_auth_params;
 use super::models::{
-    Album, AlbumData, AlbumList2Data, Artist, ArtistData, ArtistsData, Child, MusicFolder,
-    MusicFoldersData, OpenSubsonicExtensionsData, PingData, Playlist, PlaylistData, PlaylistsData,
-    RandomSongsData, Search3Data, SearchResult3, StarredSongsData, SubsonicResponse,
+    Album, AlbumData, AlbumList2Data, Artist, ArtistData, ArtistsData, Child, ClassicLyricsData,
+    LyricLine, LyricsListData, LyricsSource, MusicFolder, MusicFoldersData,
+    OpenSubsonicExtensionsData, PingData, Playlist, PlaylistData, PlaylistsData, RandomSongsData,
+    Search3Data, SearchResult3, StarredSongsData, SubsonicResponse,
 };
 use crate::error::SubsonicError;
 use crate::secret::Secret;
@@ -276,6 +277,58 @@ impl SubsonicClient {
     pub async fn get_open_subsonic_extensions(&self) -> Result<Vec<String>, SubsonicError> {
         let data: OpenSubsonicExtensionsData = self.request("getOpenSubsonicExtensions").await?;
         Ok(data.extensions.into_iter().map(|e| e.name).collect())
+    }
+
+    /// Fetch structured lyrics for a song through the `songLyrics` extension.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` when the request fails or the response is malformed.
+    pub async fn get_lyrics_by_song_id(
+        &self,
+        id: &str,
+    ) -> Result<Vec<LyricsSource>, SubsonicError> {
+        let data: LyricsListData = self
+            .request(&format!("getLyricsBySongId?id={}", urlencoding::encode(id)))
+            .await?;
+        Ok(data.lyrics_list.structured_lyrics)
+    }
+
+    /// Fetch classic, unsynchronized lyrics by artist and title.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` when the request fails or the response is malformed.
+    pub async fn get_lyrics(
+        &self,
+        artist: Option<&str>,
+        title: &str,
+    ) -> Result<Vec<LyricsSource>, SubsonicError> {
+        let mut endpoint = format!("getLyrics?title={}", urlencoding::encode(title));
+        if let Some(artist) = artist.filter(|artist| !artist.is_empty()) {
+            let _ = write!(endpoint, "&artist={}", urlencoding::encode(artist));
+        }
+        let data: ClassicLyricsData = self.request(&endpoint).await?;
+        let Some(lyrics) = data.lyrics else {
+            return Ok(Vec::new());
+        };
+        if lyrics.value.is_empty() {
+            return Ok(Vec::new());
+        }
+        let lines = lyrics
+            .value
+            .lines()
+            .map(|value| LyricLine {
+                start: None,
+                value: value.to_string(),
+            })
+            .collect();
+        Ok(vec![LyricsSource {
+            display_artist: lyrics.artist,
+            display_title: lyrics.title,
+            lang: None,
+            offset: 0,
+            synced: false,
+            lines,
+        }])
     }
 
     /// Classic Subsonic scrobble. `submission=false` is now-playing only;

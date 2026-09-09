@@ -347,8 +347,39 @@ impl DaemonCore {
     ) -> Result<(), Error> {
         {
             let mut state = self.state.write().await;
-            state.config.playback_filters = filters;
-            state.config.save_default().map_err(Error::Config)?;
+            let old = std::mem::replace(&mut state.config.playback_filters, filters);
+            if let Err(error) = state.config.save_default() {
+                state.config.playback_filters = old;
+                drop(state);
+                return Err(Error::Config(error));
+            }
+            drop(state);
+        }
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist global keybinding overrides. The TUI applies the resolved map
+    /// after this request succeeds; the daemon only owns durable config.
+    ///
+    /// # Errors
+    /// Returns an `Error` when the config cannot be persisted.
+    pub async fn set_keybindings(
+        self: &Arc<Self>,
+        bindings: std::collections::HashMap<
+            crate::config::keybind::GlobalAction,
+            crate::config::keybind::KeyChord,
+        >,
+    ) -> Result<(), Error> {
+        {
+            let mut state = self.state.write().await;
+            let old = std::mem::replace(&mut state.config.keybindings, bindings);
+            if let Err(error) = state.config.save_default() {
+                state.config.keybindings = old;
+                drop(state);
+                return Err(Error::Config(error));
+            }
+            drop(state);
         }
         self.emit_config_changed().await;
         Ok(())

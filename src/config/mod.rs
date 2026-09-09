@@ -39,6 +39,12 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "RateSwitchDelayMs",
     "MusicFolderId",
     "MusicFolderChosen",
+    // Retired Podsonic-bound settings remain accepted so configs written by
+    // the former audiobook integration still load. They are ignored and
+    // omitted on the next save.
+    "AudiobookMusicFolderId",
+    "AudiobookPathPrefix",
+    "AudiobookPlaybackSpeed",
     "ReplayGainMode",
     "ReplayGainPreamp",
     "ReplayGainClip",
@@ -183,9 +189,8 @@ pub struct Config {
 
     /// Overrides for the global (page-independent) keybindings, keyed by
     /// action; any action absent here keeps its default chord. Config-file
-    /// only for now — no TUI editor. Picked up at startup; changing this
-    /// requires restarting the app, it is not live-reloaded. See
-    /// [`keybind`] for the chord string format and the full action list.
+    /// Config-file and in-app overrides. The Settings editor applies saved
+    /// changes immediately. See [`keybind`] for the chord string format.
     #[serde(rename = "Keybindings", default)]
     pub keybindings: HashMap<GlobalAction, KeyChord>,
 }
@@ -196,8 +201,7 @@ pub struct Config {
 /// Applied only when songs are added to the queue (`enqueue_songs`,
 /// `shuffle_library`, auto-continue's random pick), not retroactively to an
 /// already-persisted queue and not when browsing the library.
-/// `excluded_genres`/`excluded_artists` are `config.toml`-only for now;
-/// there's no TUI list editor yet.
+/// Genre and artist lists can also be edited from Settings.
 #[derive(Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
 pub struct PlaybackFilters {
     /// Exclude songs rated `1..=min_rating`; `0` disables the rating filter.
@@ -1212,6 +1216,21 @@ Password = "testpass"
         );
         assert!(c.playback_filters.excluded_genres.is_empty());
         assert!(c.playback_filters.excluded_artists.is_empty());
+    }
+
+    #[test]
+    fn retired_audiobook_settings_load_but_are_not_saved() {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(
+            file.path(),
+            "AudiobookMusicFolderId = 42\nAudiobookPathPrefix = \"Audiobooks\"\nAudiobookPlaybackSpeed = 1.5\n",
+        )
+        .unwrap();
+
+        let config = Config::load_from_file(file.path()).unwrap();
+        config.save_to_file(file.path()).unwrap();
+        let saved = std::fs::read_to_string(file.path()).unwrap();
+        assert!(!saved.contains("Audiobook"));
     }
 
     #[test]

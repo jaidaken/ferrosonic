@@ -44,7 +44,15 @@ fn op_strategy() -> impl Strategy<Value = Op> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial]
 async fn arbitrary_control_sequences_keep_state_consistent() {
-    let mut runner = proptest::test_runner::TestRunner::default();
+    // Each case creates a complete daemon + fake-mpv fixture and may execute
+    // up to 24 real IPC-backed controls. Keep enough generated transitions to
+    // exercise the state machine without exceeding nextest's 90-second budget
+    // on slower desktop hosts.
+    let config = proptest::test_runner::Config {
+        cases: 64,
+        ..proptest::test_runner::Config::default()
+    };
+    let mut runner = proptest::test_runner::TestRunner::new(config);
     runner
         .run(&prop::collection::vec(op_strategy(), 0..25), |ops| {
             tokio::task::block_in_place(|| {

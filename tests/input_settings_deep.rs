@@ -34,13 +34,13 @@ async fn build_app() -> AppFixture {
 #[serial]
 async fn down_advances_through_all_fields_then_caps() {
     let mut fx = build_app().await;
-    for _ in 0..20 {
+    for _ in 0..25 {
         fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
     }
     let cs = fx.app.client_state.read().await;
     assert_eq!(
-        cs.settings_state.selected_field, 17,
-        "field index should cap at SETTINGS_FIELD_COUNT - 1 = 17"
+        cs.settings_state.selected_field, 20,
+        "field index should cap at SETTINGS_FIELD_COUNT - 1 = 20"
     );
 }
 

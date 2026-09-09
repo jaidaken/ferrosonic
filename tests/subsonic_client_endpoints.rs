@@ -5,6 +5,7 @@ mod common;
 use common::FakeSubsonic;
 use ferrosonic::error::SubsonicError;
 use ferrosonic::subsonic::client::SubsonicClient;
+use serde_json::json;
 use serial_test::serial;
 
 async fn build_client(fake: &FakeSubsonic) -> SubsonicClient {
@@ -378,4 +379,95 @@ async fn empty_search_returns_empty_result() {
 async fn invalid_base_url_returns_construction_error() {
     let r = SubsonicClient::new("not a url", "u", &"p".into());
     assert!(r.is_err());
+}
+
+#[tokio::test]
+#[serial]
+async fn structured_lyrics_parse_synced_and_unsynced_sources() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_structured_lyrics(
+        "song/id",
+        json!([
+            {
+                "displayArtist": "Artist", "displayTitle": "Title", "lang": "en",
+                "offset": 125, "synced": true,
+                "line": [{"start": 0, "value": "First"}, {"start": 1200, "value": "Second"}]
+            },
+            {"lang": "de", "synced": false, "line": [{"value": "Untimed"}]}
+        ]),
+    )
+    .await;
+    let result = build_client(&fake)
+        .await
+        .get_lyrics_by_song_id("song/id")
+        .await
+        .unwrap();
+    assert_eq!(result.len(), 2);
+    assert!(result[0].synced);
+    assert_eq!(result[0].offset, 125);
+    assert_eq!(result[0].lines[1].start, Some(1_200));
+    assert!(!result[1].synced);
+    assert_eq!(result[1].lines[0].start, None);
+}
+
+#[tokio::test]
+#[serial]
+async fn structured_lyrics_can_be_missing() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_structured_lyrics("missing", json!([])).await;
+    let result = build_client(&fake)
+        .await
+        .get_lyrics_by_song_id("missing")
+        .await
+        .unwrap();
+    assert!(result.is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn classic_lyrics_are_split_into_unsynchronized_lines() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_classic_lyrics("Artist", "Title", "First\nSecond")
+        .await;
+    let result = build_client(&fake)
+        .await
+        .get_lyrics(Some("Artist"), "Title")
+        .await
+        .unwrap();
+    assert_eq!(result.len(), 1);
+    assert!(!result[0].synced);
+    assert_eq!(result[0].lines[1].value, "Second");
+}
+
+#[tokio::test]
+#[serial]
+async fn malformed_structured_lyrics_are_reported() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_malformed("getLyricsBySongId").await;
+    let error = build_client(&fake)
+        .await
+        .get_lyrics_by_song_id("bad")
+        .await
+        .unwrap_err();
+    assert!(matches!(error, SubsonicError::Parse(_)));
+}
+
+#[tokio::test]
+#[serial]
+async fn daemon_falls_back_to_classic_lyrics_without_extension() {
+    let daemon = common::TestDaemon::new().await;
+    daemon
+        .fake_subsonic
+        .expect_open_subsonic_extensions(&[])
+        .await;
+    daemon
+        .fake_subsonic
+        .expect_classic_lyrics("Artist", "Title", "Fallback")
+        .await;
+    let result = daemon
+        .core
+        .fetch_lyrics("song", Some("Artist"), "Title")
+        .await
+        .unwrap();
+    assert_eq!(result[0].lines[0].value, "Fallback");
 }

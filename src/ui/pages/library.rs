@@ -1,7 +1,7 @@
 //! Library (artists) page.
 
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
@@ -453,11 +453,13 @@ fn tree_row(
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
-    let chunks =
-        Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).split(area);
-
-    render_tree(frame, chunks[0], state, &colors);
-    render_songs(frame, chunks[1], state, &colors);
+    let (Some(tree_area), Some(song_area)) =
+        crate::ui::layout::content_panes(state.client.page, area)
+    else {
+        return;
+    };
+    render_tree(frame, tree_area, state, &colors);
+    render_songs(frame, song_area, state, &colors);
 }
 
 /// Library-pane label for the active music folder: the folder name, or "All".

@@ -1,10 +1,10 @@
 //! Quick Play page renderer.
 
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, List, ListItem, ListState},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -18,10 +18,13 @@ use strum::IntoEnumIterator;
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>) {
     let colors = *state.client.settings_state.theme_colors();
 
-    let chunks = Layout::horizontal([Constraint::Length(22), Constraint::Min(0)]).split(area);
-
-    render_options(frame, chunks[0], state, &colors);
-    render_songs(frame, chunks[1], state, &colors);
+    let (Some(option_area), Some(song_area)) =
+        crate::ui::layout::content_panes(state.client.page, area)
+    else {
+        return;
+    };
+    render_options(frame, option_area, state, &colors);
+    render_songs(frame, song_area, state, &colors);
 }
 
 fn render_options(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, colors: &ThemeColors) {
@@ -44,6 +47,37 @@ fn render_options(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, color
         .borders(Borders::ALL)
         .title("Song Options")
         .border_style(border_style);
+
+    if area.height < 6 {
+        let column_width = usize::from(area.width.saturating_sub(2) / 2);
+        let options = SongOption::iter().collect::<Vec<_>>();
+        let lines = options
+            .chunks(2)
+            .map(|row| {
+                Line::from(
+                    row.iter()
+                        .map(|option| {
+                            let selected = *option == selected_option;
+                            let mut style = Style::default().fg(if selected {
+                                colors.highlight_fg
+                            } else {
+                                colors.song
+                            });
+                            if selected {
+                                style = style.add_modifier(Modifier::BOLD);
+                                if focused {
+                                    style = style.bg(colors.highlight_bg);
+                                }
+                            }
+                            Span::styled(format!("{:<column_width$}", option.to_string()), style)
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(Paragraph::new(lines).block(block), area);
+        return;
+    }
 
     let items = SongOption::iter().map(|option| {
         let is_selected = option == selected_option;
@@ -100,8 +134,12 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
 
             let is_playing = state.current_song().is_some_and(|s| s.id == song.id);
 
-            let line = get_song_with_artist_line(song, is_selected, is_playing, colors);
-            ListItem::new(line)
+            ListItem::new(get_song_with_artist_line(
+                song,
+                is_selected,
+                is_playing,
+                colors,
+            ))
         })
         .collect();
 

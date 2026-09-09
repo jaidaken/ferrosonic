@@ -43,6 +43,77 @@ pub struct OpenSubsonicExtension {
     pub versions: Vec<i32>,
 }
 
+/// One timed or untimed line from a lyrics source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LyricLine {
+    /// Milliseconds from the start of the track, when synchronized.
+    #[serde(default)]
+    pub start: Option<u64>,
+    /// Text displayed for this line.
+    pub value: String,
+}
+
+/// One language/version of the lyrics returned for a song.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LyricsSource {
+    /// Artist supplied by the lyrics provider.
+    #[serde(default, rename = "displayArtist")]
+    pub display_artist: Option<String>,
+    /// Title supplied by the lyrics provider.
+    #[serde(default, rename = "displayTitle")]
+    pub display_title: Option<String>,
+    /// ISO language code, or an unspecified marker such as `xxx`.
+    #[serde(default)]
+    pub lang: Option<String>,
+    /// Millisecond timing adjustment for synchronized lines.
+    #[serde(default)]
+    pub offset: i64,
+    /// Whether this source contains synchronized lines.
+    #[serde(default)]
+    pub synced: bool,
+    /// Lyrics in display order.
+    #[serde(default, rename = "line")]
+    pub lines: Vec<LyricLine>,
+}
+
+/// Payload of `getLyricsBySongId`.
+#[derive(Debug, Deserialize)]
+pub struct LyricsListData {
+    /// Available structured lyric sources.
+    #[serde(rename = "lyricsList")]
+    pub lyrics_list: LyricsList,
+}
+
+/// Wrapper around structured lyric sources.
+#[derive(Debug, Default, Deserialize)]
+pub struct LyricsList {
+    /// One entry per available language/version.
+    #[serde(default, rename = "structuredLyrics")]
+    pub structured_lyrics: Vec<LyricsSource>,
+}
+
+/// Payload of classic Subsonic `getLyrics`.
+#[derive(Debug, Deserialize)]
+pub struct ClassicLyricsData {
+    /// The single classic lyrics result.
+    #[serde(default)]
+    pub lyrics: Option<ClassicLyrics>,
+}
+
+/// Untimed lyrics returned by classic Subsonic servers.
+#[derive(Debug, Deserialize)]
+pub struct ClassicLyrics {
+    /// Artist supplied by the server.
+    #[serde(default)]
+    pub artist: Option<String>,
+    /// Title supplied by the server.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Newline-separated lyric text.
+    #[serde(default)]
+    pub value: String,
+}
+
 /// Error object returned when a Subsonic call fails.
 #[derive(Debug, Deserialize)]
 pub struct ApiError {

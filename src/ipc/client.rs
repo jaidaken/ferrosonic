@@ -191,9 +191,17 @@ impl DaemonClient for InProcessClient {
             DaemonRequest::SetPlaybackFilters(filters) => {
                 ok_response(core.set_playback_filters(filters).await)
             }
+            DaemonRequest::SetKeybindings(bindings) => {
+                ok_response(core.set_keybindings(bindings).await)
+            }
             DaemonRequest::FetchCoverArt { id, size } => {
                 self.handle_fetch_cover_art(&id, size).await
             }
+            DaemonRequest::FetchLyrics { id, artist, title } => Ok(DaemonResponse::Lyrics(
+                core.fetch_lyrics(&id, artist.as_deref(), &title)
+                    .await
+                    .map_err(|error| IpcError::Daemon(error.to_string()))?,
+            )),
             DaemonRequest::Subscribe => {
                 warn!("Subscribe sent as request; use DaemonClient::subscribe instead");
                 Ok(DaemonResponse::Ok)

@@ -282,6 +282,35 @@ impl DaemonCore {
         })
     }
 
+    /// Fetch the best lyrics representation supported by the configured server.
+    ///
+    /// # Errors
+    /// Returns an `Error` when neither applicable endpoint succeeds.
+    pub async fn fetch_lyrics(
+        &self,
+        id: &str,
+        artist: Option<&str>,
+        title: &str,
+    ) -> Result<Vec<crate::subsonic::models::LyricsSource>, Error> {
+        let client = self.subsonic_client().await?;
+        let supports_structured = client
+            .get_open_subsonic_extensions()
+            .await
+            .is_ok_and(|extensions| extensions.iter().any(|name| name == "songLyrics"));
+
+        if supports_structured {
+            match client.get_lyrics_by_song_id(id).await {
+                Ok(lyrics) => return Ok(lyrics),
+                Err(error) => warn!("Structured lyrics failed, trying classic endpoint: {error}"),
+            }
+        }
+
+        client
+            .get_lyrics(artist, title)
+            .await
+            .map_err(Error::Subsonic)
+    }
+
     /// Rename playlist `id` to `name`, then refresh so `PlaylistsChanged` fires.
     ///
     /// # Errors

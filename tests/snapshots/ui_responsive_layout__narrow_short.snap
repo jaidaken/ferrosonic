@@ -1,0 +1,22 @@
+---
+source: tests/ui_responsive_layout.rs
+expression: frame
+---
+ F1 Library   F2 Queue   F3 Quick Play            
+ F4 Playlists   F5 Server   F6 Settings           
+                                ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
+┌Song Options────────────────────────────────────┐
+│Starred                 Random                  │
+│Random Album                                    │
+└────────────────────────────────────────────────┘
+┌Songs───────────────────────────────────────────┐
+│    A Song With A Readable Title - Test Artist [│
+│                                                │
+└────────────────────────────────────────────────┘
+                                                  
+                                                  
+                                                  
+q:Quit │ p/Space:Pause │ h:Prev │ l:Next          
+r:Repeat (off) │ y:Lyrics                         
+Shift+T:Shuffle library                           
+n:Star playing │ m:Star selected │ Enter:Play

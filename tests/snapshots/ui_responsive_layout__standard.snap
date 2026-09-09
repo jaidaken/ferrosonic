@@ -1,11 +1,11 @@
 ---
-source: tests/ui_smoke.rs
+source: tests/ui_responsive_layout.rs
 expression: frame
 ---
  F1 Library   F2 Queue   F3 Quick Play   F4 Playlists   F5 Server   F6 Settings 
                                                               ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
-┌ Playlists (0) ───────────────┐┌ Songs ───────────────────────────────────────┐
-│No playlists found            ││Select a playlist to view songs               │
+┌ Playlists (1) ───────────────┐┌ Songs ───────────────────────────────────────┐
+│Vertical Playlist (1 songs) [3││Select a playlist to view songs               │
 │                              ││                                              │
 │                              ││                                              │
 │                              ││                                              │

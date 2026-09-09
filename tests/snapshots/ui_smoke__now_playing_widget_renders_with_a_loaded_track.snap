@@ -2,12 +2,10 @@
 source: tests/ui_smoke.rs
 expression: frame
 ---
- F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
+ F1 Library   F2 Queue   F3 Quick Play   F4 Playlists   F5 Server   F6 Settings 
+                                                              ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
 ┌ Artists → Albums · Library: A┐┌ Songs ───────────────────────────────────────┐
 │                              ││Select an album to view songs                 │
-│                              ││                                              │
-│                              ││                                              │
-│                              ││                                              │
 │                              ││                                              │
 │                              ││                                              │
 │                              ││                                              │
@@ -24,5 +22,7 @@ expression: frame
 │                                                                              │
 │00:30 / 03:00  ━━━━━━━━━━──────────────────────────────────────────────────── │
 └──────────────────────────────────────────────────────────────────────────────┘
-q:Quit │ p/Space:Pause │ h:Prev │ l:Next                                        
-n:Star playing │ m:Star selected │ /:Sea
+q:Quit │ p/Space:Pause │ h:Prev │ l:Next │ r:Repeat (off) │ y:Lyrics            
+Shift+T:Shuffle library                                                         
+n:Star playing │ m:Star selected │ /:Search │ ←/→:Focus │ v:Albums/Artists      
+f:Library │ s:Sort │ e:Add │ i:Add next │ t:Shuffle │ Enter:Play

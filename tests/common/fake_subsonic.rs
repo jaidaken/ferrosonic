@@ -196,6 +196,37 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_structured_lyrics(&self, song_id: &str, sources: Value) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getLyricsBySongId"))
+            .and(wiremock::matchers::query_param("id", song_id))
+            .respond_with(ok_body(json!({
+                "lyricsList": { "structuredLyrics": sources }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_classic_lyrics(&self, artist: &str, title: &str, value: &str) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getLyrics"))
+            .and(wiremock::matchers::query_param("artist", artist))
+            .and(wiremock::matchers::query_param("title", title))
+            .respond_with(ok_body(json!({
+                "lyrics": { "artist": artist, "title": title, "value": value }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    pub async fn expect_malformed(&self, endpoint: &str) {
+        Mock::given(method("GET"))
+            .and(path(format!("/rest/{endpoint}")))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_scrobble(&self) {
         Mock::given(method("GET"))
             .and(path("/rest/scrobble"))

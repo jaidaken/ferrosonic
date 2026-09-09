@@ -11,7 +11,7 @@ call site.
 
 | # | Lock | Type | Field |
 |---|------|------|-------|
-| 0 | `rating_updates` | `Mutex<()>` | serializes rating RPC/cache transactions; playback never acquires it |
+| 0 | `rating_updates` | `Mutex<()>` | serializes rating RPC/cache transactions |
 | 1 | `state` | `RwLock<DaemonState>` | shared state machine, queue, library, now-playing |
 | 2 | `subsonic` | `RwLock<Option<SubsonicClient>>` | active Subsonic client (replaced on `update_server_config`) |
 | 3 | `mpv` | `Mutex<MpvController>` | mpv IPC controller |

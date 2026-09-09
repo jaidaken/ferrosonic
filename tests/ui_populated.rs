@@ -111,6 +111,55 @@ fn settings_page_renders_all_sections() {
 }
 
 #[test]
+fn settings_page_scrolls_to_filter_and_keybinding_editors() {
+    let (daemon, mut client) = build_state();
+    client.page = Page::Settings;
+    client.settings_state.selected_field = 20;
+    let frame = render(100, 35, &daemon, &mut client);
+    for expected in [
+        "Excluded Genres",
+        "Excluded Artists",
+        "Controls",
+        "Global Keybinds",
+    ] {
+        assert!(frame.contains(expected), "missing {expected:?}\n{frame}");
+    }
+}
+
+#[test]
+fn settings_filter_editor_renders_on_narrow_tall_terminal() {
+    let (daemon, mut client) = build_state();
+    client.page = Page::Settings;
+    client.settings_state.filter_editor = Some(ferrosonic::app::state::FilterListEditor {
+        kind: ferrosonic::app::state::FilterListKind::Genres,
+        entries: vec!["Podcast".into(), "Spoken Word".into()],
+        selected: 1,
+        adding: false,
+        input: String::new(),
+    });
+    let frame = render(60, 42, &daemon, &mut client);
+    assert!(frame.contains("Excluded genres"));
+    assert!(frame.contains("Podcast"));
+    assert!(frame.contains("Spoken Word"));
+    assert!(frame.contains("Ctrl+S:Save"));
+}
+
+#[test]
+fn footer_uses_effective_global_keybinding_overrides() {
+    use ferrosonic::config::keybind::{GlobalAction, KeyChord};
+
+    let (daemon, mut client) = build_state();
+    client.page = Page::Settings;
+    client
+        .settings_state
+        .keybindings
+        .insert(GlobalAction::Quit, "z".parse::<KeyChord>().unwrap());
+    let frame = render(80, 24, &daemon, &mut client);
+    assert!(frame.contains("z:Quit"), "{frame}");
+    assert!(!frame.contains("q:Quit"), "{frame}");
+}
+
+#[test]
 fn cava_band_renders_when_enabled_with_data() {
     let (mut daemon, mut client) = build_state();
     daemon.config.cava = true;
@@ -198,4 +247,50 @@ fn footer_with_notification_renders_message() {
         "notification must render in footer; got:\n{}",
         frame
     );
+}
+
+#[test]
+fn narrow_tall_footer_wraps_complete_keybind_hints() {
+    let (mut daemon, mut client) = build_state();
+    daemon.now_playing.sample_rate = Some(96_000);
+    client.notify("ready");
+    client.page = Page::Library;
+
+    let frame = render(60, 50, &daemon, &mut client);
+    for hint in [
+        "q:Quit",
+        "p/Space:Pause",
+        "Shift+T:Shuffle library",
+        "n:Star playing",
+        "v:Albums/Artists",
+        "i:Add next",
+        "Enter:Play",
+    ] {
+        assert!(
+            frame.contains(hint),
+            "narrow footer must retain complete hint {hint:?}:\n{frame}"
+        );
+    }
+    assert!(frame.contains("ready"), "notification must remain visible");
+    assert!(frame.contains("96kHz"), "sample rate must remain visible");
+}
+
+#[test]
+fn narrow_tall_footer_retains_page_specific_hints() {
+    for (page, hint) in [
+        (Page::QuickPlay, "Enter:Play"),
+        (Page::Library, "v:Albums/Artists"),
+        (Page::Queue, "c:Clear history"),
+        (Page::Playlists, "J/K:Reorder"),
+        (Page::Server, "Ctrl+r:Refresh"),
+        (Page::Settings, "←/→/Enter:Change"),
+    ] {
+        let (daemon, mut client) = build_state();
+        client.page = page;
+        let frame = render(60, 50, &daemon, &mut client);
+        assert!(
+            frame.contains(hint),
+            "narrow footer must retain {page:?} hint {hint:?}:\n{frame}"
+        );
+    }
 }

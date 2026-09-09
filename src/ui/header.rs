@@ -2,10 +2,10 @@
 
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Tabs, Widget},
+    widgets::Widget,
 };
 
 use crate::app::state::Page;
@@ -33,6 +33,17 @@ impl Header {
             colors,
         }
     }
+
+    /// Rows needed to show every page tab and the transport controls.
+    #[must_use]
+    pub fn required_height(width: u16) -> u16 {
+        header_regions(Rect::new(0, 0, width, u16::MAX))
+            .iter()
+            .map(|(_, rect)| rect.y.saturating_add(rect.height))
+            .max()
+            .unwrap_or(1)
+            .max(1)
+    }
 }
 
 impl Widget for Header {
@@ -40,31 +51,6 @@ impl Widget for Header {
         if area.height < 1 {
             return;
         }
-
-        let chunks = Layout::horizontal([Constraint::Min(40), Constraint::Length(30)]).split(area);
-
-        let titles: Vec<Line<'_>> = [
-            Page::Library,
-            Page::Queue,
-            Page::QuickPlay,
-            Page::Playlists,
-            Page::Server,
-            Page::Settings,
-        ]
-        .iter()
-        .map(|p: &Page| Line::from(format!("{} {}", p.shortcut(), p.label())))
-        .collect();
-
-        let tabs = Tabs::new(titles)
-            .select(self.current_page.index())
-            .highlight_style(
-                Style::default()
-                    .fg(self.colors.primary)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .divider(" │ ");
-
-        tabs.render(chunks[0], buf);
 
         let nav_style = Style::default().fg(self.colors.muted);
         let play_style = match self.playback_state {
@@ -94,9 +80,35 @@ impl Widget for Header {
             Span::styled(" \u{23ED}\u{FE0E} ", nav_style),
         ]);
 
-        let controls_width = 19;
-        let x = chunks[1].x + chunks[1].width.saturating_sub(controls_width);
-        buf.set_line(x, chunks[1].y, &controls, controls_width);
+        for (region, rect) in header_regions(area) {
+            if rect.y >= area.y.saturating_add(area.height) {
+                continue;
+            }
+            match region {
+                HeaderRegion::Tab(page) => {
+                    let style = if page == self.current_page {
+                        Style::default()
+                            .fg(self.colors.primary)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+                    buf.set_string(
+                        rect.x,
+                        rect.y,
+                        format!(" {} {} ", page.shortcut(), page.label()),
+                        style,
+                    );
+                }
+                HeaderRegion::PrevButton => {
+                    buf.set_line(rect.x, rect.y, &controls, 19);
+                }
+                HeaderRegion::PlayButton
+                | HeaderRegion::PauseButton
+                | HeaderRegion::StopButton
+                | HeaderRegion::NextButton => {}
+            }
+        }
     }
 }
 
@@ -120,56 +132,58 @@ pub enum HeaderRegion {
 impl Header {
     /// Map a click position to its header region, if any.
     #[must_use]
-    pub fn region_at(area: Rect, x: u16, _y: u16) -> Option<HeaderRegion> {
-        let chunks = Layout::horizontal([Constraint::Min(40), Constraint::Length(30)]).split(area);
-
-        if x >= chunks[0].x && x < chunks[0].x + chunks[0].width {
-            // Tabs render `[pad][title][pad]` with " │ " divider.
-            let pages = [
-                Page::Library,
-                Page::Queue,
-                Page::QuickPlay,
-                Page::Playlists,
-                Page::Server,
-                Page::Settings,
-            ];
-            let divider_width: u16 = 3;
-            let padding: u16 = 1;
-
-            let rel_x = x - chunks[0].x;
-            let mut cursor: u16 = 0;
-            for (i, page) in pages.iter().enumerate() {
-                let label = format!("{} {}", page.shortcut(), page.label());
-                let tab_width = padding + crate::num::u16_sat(label.len()) + padding;
-                if rel_x >= cursor && rel_x < cursor + tab_width {
-                    return Some(HeaderRegion::Tab(*page));
-                }
-                cursor += tab_width;
-                if i < pages.len() - 1 {
-                    cursor += divider_width;
-                }
-            }
-            return None;
-        }
-
-        if x >= chunks[1].x && x < chunks[1].x + chunks[1].width {
-            // Buttons: " ⏮ ", " ▶ ", " ⏸ ", " ⏹ ", " ⏭ " separated by
-            // single spaces; offsets 0..2, 4..6, 8..10, 12..14, 16..18.
-            let controls_width: u16 = 19;
-            let control_start = chunks[1].x + chunks[1].width.saturating_sub(controls_width);
-            if x >= control_start {
-                let offset = x - control_start;
-                return match offset {
-                    0..=2 => Some(HeaderRegion::PrevButton),
-                    4..=6 => Some(HeaderRegion::PlayButton),
-                    8..=10 => Some(HeaderRegion::PauseButton),
-                    12..=14 => Some(HeaderRegion::StopButton),
-                    16..=18 => Some(HeaderRegion::NextButton),
-                    _ => None,
-                };
-            }
-        }
-
-        None
+    pub fn region_at(area: Rect, x: u16, y: u16) -> Option<HeaderRegion> {
+        header_regions(area).into_iter().find_map(|(region, rect)| {
+            (x >= rect.x
+                && x < rect.x.saturating_add(rect.width)
+                && y >= rect.y
+                && y < rect.y.saturating_add(rect.height))
+            .then_some(region)
+        })
     }
+}
+
+const PAGES: [Page; 6] = [
+    Page::Library,
+    Page::Queue,
+    Page::QuickPlay,
+    Page::Playlists,
+    Page::Server,
+    Page::Settings,
+];
+const CONTROLS_WIDTH: u16 = 19;
+
+/// Compute both render and hit-test rectangles so wrapped headers stay clickable.
+fn header_regions(area: Rect) -> Vec<(HeaderRegion, Rect)> {
+    let mut regions = Vec::with_capacity(PAGES.len() + 5);
+    let mut row = 0u16;
+    let mut cursor = 0u16;
+
+    for page in PAGES {
+        let width = crate::num::u16_sat(page.shortcut().len() + page.label().len() + 3);
+        if cursor > 0 && cursor.saturating_add(width) > area.width {
+            row = row.saturating_add(1);
+            cursor = 0;
+        }
+        regions.push((
+            HeaderRegion::Tab(page),
+            Rect::new(area.x + cursor, area.y + row, width.min(area.width), 1),
+        ));
+        cursor = cursor.saturating_add(width).saturating_add(1);
+    }
+
+    if cursor > 0 && cursor.saturating_add(CONTROLS_WIDTH) > area.width {
+        row = row.saturating_add(1);
+    }
+    let start = area.x + area.width.saturating_sub(CONTROLS_WIDTH);
+    for (region, offset) in [
+        (HeaderRegion::PrevButton, 0),
+        (HeaderRegion::PlayButton, 4),
+        (HeaderRegion::PauseButton, 8),
+        (HeaderRegion::StopButton, 12),
+        (HeaderRegion::NextButton, 16),
+    ] {
+        regions.push((region, Rect::new(start + offset, area.y + row, 3, 1)));
+    }
+    regions
 }

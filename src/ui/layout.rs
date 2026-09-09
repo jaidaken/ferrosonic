@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use ratatui::{
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Rect},
     Frame,
 };
 
@@ -16,6 +16,30 @@ use super::pages;
 use super::{widget_cava::CavaWidget, widget_now_playing, widget_now_playing::NowPlayingWidget};
 
 const NOW_PLAYING_BASE: u16 = 7;
+const STACKED_PANE_WIDTH: u16 = 72;
+const STACKED_QUICK_PLAY_WIDTH: u16 = 64;
+
+/// Split a two-pane page according to the available content dimensions.
+#[must_use]
+pub fn content_panes(page: Page, area: Rect) -> (Option<Rect>, Option<Rect>) {
+    let panes = match page {
+        Page::Library | Page::Playlists if area.width < STACKED_PANE_WIDTH => {
+            Layout::vertical([Constraint::Percentage(40), Constraint::Percentage(60)]).split(area)
+        }
+        Page::Library | Page::Playlists => {
+            Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).split(area)
+        }
+        Page::QuickPlay if area.width < STACKED_QUICK_PLAY_WIDTH => {
+            let options_height = if area.height <= 8 { 4 } else { 6 };
+            Layout::vertical([Constraint::Length(options_height), Constraint::Min(0)]).split(area)
+        }
+        Page::QuickPlay => {
+            Layout::horizontal([Constraint::Length(22), Constraint::Min(0)]).split(area)
+        }
+        _ => return (None, None),
+    };
+    (Some(panes[0]), Some(panes[1]))
+}
 
 /// Draw one full frame: header, page content, now-playing, footer.
 // Cohesive single match/render; splitting would fragment one logical unit.
@@ -42,7 +66,7 @@ pub fn draw(
             .and_then(|s| s.cover_art.as_ref())
             .is_some();
 
-    let now_playing_h = if art_visible {
+    let desired_now_playing_h = if art_visible {
         u16::from(state.client.settings_state.cover_art_size).clamp(8, 24)
     } else {
         NOW_PLAYING_BASE
@@ -55,41 +79,46 @@ pub fn draw(
         Page::Settings | Page::Server => 20,
         _ => 8,
     };
+    let colors = *state.client.settings_state.theme_colors();
+    let footer_h = Footer::new(state.client.page, colors)
+        .sample_rate(state.daemon.now_playing.sample_rate)
+        .repeat_mode(state.client.settings_state.repeat_mode)
+        .notification(state.client.notification.as_ref())
+        .keybindings(&state.client.settings_state.keybindings)
+        .required_height(area.width);
+    let header_h = Header::required_height(area.width);
+    let fixed_ui_h = header_h.saturating_add(footer_h);
+    let remaining_h = area.height.saturating_sub(fixed_ui_h);
+    let content_floor = content_min.min(remaining_h);
+    let now_playing_h = desired_now_playing_h.min(remaining_h.saturating_sub(content_floor));
+    let spare_h = remaining_h.saturating_sub(content_floor.saturating_add(now_playing_h));
+    let cava_h = if cava_active {
+        (area.height.saturating_mul(band_pct) / 100).min(spare_h)
+    } else {
+        0
+    };
     let (header_area, cava_area, content_area, now_playing_area, footer_area) = if cava_active {
         let chunks = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Percentage(band_pct),
-            Constraint::Min(content_min),
+            Constraint::Length(header_h),
+            Constraint::Length(cava_h),
+            Constraint::Min(content_floor),
             Constraint::Length(now_playing_h),
-            Constraint::Length(2),
+            Constraint::Length(footer_h),
         ])
         .split(area);
         (chunks[0], Some(chunks[1]), chunks[2], chunks[3], chunks[4])
     } else {
         let chunks = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(content_min),
+            Constraint::Length(header_h),
+            Constraint::Min(content_floor),
             Constraint::Length(now_playing_h),
-            Constraint::Length(2),
+            Constraint::Length(footer_h),
         ])
         .split(area);
         (chunks[0], None, chunks[1], chunks[2], chunks[3])
     };
 
-    let (content_left, content_right) = match state.client.page {
-        Page::Library | Page::Playlists => {
-            let panes =
-                Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
-                    .split(content_area);
-            (Some(panes[0]), Some(panes[1]))
-        }
-        Page::QuickPlay => {
-            let panes = Layout::horizontal([Constraint::Length(22), Constraint::Min(0)])
-                .split(content_area);
-            (Some(panes[0]), Some(panes[1]))
-        }
-        _ => (None, None),
-    };
+    let (content_left, content_right) = content_panes(state.client.page, content_area);
 
     state.client.layout = LayoutAreas {
         header: header_area,
@@ -99,7 +128,6 @@ pub fn draw(
         content_right,
     };
 
-    let colors = *state.client.settings_state.theme_colors();
     let header = Header::new(state.client.page, state.daemon.now_playing.state, colors);
     frame.render_widget(header, header_area);
 
@@ -119,8 +147,8 @@ pub fn draw(
 
     // 50/50 horizontal split when art is actually visible. When no
     // art, info uses the full inner width and re-centers naturally.
-    let art_cols = if art_visible {
-        now_playing_area.width.saturating_sub(2) / 2
+    let art_cols = if art_visible && now_playing_area.width >= 64 && now_playing_area.height >= 8 {
+        (now_playing_area.width.saturating_sub(2) / 2).min(32)
     } else {
         0
     };
@@ -139,7 +167,8 @@ pub fn draw(
     let footer = Footer::new(state.client.page, colors)
         .sample_rate(state.daemon.now_playing.sample_rate)
         .repeat_mode(state.client.settings_state.repeat_mode)
-        .notification(state.client.notification.as_ref());
+        .notification(state.client.notification.as_ref())
+        .keybindings(&state.client.settings_state.keybindings);
     frame.render_widget(footer, footer_area);
 
     if state.client.quit_prompt {
@@ -148,5 +177,15 @@ pub fn draw(
 
     if state.client.playlist_picker.active {
         super::playlist_picker::render(frame, area, state, &colors);
+    }
+
+    if state.client.settings_state.filter_editor.is_some()
+        || state.client.settings_state.keybinding_editor.is_some()
+    {
+        super::settings_editor::render(frame, area, state, &colors);
+    }
+
+    if state.client.lyrics.open {
+        super::lyrics::render(frame, area, state, &colors);
     }
 }

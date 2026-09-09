@@ -1,9 +1,9 @@
 ---
 source: tests/ui_smoke.rs
-assertion_line: 64
 expression: frame
 ---
- F1 Library  │  F2 Queue  │  F3 Quick Play  │  F4             ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
+ F1 Library   F2 Queue   F3 Quick Play   F4 Playlists   F5 Server   F6 Settings 
+                                                              ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
 ┌ Settings ────────────────────────────────────────────────────────────────────┐
 │Display                                                                       │
 │▶ Theme             Default  ◀ ▶                                              │
@@ -21,9 +21,8 @@ expression: frame
 │                                                                              │
 │System                                                                        │
 │  Daemon            On                                                        │
-│  Notifications     On                                                        │
 │← → or Enter to change theme (auto-saves)                                     │
 └──────────────────────────────────────────────────────────────────────────────┘
-                                                                                
-                                                                                
-q:Quit │ p/Space:Pause │ h:Prev │ l:Next
+q:Quit │ p/Space:Pause │ h:Prev │ l:Next │ r:Repeat (off) │ y:Lyrics            
+Shift+T:Shuffle library │ n:Star playing                                        
+←/→/Enter:Change
