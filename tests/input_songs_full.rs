@@ -5,6 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ferrosonic::app::models::SongOption;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
+use ferrosonic::ipc::protocol::QuickPlayAlbumKind;
 use ferrosonic::subsonic::models::Child;
 use serial_test::serial;
 
@@ -102,6 +103,41 @@ async fn up_at_random_album_triggers_random_refresh() {
         fx.app.client_state.read().await.songs.selected_option,
         Some(SongOption::Random)
     ));
+}
+
+#[tokio::test]
+#[serial]
+async fn option_navigation_reaches_all_curated_album_modes() {
+    let mut fx = build_app().await;
+    {
+        let mut state = fx.app.client_state.write().await;
+        state.songs.selected_option = Some(SongOption::RandomAlbum);
+        state.songs.selected_index = Some(400);
+        state.songs.scroll_offset = 390;
+    }
+
+    for expected in [
+        SongOption::NewestAlbum,
+        SongOption::RecentlyPlayed,
+        SongOption::MostPlayed,
+        SongOption::HighestRated,
+    ] {
+        fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+        assert_eq!(
+            fx.app.client_state.read().await.songs.selected_option,
+            Some(expected)
+        );
+        let state = fx.app.client_state.read().await;
+        assert_eq!(state.songs.selected_index, None);
+        assert_eq!(state.songs.scroll_offset, 0);
+    }
+
+    fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::HighestRated),
+        "the final option must stay selected at the lower boundary"
+    );
 }
 
 #[tokio::test]
@@ -260,6 +296,35 @@ async fn enter_with_random_album_selected_plays_from_random_album_songs() {
         .queue
         .iter()
         .any(|s| s.id == "starred0" || s.id == "rand0"));
+}
+
+#[tokio::test]
+#[serial]
+async fn enter_with_curated_album_selected_uses_its_own_cached_songs() {
+    let tempdir = common::tempdir();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
+    let mut config = Config::new();
+    config.daemon = false;
+    let mut app = App::new(config);
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.library
+            .quick_play_album_songs
+            .insert(QuickPlayAlbumKind::Newest, vec![song("new0"), song("new1")]);
+    }
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = ferrosonic::app::state::Page::QuickPlay;
+        cs.songs.focus = 1;
+        cs.songs.selected_option = Some(SongOption::NewestAlbum);
+        cs.songs.selected_index = Some(1);
+    }
+
+    app.handle_key(key(KeyCode::Enter)).await.unwrap();
+
+    let state = app.daemon_state.read().await;
+    assert_eq!(state.queue.len(), 2);
+    assert_eq!(state.queue[1].id, "new1");
 }
 
 #[tokio::test]

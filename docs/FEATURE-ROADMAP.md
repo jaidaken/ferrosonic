@@ -1,6 +1,6 @@
 # Feature Roadmap
 
-Status: stages 1 through 4 implemented; long-form work moved to Podsonic.
+Status: stages 1 through 4 and 7 implemented; long-form work moved to Podsonic.
 
 This roadmap covers the next personal-feature cycle after the ratings,
 playback-filter, keybinding, ReplayGain, and responsive-footer work. Each stage
@@ -149,6 +149,29 @@ References:
 
 - <https://opensubsonic.netlify.app/docs/endpoints/getpodcasts/>
 - <https://github.com/navidrome/navidrome/blob/master/server/subsonic/api.go>
+
+## 7. Expanded Quick Play discovery
+
+**Implemented.**
+
+Quick Play now exposes four additional album-focused choices using the
+standard Subsonic `getAlbumList2` endpoint:
+
+- Newest Album (`newest`)
+- Recently Played (`recent`)
+- Most Played (`frequent`)
+- Highest Rated (`highest`)
+
+Each selection fetches the category's first album and then its complete track
+list. Results have independent daemon caches, cross daemon IPC events, active
+music-folder scoping, star/rating synchronization, stale-server protection,
+and explicit empty states. The compact responsive selector calculates enough
+columns to keep all seven Quick Play modes visible and uses matching mouse hit
+regions.
+
+Reference:
+
+- <https://opensubsonic.netlify.app/docs/endpoints/getalbumlist2/>
 
 ## Verification for every stage
 

@@ -115,6 +115,69 @@ impl DaemonCore {
         }
     }
 
+    /// Fetch one complete album from a server-curated Quick Play category.
+    pub async fn refresh_quick_play_album(
+        self: &Arc<Self>,
+        kind: crate::ipc::protocol::QuickPlayAlbumKind,
+    ) {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
+        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
+        let album = match client.get_album_list2(kind.query_value(), 1, 0).await {
+            Ok(albums) => albums.into_iter().next(),
+            Err(e) => {
+                error!("Failed to load {}: {}", kind.label(), e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load {}: {e}", kind.label()),
+                    is_error: true,
+                });
+                return;
+            }
+        };
+        if self.config_gen_changed(gen_at_start) {
+            debug!("refresh_quick_play_album: config changed mid-request, discarding");
+            return;
+        }
+        let Some(album) = album else {
+            self.state
+                .write()
+                .await
+                .library
+                .quick_play_album_songs
+                .remove(&kind);
+            self.emit(DaemonEvent::QuickPlayAlbumChanged {
+                kind,
+                songs: Vec::new(),
+            });
+            self.bump_library_version();
+            return;
+        };
+        match client.get_album(&album.id).await {
+            Ok((_album, songs)) => {
+                if self.config_gen_changed(gen_at_start) {
+                    debug!("refresh_quick_play_album: config changed mid-request, discarding");
+                    return;
+                }
+                self.state
+                    .write()
+                    .await
+                    .library
+                    .quick_play_album_songs
+                    .insert(kind, songs.clone());
+                self.emit(DaemonEvent::QuickPlayAlbumChanged { kind, songs });
+                self.bump_library_version();
+            }
+            Err(e) => {
+                error!("Failed to load {} songs: {}", kind.label(), e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load {}: {e}", kind.label()),
+                    is_error: true,
+                });
+            }
+        }
+    }
+
     /// Re-fetch the artist index and broadcast the new list.
     pub async fn refresh_artists(self: &Arc<Self>) {
         let Some(client) = self.subsonic.read().await.clone() else {
@@ -231,6 +294,8 @@ impl DaemonCore {
             }
             state.config.save_default().map_err(Error::Config)?;
             state.library.all_albums.clear();
+            state.library.random_album_songs.clear();
+            state.library.quick_play_album_songs.clear();
         }
         {
             // Bump gen under the subsonic lock so any refresh in flight with the
@@ -243,6 +308,18 @@ impl DaemonCore {
             }
         }
         self.emit_config_changed().await;
+        self.emit(DaemonEvent::RandomAlbumChanged(Vec::new()));
+        for kind in [
+            crate::ipc::protocol::QuickPlayAlbumKind::Newest,
+            crate::ipc::protocol::QuickPlayAlbumKind::Recent,
+            crate::ipc::protocol::QuickPlayAlbumKind::Frequent,
+            crate::ipc::protocol::QuickPlayAlbumKind::Highest,
+        ] {
+            self.emit(DaemonEvent::QuickPlayAlbumChanged {
+                kind,
+                songs: Vec::new(),
+            });
+        }
         self.refresh_artists().await;
         self.refresh_random().await;
         Ok(())
@@ -599,6 +676,7 @@ fn song_is_starred(daemon: &DaemonState, song_id: &str) -> bool {
         .chain(daemon.queue.iter())
         .chain(daemon.library.random_songs.iter())
         .chain(daemon.library.random_album_songs.iter())
+        .chain(daemon.library.quick_play_album_songs.values().flatten())
         .chain(daemon.library.album_songs_cache.values().flatten())
         .chain(daemon.library.playlist_songs_cache.values().flatten())
         .any(|s| s.id == song_id && s.starred.is_some())
@@ -613,6 +691,13 @@ fn apply_star_to_cached(daemon: &mut DaemonState, song_id: &str, starred: bool) 
     ];
     for list in lists {
         for song in list.iter_mut() {
+            if song.id == song_id {
+                song.starred.clone_from(&marker);
+            }
+        }
+    }
+    for list in daemon.library.quick_play_album_songs.values_mut() {
+        for song in list {
             if song.id == song_id {
                 song.starred.clone_from(&marker);
             }
@@ -661,6 +746,7 @@ fn sync_starred_songs(
                 .iter()
                 .chain(daemon.library.random_songs.iter())
                 .chain(daemon.library.random_album_songs.iter())
+                .chain(daemon.library.quick_play_album_songs.values().flatten())
                 .chain(daemon.library.album_songs_cache.values().flatten())
                 .chain(daemon.library.playlist_songs_cache.values().flatten())
                 .find(|s| s.id == song_id)
@@ -740,6 +826,9 @@ fn apply_rating_to_cached(
         &mut old_rating,
         &mut found,
     );
+    for list in daemon.library.quick_play_album_songs.values_mut() {
+        update_rating_in_list(list, song_id, rating, &mut old_rating, &mut found);
+    }
     for list in daemon.library.album_songs_cache.values_mut() {
         update_rating_in_list(list, song_id, rating, &mut old_rating, &mut found);
     }

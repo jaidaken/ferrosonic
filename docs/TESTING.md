@@ -9,16 +9,20 @@ status: historical
 
 STATUS 2026-06-15: test phase CONCLUDED, content-driven (no %-gate; see `CLAUDE.md` rule 8). The `>=92` / `>=75` floor language, the STATUS LEGEND, and the P1-P5 plan below are the SUPERSEDED gate from the original sprint, retained as the historical work record. The kill-% numbers are point-in-time measurements, not targets.
 
-CURRENT NOTE 2026-09-07: the uncommitted `personal-features` tree includes
-the responsive layout pass, in-app filter/keybinding editors, and Stage 4
-lyrics. Focused coverage includes staged
+CURRENT NOTE 2026-09-09: commit `8c7e127` on `personal-features` records the
+responsive layout pass, in-app filter/keybinding editors, and Stage 4 lyrics.
+The current follow-up adds four server-curated album modes to Quick Play.
+Focused coverage includes staged
 save/cancel, input validation, key capture/reset, conflict rejection,
 failed-write consistency and daemon rollback, socket IPC, effective footer
 hints, wrapped-header hit regions, stacked panes, and wide/standard/narrow
 render snapshots, structured/classic lyric responses, missing and malformed
 lyrics, non-blocking retrieval, cache reuse, error state, and narrow overlay
 rendering, including exact synchronized following and proportional scrolling
-for untimed lyrics. The former Stage 5 audiobook implementation and its focused
+for untimed lyrics. Quick Play coverage now also exercises all album-list
+categories, category-isolated caches, music-folder scoping, stale replies,
+daemon socket round trips, keyboard and compact-grid mouse selection, empty
+states, and star/rating synchronization. The former Stage 5 audiobook implementation and its focused
 tests were removed when long-form playback moved to the separate Podsonic
 project. Current broad verification is recorded in the workspace-root
 `HANDOFF.md`. Labels such as `NEXT`, `CURRENT`, and `remaining` below describe

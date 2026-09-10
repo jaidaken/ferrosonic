@@ -19,7 +19,8 @@ It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termson
 - **Tree browser** - expandable artist/album view, with a flat album-list toggle (`v`).
 - **Unified search** - `/` runs one server-side `search3` across artists, albums, and songs together.
 - **Multi-library** - on multi-folder servers, `f` scopes the tree, album list, random songs, and search to one music folder; remembered across restarts.
-- **Quick Play** - jump straight into your Starred songs, a fresh Random roll, or a Random Album, no browsing.
+- **Quick Play** - jump straight into Starred or Random songs, a Random Album,
+  or server-curated Newest, Recently Played, Most Played, and Highest Rated albums.
 - **Stars** - favourite tracks with `n` (playing) or `m` (highlighted); shown with a star everywhere.
 - **Ratings** - rate the playing track 1-5 (`1`-`5`) or the highlighted one (`Alt+1`-`Alt+5`); press the current rating again to clear it. Synced to the server and exposed via MPRIS.
 - **Playback filters** - exclude songs from the queue by rating, year, duration, genre, or artist from Settings (`F6`) or `config.toml`. Applies wherever songs enter the queue (enqueue, shuffle, auto-continue).
@@ -307,7 +308,18 @@ or Escape closes the overlay.
 | `Enter` | Play selected song (queues all visible songs and starts from selection) |
 | `m` | Star/unstar highlighted song |
 
-The Quick Play page has three modes selectable from the options pane: **Starred** (your starred/favourited songs from the server), **Random** (a fresh 500-song roll from the library on each visit), and **Random Album** (a random full album, re-rolled when switching into this option from another option).
+The Quick Play page has seven modes selectable from the options pane:
+
+- **Starred** shows your starred/favourited songs from the server.
+- **Random** fetches a fresh 500-song roll from the active library.
+- **Random Album** fetches one random full album.
+- **Newest Album**, **Recently Played**, **Most Played**, and **Highest Rated**
+  fetch the complete track list of the first album in the corresponding
+  server-curated `getAlbumList2` category. Highest Rated therefore follows the
+  album's server rating rather than calculating an average from song ratings.
+
+Album modes follow the active music folder. A category with no matching album
+shows an explicit empty message instead of a blank song pane.
 
 Returning to F3 or clicking an already selected Random Album retains that album. Switch to another option and back to fetch a new one.
 

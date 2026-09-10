@@ -11,6 +11,9 @@ through `06fa94a`; upstream dependencies and metadata are retained.
   original-occurrence index preservation, shuffle and auto-continue filtering.
 - [x] Random Album Quick Play: keyboard/mouse selection, folder-scoped API,
   separate cache, snapshots, star/rating synchronization, stale-empty protection.
+- [x] Expanded Quick Play discovery: newest, recently played, most played, and
+  highest-rated album categories with isolated caches, folder scoping, compact
+  responsive selection, and explicit empty states.
 - [x] Configurable global keys: defaults and overrides, persistence, conflict
   notifications, reserved keys, modal/Settings priority, page-edit cleanup.
 - [x] In-app excluded-genre/artist editors: staged add/remove, validation,
@@ -81,6 +84,19 @@ Verification (2026-09-07, stages 1 through 4 checkpoint):
 - `cargo deny check --all-features` was not run locally because `cargo-deny`
   is not installed. No dependency files changed; the configured hosted CI job
   remains the final check for this gate.
+
+Expanded Quick Play verification (2026-09-09):
+
+- `cargo fmt --all -- --check`: pass.
+- Both required Clippy commands: pass; the production gate retained the same
+  34 warning-level findings and reported no new production unwrap/expect use.
+- `cargo nextest run --profile ci --all-targets --test-threads 1`: 1,713/1,713
+  passed in 169.942 seconds. The same two host-load-sensitive stress tests
+  passed on their second attempts; all new Quick Play tests passed immediately.
+- `cargo test --doc`: 37/37 passed.
+- `cargo build --release`: pass; 13,435,800-byte binary with SHA-256
+  `7d194bf64402347a46c187e63173490e040f6863f63879295b54207f50806ac2`.
+- `cargo deny` remains unavailable locally; no dependencies changed.
 
 Earlier runs of the same suite failed
 `lock_order::pause_resume_under_replace_storm_stays_consistent` on all three

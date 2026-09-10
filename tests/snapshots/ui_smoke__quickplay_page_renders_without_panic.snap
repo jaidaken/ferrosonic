@@ -5,13 +5,13 @@ expression: frame
  F1 Library   F2 Queue   F3 Quick Play   F4 Playlists   F5 Server   F6 Settings 
                                                               ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
 ┌Song Options────────┐┌Songs───────────────────────────────────────────────────┐
-│Starred             ││                                                        │
+│Starred             ││No songs available for Starred.                         │
 │Random              ││                                                        │
 │Random Album        ││                                                        │
-│                    ││                                                        │
-│                    ││                                                        │
-│                    ││                                                        │
-│                    ││                                                        │
+│Newest Album        ││                                                        │
+│Recently Played     ││                                                        │
+│Most Played         ││                                                        │
+│Highest Rated       ││                                                        │
 │                    ││                                                        │
 │                    ││                                                        │
 │                    ││                                                        │

@@ -27,6 +27,11 @@
 
 ### Added
 
+- **Expanded Quick Play discovery.** Quick Play now includes Newest Album,
+  Recently Played, Most Played, and Highest Rated album modes backed by the
+  standard `getAlbumList2` categories. Each mode loads the selected album's
+  complete track list, follows the active music folder, and remains usable in
+  compact multi-column layouts.
 - **Lyrics overlay.** Press `y` from any page to show lyrics for the playing
   track. Structured and synchronized OpenSubsonic lyrics are preferred, with
   classic Subsonic fallback, per-song caching, manual scrolling,

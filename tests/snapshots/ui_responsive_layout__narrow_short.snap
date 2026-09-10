@@ -6,8 +6,8 @@ expression: frame
  F4 Playlists   F5 Server   F6 Settings           
                                 ⏮︎   ⏵︎   ⏸︎   ⏹︎   ⏭︎ 
 ┌Song Options────────────────────────────────────┐
-│Starred                 Random                  │
-│Random Album                                    │
+│Starred     Random      Random Alb  Newest Alb  │
+│Recent Alb  Most Played Top Rated               │
 └────────────────────────────────────────────────┘
 ┌Songs───────────────────────────────────────────┐
 │    A Song With A Readable Title - Test Artist [│

@@ -84,6 +84,10 @@ impl DaemonClient for InProcessClient {
                 core.refresh_random_album().await;
                 Ok(DaemonResponse::Ok)
             }
+            DaemonRequest::RefreshQuickPlayAlbum(kind) => {
+                core.refresh_quick_play_album(kind).await;
+                Ok(DaemonResponse::Ok)
+            }
             DaemonRequest::RefreshArtists => {
                 core.refresh_artists().await;
                 core.refresh_music_folders().await;

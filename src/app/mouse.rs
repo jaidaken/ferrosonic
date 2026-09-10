@@ -1,4 +1,5 @@
 use crossterm::event::{self, MouseButton, MouseEventKind};
+use strum::IntoEnumIterator;
 
 use crate::error::Error;
 
@@ -171,20 +172,14 @@ impl App {
 
         if in_pane(left) {
             let row_in_pane = y.saturating_sub(left.y + 1) as usize;
-            let option_index = if left.height < 6 {
-                let midpoint = left.x + 1 + left.width.saturating_sub(2) / 2;
-                row_in_pane
-                    .saturating_mul(2)
-                    .saturating_add(usize::from(x >= midpoint))
-            } else {
-                row_in_pane
-            };
-            let option = match option_index {
-                0 => Some(SongOption::Starred),
-                1 => Some(SongOption::Random),
-                2 => Some(SongOption::RandomAlbum),
-                _ => None,
-            };
+            let columns = crate::ui::pages::songs::option_columns(left);
+            let inner_width = usize::from(left.width.saturating_sub(2));
+            let column_width = (inner_width / columns).max(1);
+            let column = usize::from(x.saturating_sub(left.x + 1)) / column_width;
+            let option_index = row_in_pane
+                .saturating_mul(columns)
+                .saturating_add(column.min(columns.saturating_sub(1)));
+            let option = SongOption::iter().nth(option_index);
             if let Some(option) = option {
                 let already;
                 {
@@ -195,16 +190,15 @@ impl App {
                         client: &mut cs,
                     };
                     already = state.client.songs.selected_option.as_ref() == Some(&option);
-                    state.client.songs.selected_option = Some(option.clone());
+                    state.client.songs.selected_option = Some(option);
                     state.client.songs.focus = 0;
+                    if !already {
+                        state.client.songs.selected_index = None;
+                        state.client.songs.scroll_offset = 0;
+                    }
                 }
                 if !already {
-                    let req = match option {
-                        SongOption::Starred => DaemonRequest::RefreshStarred,
-                        SongOption::Random => DaemonRequest::RefreshRandom,
-                        SongOption::RandomAlbum => DaemonRequest::RefreshRandomAlbum,
-                    };
-                    let _ = self.client.request(req).await;
+                    let _ = self.client.request(option.refresh_request()).await;
                 }
             }
             return Ok(());

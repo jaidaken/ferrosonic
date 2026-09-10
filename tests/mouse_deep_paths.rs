@@ -108,6 +108,29 @@ async fn quickplay_click_on_random_album_option_selects_random_album() {
 
 #[tokio::test]
 #[serial]
+async fn compact_quickplay_grid_maps_curated_album_columns() {
+    let mut fx = build_app(Page::QuickPlay).await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.layout.content_left = Some(Rect::new(0, 1, 50, 4));
+        cs.layout.content_right = Some(Rect::new(0, 5, 50, 10));
+    }
+
+    fx.app.handle_mouse(click(38, 2)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::NewestAlbum)
+    );
+
+    fx.app.handle_mouse(click(14, 3)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::MostPlayed)
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn quickplay_click_on_unreachable_option_row_is_noop() {
     let mut fx = build_app(Page::QuickPlay).await;
     fx.app.handle_mouse(click(10, 15)).await.unwrap();

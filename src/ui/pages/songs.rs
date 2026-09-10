@@ -33,7 +33,6 @@ fn render_options(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, color
         .client
         .songs
         .selected_option
-        .clone()
         .unwrap_or(SongOption::Starred);
 
     let focused = focus == 0;
@@ -48,11 +47,12 @@ fn render_options(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, color
         .title("Song Options")
         .border_style(border_style);
 
-    if area.height < 6 {
-        let column_width = usize::from(area.width.saturating_sub(2) / 2);
+    let columns = option_columns(area);
+    if columns > 1 {
+        let column_width = (usize::from(area.width.saturating_sub(2)) / columns).max(1);
         let options = SongOption::iter().collect::<Vec<_>>();
         let lines = options
-            .chunks(2)
+            .chunks(columns)
             .map(|row| {
                 Line::from(
                     row.iter()
@@ -69,7 +69,7 @@ fn render_options(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, color
                                     style = style.bg(colors.highlight_bg);
                                 }
                             }
-                            Span::styled(format!("{:<column_width$}", option.to_string()), style)
+                            Span::styled(option_cell(*option, column_width), style)
                         })
                         .collect::<Vec<_>>(),
                 )
@@ -109,12 +109,34 @@ fn render_options(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>, color
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
+/// Number of option columns needed to keep every Quick Play mode visible.
+#[must_use]
+pub(crate) fn option_columns(area: Rect) -> usize {
+    let rows = usize::from(area.height.saturating_sub(2)).max(1);
+    let count = SongOption::iter().count();
+    count.div_ceil(rows).max(1)
+}
+
+fn option_cell(option: SongOption, width: usize) -> String {
+    let label_width = width.saturating_sub(1);
+    let label = option
+        .compact_label()
+        .chars()
+        .take(label_width)
+        .collect::<String>();
+    format!("{label:<width$}")
+}
+
 fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
-    let songs_ui = &state.client.songs;
-    // Resolve which library list this page is showing (Starred or Random).
+    let selected_option = state
+        .client
+        .songs
+        .selected_option
+        .unwrap_or(SongOption::Starred);
+    // Resolve the daemon-owned list backing the selected Quick Play mode.
     let library_songs: Vec<crate::subsonic::models::Child> = state.songs_list().to_vec();
 
-    let focused = songs_ui.focus == 1;
+    let focused = state.client.songs.focus == 1;
     let border_style = if focused {
         Style::default().fg(colors.border_focused)
     } else {
@@ -125,6 +147,17 @@ fn render_songs(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, col
         .borders(Borders::ALL)
         .title("Songs")
         .border_style(border_style);
+
+    if library_songs.is_empty() {
+        state.client.songs.scroll_offset = 0;
+        frame.render_widget(
+            Paragraph::new(format!("No songs available for {selected_option}.")).block(block),
+            area,
+        );
+        return;
+    }
+
+    let songs_ui = &state.client.songs;
 
     let items: Vec<ListItem<'_>> = library_songs
         .iter()

@@ -64,6 +64,8 @@ pub enum DaemonRequest {
     RefreshRandom,
     /// Fetch a fresh random album's songs from the server.
     RefreshRandomAlbum,
+    /// Fetch one album from a server-curated Quick Play category.
+    RefreshQuickPlayAlbum(QuickPlayAlbumKind),
     /// Re-fetch the artist index from the server.
     RefreshArtists,
     /// Re-fetch the playlist list from the server.
@@ -329,6 +331,13 @@ pub enum DaemonEvent {
     RandomChanged(Vec<Child>),
     /// Songs of a newly fetched random album (empty if the library has none).
     RandomAlbumChanged(Vec<Child>),
+    /// Songs of a newly fetched server-curated Quick Play album.
+    QuickPlayAlbumChanged {
+        /// Server album-list category that was refreshed.
+        kind: QuickPlayAlbumKind,
+        /// Complete track list of the selected album, or empty when none exists.
+        songs: Vec<Child>,
+    },
     /// New artist index.
     ArtistsChanged(Vec<Artist>),
     /// Album list of one artist changed.
@@ -371,6 +380,43 @@ pub enum DaemonEvent {
     Shutdown,
     /// Opt-in pull-style alternative to the bulk `ArtistsChanged` etc events.
     LibraryVersionChanged(u64),
+}
+
+/// Server album-list categories exposed as album-focused Quick Play modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum QuickPlayAlbumKind {
+    /// Most recently added album.
+    Newest,
+    /// Most recently played album.
+    Recent,
+    /// Most frequently played album.
+    Frequent,
+    /// Highest-rated album.
+    Highest,
+}
+
+impl QuickPlayAlbumKind {
+    /// Subsonic `getAlbumList2` type value.
+    #[must_use]
+    pub const fn query_value(self) -> &'static str {
+        match self {
+            Self::Newest => "newest",
+            Self::Recent => "recent",
+            Self::Frequent => "frequent",
+            Self::Highest => "highest",
+        }
+    }
+
+    /// Human-readable category label used in notifications.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Newest => "newest album",
+            Self::Recent => "recently played album",
+            Self::Frequent => "most played album",
+            Self::Highest => "highest-rated album",
+        }
+    }
 }
 
 /// Error surface of the IPC client and server transport.

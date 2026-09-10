@@ -6,6 +6,7 @@ mod common;
 use common::TestDaemon;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ferrosonic::app::App;
+use ferrosonic::ipc::protocol::QuickPlayAlbumKind;
 use ferrosonic::subsonic::models::{Artist, MusicFolder};
 use serial_test::serial;
 use wiremock::Request;
@@ -87,6 +88,32 @@ async fn no_folder_selected_omits_music_folder_id() {
     assert!(
         !q.contains("musicFolderId"),
         "with no folder selected, getArtists must browse all libraries; query was {q}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn quick_play_album_uses_selected_music_folder() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_artists(&["A"]).await;
+    td.fake_subsonic.expect_random_songs(&["s"]).await;
+    td.core.set_music_folder(Some(2)).await.unwrap();
+    td.fake_subsonic
+        .expect_quick_play_album("newest", "new", "Newest", &["Track"])
+        .await;
+
+    td.core
+        .refresh_quick_play_album(QuickPlayAlbumKind::Newest)
+        .await;
+
+    let requests = td.fake_subsonic.received_requests().await;
+    let query = find(&requests, "/rest/getAlbumList2")
+        .url
+        .query()
+        .unwrap_or_default();
+    assert!(
+        query.contains("type=newest") && query.contains("musicFolderId=2"),
+        "curated albums must follow the active library; query was {query}"
     );
 }
 

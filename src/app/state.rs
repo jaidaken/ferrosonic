@@ -151,7 +151,12 @@ impl AppState<'_> {
         match self.client.songs.selected_option {
             Some(SongOption::Random) => &self.daemon.library.random_songs,
             Some(SongOption::RandomAlbum) => &self.daemon.library.random_album_songs,
+            Some(option) if option.album_kind().is_some() => option
+                .album_kind()
+                .and_then(|kind| self.daemon.library.quick_play_album_songs.get(&kind))
+                .map_or(&[], Vec::as_slice),
             Some(SongOption::Starred) | None => &self.daemon.library.starred_songs,
+            Some(_) => &[],
         }
     }
 

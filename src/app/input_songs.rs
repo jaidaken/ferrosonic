@@ -2,6 +2,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::app::models::SongOption;
 use crate::error::Error;
+use strum::IntoEnumIterator;
 
 use super::{App, AppState, DaemonRequest, EnqueueMode};
 
@@ -19,24 +20,19 @@ impl App {
         };
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => match state.client.songs.focus {
-                0 => match state.client.songs.selected_option {
-                    Some(SongOption::Starred) => {}
-                    Some(SongOption::Random) => {
-                        state.client.songs.selected_option = Some(SongOption::Starred);
+                0 => {
+                    if let Some(option) =
+                        state.client.songs.selected_option.and_then(previous_option)
+                    {
+                        state.client.songs.selected_option = Some(option);
+                        state.client.songs.selected_index = None;
+                        state.client.songs.scroll_offset = 0;
                         let _ = state;
                         drop(cs);
                         drop(ds);
-                        let _ = self.client.request(DaemonRequest::RefreshStarred).await;
+                        let _ = self.client.request(option.refresh_request()).await;
                     }
-                    Some(SongOption::RandomAlbum) => {
-                        state.client.songs.selected_option = Some(SongOption::Random);
-                        let _ = state;
-                        drop(cs);
-                        drop(ds);
-                        let _ = self.client.request(DaemonRequest::RefreshRandom).await;
-                    }
-                    None => {}
-                },
+                }
                 1 => {
                     if let Some(sel) = state.client.songs.selected_index {
                         if sel > 0 {
@@ -49,24 +45,17 @@ impl App {
                 _ => {}
             },
             KeyCode::Down | KeyCode::Char('j') => match state.client.songs.focus {
-                0 => match state.client.songs.selected_option {
-                    Some(SongOption::Starred) => {
-                        state.client.songs.selected_option = Some(SongOption::Random);
+                0 => {
+                    if let Some(option) = state.client.songs.selected_option.and_then(next_option) {
+                        state.client.songs.selected_option = Some(option);
+                        state.client.songs.selected_index = None;
+                        state.client.songs.scroll_offset = 0;
                         let _ = state;
                         drop(cs);
                         drop(ds);
-                        let _ = self.client.request(DaemonRequest::RefreshRandom).await;
+                        let _ = self.client.request(option.refresh_request()).await;
                     }
-                    Some(SongOption::Random) => {
-                        state.client.songs.selected_option = Some(SongOption::RandomAlbum);
-                        let _ = state;
-                        drop(cs);
-                        drop(ds);
-                        let _ = self.client.request(DaemonRequest::RefreshRandomAlbum).await;
-                    }
-                    Some(SongOption::RandomAlbum) => {}
-                    None => {}
-                },
+                }
                 1 => {
                     let max = state.songs_list().len().saturating_sub(1);
                     if let Some(sel) = state.client.songs.selected_index {
@@ -149,4 +138,20 @@ impl App {
 
         Ok(())
     }
+}
+
+fn previous_option(current: SongOption) -> Option<SongOption> {
+    let options = SongOption::iter().collect::<Vec<_>>();
+    let index = options.iter().position(|option| *option == current)?;
+    index
+        .checked_sub(1)
+        .and_then(|index| options.get(index).copied())
+}
+
+fn next_option(current: SongOption) -> Option<SongOption> {
+    let options = SongOption::iter().collect::<Vec<_>>();
+    let index = options.iter().position(|option| *option == current)?;
+    index
+        .checked_add(1)
+        .and_then(|index| options.get(index).copied())
 }

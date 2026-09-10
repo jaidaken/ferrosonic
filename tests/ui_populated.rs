@@ -237,6 +237,24 @@ fn quickplay_with_random_songs_renders_titles() {
 }
 
 #[test]
+fn quickplay_with_curated_album_renders_its_tracks() {
+    use ferrosonic::app::models::SongOption;
+    use ferrosonic::ipc::protocol::QuickPlayAlbumKind;
+    let (mut daemon, mut client) = build_state();
+    daemon.library.quick_play_album_songs.insert(
+        QuickPlayAlbumKind::Recent,
+        vec![song("recent", "Recently Played Track")],
+    );
+    client.page = Page::QuickPlay;
+    client.songs.selected_option = Some(SongOption::RecentlyPlayed);
+    let frame = render(100, 30, &daemon, &mut client);
+    assert!(
+        frame.contains("Recently Played Track"),
+        "quickplay should render the selected curated album:\n{frame}"
+    );
+}
+
+#[test]
 fn footer_with_notification_renders_message() {
     let (daemon, mut client) = build_state();
     client.notify("hello world");

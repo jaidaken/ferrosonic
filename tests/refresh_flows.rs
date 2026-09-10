@@ -3,6 +3,7 @@
 mod common;
 
 use common::{song, TestDaemon};
+use ferrosonic::ipc::protocol::QuickPlayAlbumKind;
 use serial_test::serial;
 
 #[tokio::test]
@@ -108,6 +109,76 @@ async fn refresh_random_album_with_no_albums_clears_and_notifies_nothing_bad() {
 
 #[tokio::test]
 #[serial]
+async fn refresh_quick_play_album_populates_each_category_independently() {
+    let td = TestDaemon::new().await;
+    for (kind, query, id, title) in [
+        (QuickPlayAlbumKind::Newest, "newest", "new", "New Track"),
+        (
+            QuickPlayAlbumKind::Recent,
+            "recent",
+            "recent",
+            "Recent Track",
+        ),
+        (
+            QuickPlayAlbumKind::Frequent,
+            "frequent",
+            "often",
+            "Frequent Track",
+        ),
+        (QuickPlayAlbumKind::Highest, "highest", "top", "Top Track"),
+    ] {
+        td.fake_subsonic
+            .expect_quick_play_album(query, id, "Selected Album", &[title])
+            .await;
+        td.core.refresh_quick_play_album(kind).await;
+    }
+
+    let state = td.state.read().await;
+    assert_eq!(state.library.quick_play_album_songs.len(), 4);
+    assert_eq!(
+        state.library.quick_play_album_songs[&QuickPlayAlbumKind::Newest][0].title,
+        "New Track"
+    );
+    assert_eq!(
+        state.library.quick_play_album_songs[&QuickPlayAlbumKind::Highest][0].title,
+        "Top Track"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn empty_quick_play_category_clears_only_that_category() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_no_quick_play_album("recent").await;
+    {
+        let mut state = td.state.write().await;
+        state
+            .library
+            .quick_play_album_songs
+            .insert(QuickPlayAlbumKind::Recent, vec![song("stale", "Stale")]);
+        state
+            .library
+            .quick_play_album_songs
+            .insert(QuickPlayAlbumKind::Newest, vec![song("keep", "Keep")]);
+    }
+
+    td.core
+        .refresh_quick_play_album(QuickPlayAlbumKind::Recent)
+        .await;
+
+    let state = td.state.read().await;
+    assert!(!state
+        .library
+        .quick_play_album_songs
+        .contains_key(&QuickPlayAlbumKind::Recent));
+    assert!(state
+        .library
+        .quick_play_album_songs
+        .contains_key(&QuickPlayAlbumKind::Newest));
+}
+
+#[tokio::test]
+#[serial]
 async fn refresh_artists_populates_library() {
     let td = TestDaemon::new().await;
     td.fake_subsonic
@@ -188,6 +259,48 @@ async fn stale_empty_random_album_does_not_clear_current_library() {
     task.await.unwrap();
     assert_eq!(
         td.state.read().await.library.random_album_songs[0].id,
+        "current"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn stale_quick_play_reply_does_not_clear_current_category() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_no_quick_play_album_with_delay("newest", 500)
+        .await;
+    td.state
+        .write()
+        .await
+        .library
+        .quick_play_album_songs
+        .insert(QuickPlayAlbumKind::Newest, vec![song("current", "Current")]);
+    let core = td.core.clone();
+    let task = tokio::spawn(async move {
+        core.refresh_quick_play_album(QuickPlayAlbumKind::Newest)
+            .await;
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if td
+                .fake_subsonic
+                .received_requests()
+                .await
+                .iter()
+                .any(|request| request.url.path() == "/rest/getAlbumList2")
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    td.core.bump_config_gen_for_test();
+    task.await.unwrap();
+    assert_eq!(
+        td.state.read().await.library.quick_play_album_songs[&QuickPlayAlbumKind::Newest][0].id,
         "current"
     );
 }

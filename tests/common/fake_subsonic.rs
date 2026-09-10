@@ -441,6 +441,44 @@ impl FakeSubsonic {
         self.expect_get_album(id, name, songs).await;
     }
 
+    /// Mocks one `getAlbumList2` category plus `getAlbum` for its first result.
+    pub async fn expect_quick_play_album(
+        &self,
+        sort_type: &str,
+        id: &str,
+        name: &str,
+        songs: &[&str],
+    ) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumList2"))
+            .and(wiremock::matchers::query_param("type", sort_type))
+            .respond_with(ok_body(json!({
+                "albumList2": { "album": [{"id": id, "name": name}] }
+            })))
+            .mount(&self.server)
+            .await;
+        self.expect_get_album(id, name, songs).await;
+    }
+
+    /// Mocks an empty `getAlbumList2` category.
+    pub async fn expect_no_quick_play_album(&self, sort_type: &str) {
+        self.expect_no_quick_play_album_with_delay(sort_type, 0)
+            .await;
+    }
+
+    /// Mocks an empty category after a response delay.
+    pub async fn expect_no_quick_play_album_with_delay(&self, sort_type: &str, delay_ms: u64) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumList2"))
+            .and(wiremock::matchers::query_param("type", sort_type))
+            .respond_with(
+                ok_body(json!({"albumList2": {"album": []}}))
+                    .set_delay(std::time::Duration::from_millis(delay_ms)),
+            )
+            .mount(&self.server)
+            .await;
+    }
+
     /// Mocks `getAlbumList2?type=random` returning no albums (empty library).
     pub async fn expect_no_random_album(&self) {
         self.expect_no_random_album_with_delay(0).await;

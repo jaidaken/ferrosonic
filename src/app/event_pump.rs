@@ -84,6 +84,14 @@ pub async fn apply_event(
             let mut ds = daemon_state.write().await;
             ds.library.random_album_songs = songs;
         }
+        DaemonEvent::QuickPlayAlbumChanged { kind, songs } => {
+            let mut ds = daemon_state.write().await;
+            if songs.is_empty() {
+                ds.library.quick_play_album_songs.remove(&kind);
+            } else {
+                ds.library.quick_play_album_songs.insert(kind, songs);
+            }
+        }
         DaemonEvent::ArtistsChanged(artists) => {
             let mut ds = daemon_state.write().await;
             ds.library.artists = artists;
@@ -332,6 +340,11 @@ async fn apply_song_star_changed(
         for song in &mut ds.library.random_album_songs {
             update(song);
         }
+        for list in ds.library.quick_play_album_songs.values_mut() {
+            for song in list {
+                update(song);
+            }
+        }
         for list in ds.library.album_songs_cache.values_mut() {
             for song in list.iter_mut() {
                 update(song);
@@ -398,6 +411,11 @@ async fn apply_song_rating_changed(
         }
         for song in &mut ds.library.random_album_songs {
             update(song);
+        }
+        for list in ds.library.quick_play_album_songs.values_mut() {
+            for song in list {
+                update(song);
+            }
         }
         for song in &mut ds.library.starred_songs {
             update(song);

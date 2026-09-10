@@ -115,11 +115,15 @@ async fn multiple_concurrent_requests_resolve_independently() {
 async fn custom_features_round_trip_over_socket_and_reconnect() {
     use ferrosonic::config::keybind::{GlobalAction, KeyChord};
     use ferrosonic::config::{PlaybackFilters, ReplayGainMode};
+    use ferrosonic::ipc::protocol::QuickPlayAlbumKind;
     use ferrosonic::ipc::{DaemonResponse, EnqueueMode};
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_set_rating().await;
     td.fake_subsonic
         .expect_random_album("album", "Album", &["Track"])
+        .await;
+    td.fake_subsonic
+        .expect_quick_play_album("newest", "newest-album", "Newest", &["New Track"])
         .await;
     td.fake_subsonic
         .expect_open_subsonic_extensions(&["songLyrics"])
@@ -152,6 +156,7 @@ async fn custom_features_round_trip_over_socket_and_reconnect() {
         DaemonRequest::SetReplayGainPreamp(1.5),
         DaemonRequest::SetReplayGainClip(true),
         DaemonRequest::RefreshRandomAlbum,
+        DaemonRequest::RefreshQuickPlayAlbum(QuickPlayAlbumKind::Newest),
         DaemonRequest::SetSongRating {
             id: "song-0".into(),
             rating: 4,
@@ -197,6 +202,10 @@ async fn custom_features_round_trip_over_socket_and_reconnect() {
         Some(&"z".parse::<KeyChord>().unwrap())
     );
     assert_eq!(state.library.random_album_songs.len(), 1);
+    assert_eq!(
+        state.library.quick_play_album_songs[&QuickPlayAlbumKind::Newest][0].title,
+        "New Track"
+    );
     assert_eq!(state.config.playback_filters.min_rating, 2);
     assert_eq!(state.config.replay_gain_mode, ReplayGainMode::Album);
     assert_eq!(state.config.replay_gain_preamp, 1.5);

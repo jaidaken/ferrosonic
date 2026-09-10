@@ -9,6 +9,7 @@ use ferrosonic::app::apply_event;
 use ferrosonic::app::state::{new_shared_client_state, new_shared_daemon_state};
 use ferrosonic::config::{Config, RepeatMode};
 use ferrosonic::ipc::client::DaemonClient;
+use ferrosonic::ipc::protocol::QuickPlayAlbumKind;
 use ferrosonic::ipc::DaemonEvent;
 use ferrosonic::subsonic::models::{Album, Artist, Playlist};
 use ferrosonic::ui::cover_art::CoverArtState;
@@ -125,6 +126,9 @@ async fn song_star_changed_event_updates_all_lists() {
         let mut ds = h.daemon.write().await;
         ds.queue.push(song("hit", "Hit"));
         ds.library.random_songs.push(song("hit", "Hit"));
+        ds.library
+            .quick_play_album_songs
+            .insert(QuickPlayAlbumKind::Newest, vec![song("hit", "Hit")]);
     }
     apply_event(
         &h.daemon,
@@ -140,6 +144,11 @@ async fn song_star_changed_event_updates_all_lists() {
     let ds = h.daemon.read().await;
     assert!(ds.queue[0].starred.is_some());
     assert!(ds.library.random_songs[0].starred.is_some());
+    assert!(
+        ds.library.quick_play_album_songs[&QuickPlayAlbumKind::Newest][0]
+            .starred
+            .is_some()
+    );
 }
 
 #[tokio::test]
@@ -156,6 +165,32 @@ async fn random_changed_event_replaces_library_random() {
     .await;
     let ds = h.daemon.read().await;
     assert_eq!(ds.library.random_songs.len(), 1);
+}
+
+#[tokio::test]
+#[serial]
+async fn quick_play_album_event_replaces_and_clears_its_category() {
+    let h = build_harness();
+    for songs in [vec![song("new", "New")], Vec::new()] {
+        apply_event(
+            &h.daemon,
+            &h.client_state,
+            &h.client,
+            &h.cover_art,
+            DaemonEvent::QuickPlayAlbumChanged {
+                kind: QuickPlayAlbumKind::Newest,
+                songs,
+            },
+        )
+        .await;
+    }
+    assert!(!h
+        .daemon
+        .read()
+        .await
+        .library
+        .quick_play_album_songs
+        .contains_key(&QuickPlayAlbumKind::Newest));
 }
 
 #[tokio::test]
@@ -383,6 +418,10 @@ async fn rating_events_update_all_client_copies_and_clear() {
         state.library.random_album_songs = list.clone();
         state
             .library
+            .quick_play_album_songs
+            .insert(QuickPlayAlbumKind::Newest, list.clone());
+        state
+            .library
             .album_songs_cache
             .insert("album".into(), list.clone());
         state
@@ -415,6 +454,7 @@ async fn rating_events_update_all_client_copies_and_clear() {
             &state.library.starred_songs,
             &state.library.random_songs,
             &state.library.random_album_songs,
+            &state.library.quick_play_album_songs[&QuickPlayAlbumKind::Newest],
             &state.library.album_songs_cache["album"],
             &state.library.playlist_songs_cache["playlist"],
             &client.artists.songs,

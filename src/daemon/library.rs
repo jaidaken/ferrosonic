@@ -184,6 +184,9 @@ pub struct LibraryCache {
     /// Songs of the most recently fetched random album (Quick Play mode).
     #[serde(default)]
     pub random_album_songs: Vec<Child>,
+    /// Complete album track lists for the server-curated Quick Play modes.
+    #[serde(default)]
+    pub quick_play_album_songs: HashMap<crate::ipc::protocol::QuickPlayAlbumKind, Vec<Child>>,
 }
 
 impl LibraryCache {
