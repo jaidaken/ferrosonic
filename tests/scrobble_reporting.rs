@@ -242,6 +242,91 @@ async fn classic_does_not_resubmit_a_track_first_seen_past_threshold() {
 
 #[tokio::test]
 #[serial]
+async fn modern_start_sends_starting_marker() {
+    let td = TestDaemon::new().await;
+    settle_capability(&td).await;
+    td.core.set_playback_report_for_test(true);
+    td.fake_subsonic.expect_report_playback().await;
+
+    set_now_playing(&td, "s1", PlaybackState::Playing, 0.0, 300.0).await;
+    td.core.scrobble_tick().await;
+
+    assert!(
+        wait_for(&td, "/rest/reportPlayback").await,
+        "reportPlayback sent on start"
+    );
+    let qs = query(&td, "/rest/reportPlayback").await;
+    assert!(
+        qs.iter()
+            .any(|q| q.contains("mediaId=s1") && q.contains("state=starting")),
+        "a new play must announce state=starting per the playbackReport spec; saw {qs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn classic_repeat_one_scrobbles_each_play() {
+    let td = TestDaemon::new().await;
+    settle_capability(&td).await;
+    td.core.set_playback_report_for_test(false);
+    td.fake_subsonic.expect_scrobble().await;
+
+    // First play crosses the threshold -> one submission.
+    set_now_playing(&td, "s1", PlaybackState::Playing, 0.0, 300.0).await;
+    td.core.mark_play_instance_for_test();
+    td.core.scrobble_tick().await;
+    set_now_playing(&td, "s1", PlaybackState::Playing, 160.0, 300.0).await;
+    td.core.scrobble_tick().await;
+
+    // Repeat-one replays the same id as a fresh instance from the top.
+    td.core.mark_play_instance_for_test();
+    set_now_playing(&td, "s1", PlaybackState::Playing, 0.0, 300.0).await;
+    td.core.scrobble_tick().await;
+    set_now_playing(&td, "s1", PlaybackState::Playing, 160.0, 300.0).await;
+    td.core.scrobble_tick().await;
+
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let qs = query(&td, "/rest/scrobble").await;
+    let submissions = qs.iter().filter(|q| q.contains("submission=true")).count();
+    assert!(
+        submissions >= 2,
+        "a repeated track must be scrobbled once per play; saw {qs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn modern_repeat_one_sends_starting_again() {
+    let td = TestDaemon::new().await;
+    settle_capability(&td).await;
+    td.core.set_playback_report_for_test(true);
+    td.fake_subsonic.expect_report_playback().await;
+
+    set_now_playing(&td, "s1", PlaybackState::Playing, 0.0, 300.0).await;
+    td.core.mark_play_instance_for_test();
+    td.core.scrobble_tick().await;
+    set_now_playing(&td, "s1", PlaybackState::Playing, 160.0, 300.0).await;
+    td.core.scrobble_tick().await;
+
+    // Same id, new instance: a restart must open a new reporting session.
+    td.core.mark_play_instance_for_test();
+    set_now_playing(&td, "s1", PlaybackState::Playing, 0.0, 300.0).await;
+    td.core.scrobble_tick().await;
+
+    assert!(
+        wait_for(&td, "/rest/reportPlayback").await,
+        "reportPlayback sent on repeat"
+    );
+    let qs = query(&td, "/rest/reportPlayback").await;
+    let startings = qs.iter().filter(|q| q.contains("state=starting")).count();
+    assert!(
+        startings >= 2,
+        "each repeat must announce state=starting; saw {qs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn disabled_config_sends_nothing() {
     let td = TestDaemon::new().await;
     settle_capability(&td).await;

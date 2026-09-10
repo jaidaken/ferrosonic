@@ -68,6 +68,27 @@ async fn click_on_f4_tab_switches_to_playlists() {
 
 #[tokio::test]
 #[serial]
+async fn mouse_tab_switch_discards_library_search_state() {
+    // The keyboard page switch closes an active Library search; a header-tab
+    // click must do the same or the modal search stays open on return.
+    let mut fx = build_app().await;
+    seed_header(&fx.app).await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.page = Page::Library;
+        cs.artists.filter_active = true;
+    }
+    fx.app.handle_mouse(click(40, 0)).await.unwrap();
+    let cs = fx.app.client_state.read().await;
+    assert_eq!(cs.page, Page::Playlists);
+    assert!(
+        !cs.artists.filter_active,
+        "mouse page switch must close the active Library search"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn click_on_play_button_dispatches_toggle() {
     let mut fx = build_app().await;
     seed_header(&fx.app).await;

@@ -102,14 +102,8 @@ console = ["dep:console-subscriber"]
 wiremock = "0.6"
 # Property-based testing with proper shrinking.
 proptest = "1"
-# Readable diffs on assertion failures.
-pretty_assertions = "1"
-# Pattern-match assertions for enums.
-assert_matches = "1"
 # Time and IO mocking utilities (`tokio::time::pause`, `block_on`).
 tokio-test = "0.4"
-# Trait-level mocks where a dyn-Trait boundary already exists.
-mockall = "0.13"
 # Serialize tests that share global state (env vars, working dir).
 serial_test = "3"
 # Subprocess-based binary tests (asserts on exit code, stdout, stderr).
@@ -117,14 +111,9 @@ assert_cmd = "2"
 predicates = "3"
 # Snapshot testing for ratatui frame output.
 insta = "1"
-# Inline snapshot testing for unit-scale expects (rust-analyzer pattern).
-# UPDATE_EXPECT=1 cargo nextest run to rewrite inline literals.
-expect-test = "1"
 # Fuzz + property hybrid, stable Rust, multi-engine (libfuzzer/AFL/Honggfuzz).
 # Replaces cargo-fuzz; targets are #[test] fns that also run as property tests.
 bolero = "0.10"
-# Assert on tracing events instead of log line content.
-tracing-test = "0.2"
 
 [profile.release]
 lto = true

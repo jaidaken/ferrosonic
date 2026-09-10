@@ -50,6 +50,46 @@ fn build_harness() -> Harness {
 
 #[tokio::test]
 #[serial]
+async fn queue_changed_clamps_a_stale_client_cursor() {
+    let h = build_harness();
+    h.client_state.write().await.queue_state.selected = Some(9);
+    apply_event(
+        &h.daemon,
+        &h.client_state,
+        &h.client,
+        &h.cover_art,
+        DaemonEvent::QueueChanged {
+            queue: vec![song("a", "A"), song("b", "B")],
+            position: Some(0),
+        },
+    )
+    .await;
+    assert_eq!(
+        h.client_state.read().await.queue_state.selected,
+        Some(1),
+        "a cursor past the end must clamp to the last queue row"
+    );
+
+    apply_event(
+        &h.daemon,
+        &h.client_state,
+        &h.client,
+        &h.cover_art,
+        DaemonEvent::QueueChanged {
+            queue: Vec::new(),
+            position: None,
+        },
+    )
+    .await;
+    assert_eq!(
+        h.client_state.read().await.queue_state.selected,
+        None,
+        "an emptied queue must clear the cursor"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn queue_changed_event_updates_queue_and_position() {
     let h = build_harness();
     let ev = DaemonEvent::QueueChanged {
@@ -367,6 +407,34 @@ async fn config_changed_event_overwrites_daemon_config() {
     let ds = h.daemon.read().await;
     assert_eq!(ds.config.theme, "dracula");
     assert!(ds.config.cava);
+}
+
+#[tokio::test]
+#[serial]
+async fn config_changed_event_mirrors_cava_and_daemon_settings() {
+    let h = build_harness();
+    let mut cfg = Config::new();
+    cfg.cava = true;
+    cfg.cava_size = 42;
+    cfg.daemon = true;
+    apply_event(
+        &h.daemon,
+        &h.client_state,
+        &h.client,
+        &h.cover_art,
+        DaemonEvent::ConfigChanged(Box::new(cfg)),
+    )
+    .await;
+    let cs = h.client_state.read().await;
+    assert!(
+        cs.settings_state.cava_enabled,
+        "cava toggle must mirror into the Settings page state"
+    );
+    assert_eq!(cs.settings_state.cava_size, 42);
+    assert!(
+        cs.settings_state.daemon_enabled,
+        "daemon toggle must mirror into the Settings page state"
+    );
 }
 
 #[tokio::test]

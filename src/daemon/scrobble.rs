@@ -13,6 +13,10 @@ use crate::daemon::state::PlaybackState;
 #[derive(Default)]
 pub struct ScrobbleState {
     song_id: Option<String>,
+    /// Playback-instance id captured when this play was first observed. A
+    /// repeat-one/gapless replay of the same song bumps the core counter, so a
+    /// new instance starts even though `song_id` is unchanged.
+    instance: u64,
     duration: f64,
     last_position: f64,
     last_state: PlaybackState,
@@ -63,6 +67,7 @@ impl DaemonCore {
             if core.shutdown.load(Ordering::Acquire) {
                 return;
             }
+            let gen_at_start = core.config_gen.load(Ordering::Acquire);
             let Some(client) = core.subsonic.read().await.clone() else {
                 return;
             };
@@ -70,6 +75,12 @@ impl DaemonCore {
                 .get_open_subsonic_extensions()
                 .await
                 .is_ok_and(|exts| exts.iter().any(|e| e == "playbackReport"));
+            // Discard a result from the previous server so a switch cannot
+            // toggle the modern-vs-classic path based on stale capability.
+            if core.config_gen_changed(gen_at_start) {
+                debug!("playbackReport capability result discarded after a server change");
+                return;
+            }
             core.playback_report_supported
                 .store(supported, Ordering::Release);
             debug!("playbackReport extension supported: {supported}");
@@ -99,6 +110,7 @@ impl DaemonCore {
             )
         };
         let modern = self.playback_report_supported.load(Ordering::Acquire);
+        let instance = self.play_instance.load(Ordering::Acquire);
 
         let mut actions: Vec<ScrobbleHttp> = Vec::new();
         {
@@ -106,7 +118,7 @@ impl DaemonCore {
 
             if !enabled {
                 *t = ScrobbleState::default();
-            } else if t.song_id != id {
+            } else if t.song_id != id || t.instance != instance {
                 // Finalize the track we were on before switching to the new one.
                 if let Some(prev) = t.song_id.clone() {
                     if modern {
@@ -121,6 +133,7 @@ impl DaemonCore {
                 }
                 *t = ScrobbleState {
                     song_id: id.clone(),
+                    instance,
                     duration,
                     last_position: position,
                     last_state: state,
@@ -130,9 +143,26 @@ impl DaemonCore {
                     now_playing_sent: false,
                 };
                 if let Some(nid) = id.clone() {
-                    if state == PlaybackState::Playing {
+                    if modern {
+                        // The OpenSubsonic playbackReport spec requires a
+                        // `starting` marker so a restart of the same song opens a
+                        // new session; follow it immediately with `playing`.
+                        actions.push(ScrobbleHttp::Report {
+                            id: nid.clone(),
+                            position_ms: position_ms(position),
+                            state: "starting",
+                        });
+                        if state == PlaybackState::Playing {
+                            t.now_playing_sent = true;
+                            actions.push(ScrobbleHttp::Report {
+                                id: nid,
+                                position_ms: position_ms(position),
+                                state: "playing",
+                            });
+                        }
+                    } else if state == PlaybackState::Playing {
                         t.now_playing_sent = true;
-                        actions.push(start_action(nid, position, modern));
+                        actions.push(ScrobbleHttp::NowPlaying(nid));
                     }
                 }
             } else if let Some(nid) = id.clone() {
@@ -199,18 +229,6 @@ impl DaemonCore {
                 debug!("scrobble report failed: {e}");
             }
         });
-    }
-}
-
-fn start_action(id: String, position: f64, modern: bool) -> ScrobbleHttp {
-    if modern {
-        ScrobbleHttp::Report {
-            id,
-            position_ms: position_ms(position),
-            state: "playing",
-        }
-    } else {
-        ScrobbleHttp::NowPlaying(id)
     }
 }
 

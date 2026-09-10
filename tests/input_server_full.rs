@@ -20,6 +20,12 @@ struct AppFixture {
 async fn build_app() -> AppFixture {
     let tempdir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
+    // Keep credential saves off the real OS keychain; a locked/absent Secret
+    // Service otherwise blocks UpdateServerConfig for tens of seconds. The
+    // override is process-global, which is why these tests are #[serial].
+    ferrosonic::secret_store::install_test_store(std::sync::Arc::new(
+        ferrosonic::secret_store::InMemoryKeyStore::new(),
+    ));
     let mut config = Config::new();
     config.daemon = false;
     let mut app = App::new(config);

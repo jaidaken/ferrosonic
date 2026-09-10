@@ -232,6 +232,32 @@ async fn ctrl_r_refreshes_and_does_not_cycle_repeat() {
 
 #[tokio::test]
 #[serial]
+async fn ctrl_r_keeps_and_refreshes_the_active_quick_play_option() {
+    let client = RecordingClient::new();
+    let mut app = app_with(client.clone());
+    {
+        let mut cs = app.client_state.write().await;
+        cs.songs.selected_option = Some(ferrosonic::app::models::SongOption::NewestAlbum);
+    }
+    press(&mut app, key_mod(KeyCode::Char('r'), KeyModifiers::CONTROL)).await;
+    assert_eq!(
+        app.client_state.read().await.songs.selected_option,
+        Some(ferrosonic::app::models::SongOption::NewestAlbum),
+        "Ctrl+R must not reset the Quick Play selection to Starred"
+    );
+    assert!(
+        client.sent().iter().any(|r| matches!(
+            r,
+            DaemonRequest::RefreshQuickPlayAlbum(
+                ferrosonic::ipc::protocol::QuickPlayAlbumKind::Newest
+            )
+        )),
+        "Ctrl+R must refresh the active Quick Play source"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn f1_from_another_page_switches_to_library() {
     let client = RecordingClient::new();
     let mut app = app_with(client.clone());
@@ -243,7 +269,6 @@ async fn f1_from_another_page_switches_to_library() {
         "F1 must switch to the Library page"
     );
 }
-
 #[tokio::test]
 #[serial]
 async fn fkey_clears_queue_naming_overlay() {

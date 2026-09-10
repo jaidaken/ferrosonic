@@ -103,6 +103,13 @@ pub struct Config {
     #[serde(rename = "PasswordKeyring", default)]
     pub password_keyring: bool,
 
+    /// True when `password` was resolved from the `FERROSONIC_PASSWORD`
+    /// environment variable at load time. Never persisted: the env var is a
+    /// non-persistent override, so `as_on_disk` must not write its value into
+    /// `config.toml` on an unrelated settings save.
+    #[serde(skip)]
+    pub password_from_env: bool,
+
     /// Active theme name; empty selects the built-in default.
     #[serde(rename = "Theme", default)]
     pub theme: String,
@@ -309,7 +316,10 @@ impl Config {
         let pw_file_set = self.password_file.as_ref().is_some_and(|s| !s.is_empty());
         // The secret lives outside the file when a PasswordFile, PasswordEval,
         // or the OS keychain holds it; do not write the plaintext back inline.
-        let secret_external = pw_file_set || self.password_eval.is_some() || self.password_keyring;
+        let secret_external = pw_file_set
+            || self.password_eval.is_some()
+            || self.password_keyring
+            || self.password_from_env;
         ConfigOnDisk {
             base_url: &self.base_url,
             username: &self.username,
@@ -550,6 +560,7 @@ impl Default for Config {
             music_folder_chosen: false,
             password_eval: None,
             password_keyring: false,
+            password_from_env: false,
             replay_gain_mode: ReplayGainMode::Off,
             replay_gain_preamp: 0.0,
             replay_gain_clip: false,
@@ -667,10 +678,14 @@ impl Config {
     }
 
     fn resolve_password(&mut self) {
+        self.password_from_env = false;
         if let Ok(env) = std::env::var("FERROSONIC_PASSWORD") {
             if !env.is_empty() {
                 debug!("Using password from FERROSONIC_PASSWORD env var");
                 self.password = Secret::from_string(env);
+                // Remember the source so a later unrelated settings save does
+                // not write this transient env value into the config file.
+                self.password_from_env = true;
                 return;
             }
         }

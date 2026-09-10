@@ -90,7 +90,10 @@ struct ThemeFileCava {
 
 fn hex_to_color(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
-    if hex.len() == 6 {
+    // `is_ascii` guards the byte-index slices below: a 6-byte non-ASCII value
+    // (e.g. one containing a multi-byte char) would otherwise panic on a
+    // non-char-boundary slice.
+    if hex.len() == 6 && hex.is_ascii() {
         if let (Ok(r), Ok(g), Ok(b)) = (
             u8::from_str_radix(&hex[0..2], 16),
             u8::from_str_radix(&hex[2..4], 16),
@@ -288,3 +291,19 @@ pub fn seed_default_themes(dir: &Path) {
 }
 
 use super::theme_builtins::BUILTIN_THEMES;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_colors_parse_and_malformed_values_do_not_panic() {
+        assert_eq!(hex_to_color("#1a2b3c"), Color::Rgb(0x1a, 0x2b, 0x3c));
+        assert_eq!(hex_to_color("1a2b3c"), Color::Rgb(0x1a, 0x2b, 0x3c));
+        // Six *bytes* but not six ASCII hex digits; `a€bc` has a multi-byte
+        // char, so byte-index slicing would panic on a non-boundary.
+        assert_eq!(hex_to_color("a€bc"), Color::White);
+        assert_eq!(hex_to_color("zzzzzz"), Color::White);
+        assert_eq!(hex_to_color("#abc"), Color::White);
+    }
+}

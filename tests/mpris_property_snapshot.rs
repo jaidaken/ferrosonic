@@ -104,6 +104,10 @@ async fn metadata_populated_when_current_song_set() {
         md.title().map(String::from).as_deref(),
         Some("Pictures of You")
     );
+    assert!(
+        md.trackid().is_some(),
+        "a hyphenated Subsonic id must still produce a valid mpris:trackid"
+    );
 }
 
 #[tokio::test]

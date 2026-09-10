@@ -8,6 +8,9 @@ use super::{App, CavaColor, CavaRow, CavaSpan};
 
 impl App {
     /// Spawn cava on a pty sized to the terminal, replacing any running instance.
+    // Cohesive pty setup sequence: openpty -> dup -> spawn -> non-blocking;
+    // splitting it would scatter the fd ownership rules it enforces.
+    #[allow(clippy::too_many_lines)]
     pub fn start_cava(
         &mut self,
         cava_gradient: &[String; 8],
@@ -51,9 +54,25 @@ impl App {
             libc::ioctl(slave, libc::TIOCSWINSZ, &ws);
         }
 
-        // Dup before from_raw_fd takes ownership.
+        // Dup before from_raw_fd takes ownership. `dup` can fail under fd
+        // exhaustion; wrapping -1 in a File would be invalid, so bail out and
+        // close everything acquired so far.
         let slave_stdin_fd = unsafe { libc::dup(slave) };
         let slave_stderr_fd = unsafe { libc::dup(slave) };
+        if slave_stdin_fd < 0 || slave_stderr_fd < 0 {
+            error!("dup failed for cava pty; aborting cava start");
+            unsafe {
+                if slave_stdin_fd >= 0 {
+                    libc::close(slave_stdin_fd);
+                }
+                if slave_stderr_fd >= 0 {
+                    libc::close(slave_stderr_fd);
+                }
+                libc::close(slave);
+                libc::close(master);
+            }
+            return;
+        }
         let slave_stdout = unsafe { std::fs::File::from_raw_fd(slave) };
         let slave_stdin = unsafe { std::fs::File::from_raw_fd(slave_stdin_fd) };
         let slave_stderr = unsafe { std::fs::File::from_raw_fd(slave_stderr_fd) };
@@ -92,10 +111,21 @@ impl App {
 
         crate::proc_util::set_die_with_parent(&mut cmd);
         match cmd.spawn() {
-            Ok(child) => {
-                unsafe {
-                    let flags = libc::fcntl(master, libc::F_GETFL);
-                    libc::fcntl(master, libc::F_SETFL, flags | libc::O_NONBLOCK);
+            Ok(mut child) => {
+                // The drain loop in `read_cava_output` assumes a non-blocking
+                // master; if we cannot make it so, kill cava rather than let a
+                // blocking read freeze the whole UI.
+                let flags = unsafe { libc::fcntl(master, libc::F_GETFL) };
+                let set_ok = flags >= 0
+                    && unsafe { libc::fcntl(master, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0;
+                if !set_ok {
+                    error!("Failed to set cava pty non-blocking; killing cava");
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    unsafe {
+                        libc::close(master);
+                    }
+                    return;
                 }
 
                 let master_file = unsafe { std::fs::File::from_raw_fd(master) };
@@ -130,26 +160,28 @@ impl App {
 
     /// Drains cava pty into `client_state.cava_screen` for local render.
     pub async fn read_cava_output(&mut self) {
-        let (Some(ref mut master), Some(ref mut parser)) =
-            (&mut self.cava_pty_master, &mut self.cava_parser)
-        else {
-            return;
+        let outcome = {
+            let (Some(master), Some(parser)) = (&mut self.cava_pty_master, &mut self.cava_parser)
+            else {
+                return;
+            };
+            drain_into_parser(master, parser)
         };
-
-        let outcome = drain_into_parser(master, parser);
         match outcome {
             DrainOutcome::Bytes => {
+                let Some(parser) = self.cava_parser.as_ref() else {
+                    return;
+                };
                 let cava_screen = screen_to_cava_rows(parser.screen());
                 let mut cs = self.client_state.write().await;
                 cs.cava_screen = cava_screen;
             }
             DrainOutcome::NoData => {}
+            // cava exited or the pty broke: kill+reap through the full cleanup
+            // path so the child never lingers as a zombie and `cava_config` is
+            // dropped too.
             DrainOutcome::Eof | DrainOutcome::HardError => {
-                if let Some(mut child) = self.cava_process.take() {
-                    let _ = child.try_wait();
-                }
-                self.cava_pty_master = None;
-                self.cava_parser = None;
+                self.stop_cava();
             }
         }
     }

@@ -75,7 +75,7 @@ impl App {
 
         let ds = self.daemon_state.read().await;
         let mut cs = self.client_state.write().await;
-        let state = AppState {
+        let mut state = AppState {
             daemon: &ds,
             client: &mut cs,
         };
@@ -153,25 +153,7 @@ impl App {
         // switch away from its default key keeps this cleanup working.
         let is_page_switch = action.is_some_and(GlobalAction::is_page_switch);
         if is_page_switch {
-            if state.client.page == Page::Server {
-                let cfg = state.daemon.config.clone();
-                state.client.server_state.base_url = cfg.base_url;
-                state.client.server_state.username = cfg.username;
-                state.client.server_state.password = cfg.password;
-                state.client.server_state.status = None;
-            }
-            if state.client.page == Page::Library && state.client.artists.filter_active {
-                state.client.artists.filter_active = false;
-            }
-            if state.client.page == Page::Queue && state.client.queue_state.naming_playlist {
-                state.client.queue_state.naming_playlist = false;
-                state.client.queue_state.playlist_name.clear();
-            }
-            if state.client.page == Page::Playlists {
-                state.client.playlists.renaming = false;
-                state.client.playlists.rename_buf.clear();
-                state.client.playlists.confirming_delete = false;
-            }
+            revert_page_edits(&mut state);
         } else {
             let is_server_text_field =
                 state.client.page == Page::Server && state.client.server_state.selected_field <= 2;
@@ -311,10 +293,18 @@ impl App {
             }
             Some(GlobalAction::Refresh) => {
                 state.client.notify("Refreshing...");
+                let option = state.client.songs.selected_option;
                 let _ = state;
                 drop(cs);
                 drop(ds);
                 self.load_initial_data().await;
+                // Refresh the active Quick Play source too; `load_initial_data`
+                // only re-pulls Starred/artists/playlists.
+                if let Some(option) = option {
+                    if option != crate::app::models::SongOption::Starred {
+                        let _ = self.client.request(option.refresh_request()).await;
+                    }
+                }
                 let ds = self.daemon_state.read().await;
                 let mut cs = self.client_state.write().await;
                 let state = AppState {
@@ -404,6 +394,17 @@ impl App {
             }
         }
 
+        // Page shortcuts match on `key.code` alone. A Ctrl/Alt chord that did
+        // not resolve to a global action must not fall through to them: on the
+        // Queue Ctrl+D would remove the highlighted song and Ctrl+C would clear
+        // play history, and on Playlists Ctrl+E/Ctrl+T would edit/shuffle.
+        if key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        {
+            return Ok(());
+        }
+
         let page = state.client.page;
         let _ = state;
         drop(cs);
@@ -416,5 +417,32 @@ impl App {
             Page::Server => self.handle_server_key(key).await,
             Page::Settings => self.handle_settings_key(key).await,
         }
+    }
+}
+
+/// Revert unsaved per-page edits when navigating away from a page. Shared by
+/// the keyboard page-switch path and header-tab mouse clicks so both discard
+/// the same modal/search/editor state.
+pub(super) fn revert_page_edits(state: &mut AppState<'_>) {
+    if state.client.page == Page::Server {
+        let cfg = state.daemon.config.clone();
+        state.client.server_state.base_url = cfg.base_url;
+        state.client.server_state.username = cfg.username;
+        // Do NOT reset the password from `cfg`: the daemon-owned mirror is
+        // scrubbed, so overwriting here would erase the locally resolved
+        // secret and a later Save would persist an empty one.
+        state.client.server_state.status = None;
+    }
+    if state.client.page == Page::Library && state.client.artists.filter_active {
+        state.client.artists.filter_active = false;
+    }
+    if state.client.page == Page::Queue && state.client.queue_state.naming_playlist {
+        state.client.queue_state.naming_playlist = false;
+        state.client.queue_state.playlist_name.clear();
+    }
+    if state.client.page == Page::Playlists {
+        state.client.playlists.renaming = false;
+        state.client.playlists.rename_buf.clear();
+        state.client.playlists.confirming_delete = false;
     }
 }

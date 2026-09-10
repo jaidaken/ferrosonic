@@ -233,6 +233,10 @@ impl DaemonCore {
             }
             Err(e) => {
                 error!("Failed to load playlists: {}", e);
+                self.emit(DaemonEvent::Notification {
+                    message: format!("Failed to load playlists: {e}"),
+                    is_error: true,
+                });
             }
         }
     }

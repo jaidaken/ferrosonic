@@ -6,6 +6,7 @@ use ferrosonic::app::models::SongOption;
 use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
+use ferrosonic::ipc::protocol::DaemonRequest;
 use ferrosonic::subsonic::models::Child;
 use ratatui::layout::Rect;
 use serial_test::serial;
@@ -65,14 +66,48 @@ async fn build_app() -> App {
 
 #[tokio::test]
 #[serial]
-async fn progress_bar_click_on_now_playing_seeks() {
-    let mut app = build_app().await;
+async fn progress_bar_click_seek_matches_rendered_geometry() {
+    let tempdir = common::tempdir();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
+    std::mem::forget(tempdir);
+    let config = Config::new();
+    let recording = common::RecordingClient::new();
+    let mut app = App::with_remote_client(recording.clone(), config);
+    {
+        let mut cs = app.client_state.write().await;
+        cs.layout.header = Rect::new(0, 0, 80, 1);
+        cs.layout.content = Rect::new(0, 1, 80, 20);
+        cs.layout.now_playing = Rect::new(0, 21, 80, 7);
+    }
     {
         let mut ds = app.daemon_state.write().await;
         ds.now_playing.duration = 240.0;
+        ds.now_playing.position = 60.0;
         ds.now_playing.song = Some(song("a"));
     }
-    app.handle_mouse(click(40, 26)).await.unwrap();
+
+    // Inner progress area: now_playing.x + 1, width - 2; progress row at y = 26.
+    let area = Rect::new(1, 26, 78, 1);
+    let time_width = "01:00 / 04:00".len() as u16;
+    let (_start, bar_start, bar_width) =
+        ferrosonic::ui::widget_now_playing::progress_bar_geometry(area, time_width);
+    let click_x = bar_start + bar_width / 2;
+    app.handle_mouse(click(click_x, 26)).await.unwrap();
+
+    let seek = recording
+        .requests()
+        .await
+        .into_iter()
+        .find_map(|r| match r {
+            DaemonRequest::Seek(p) => Some(p),
+            _ => None,
+        })
+        .expect("a click on the drawn bar must dispatch Seek");
+    let expected = f64::from(click_x - bar_start) / f64::from(bar_width) * 240.0;
+    assert!(
+        (seek - expected).abs() < 1e-6,
+        "seek {seek} must match the clicked column ({expected})"
+    );
 }
 
 #[tokio::test]
@@ -91,6 +126,23 @@ async fn click_on_now_playing_non_progress_row_is_safe() {
 async fn click_on_progress_bar_with_zero_duration_is_safe() {
     let mut app = build_app().await;
     app.handle_mouse(click(40, 26)).await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn click_on_one_row_now_playing_does_not_underflow() {
+    // A short terminal can size the now-playing area to one row; the progress
+    // row math must not underflow (panic in debug) on such a strip.
+    let mut app = build_app().await;
+    {
+        let mut cs = app.client_state.write().await;
+        cs.layout.now_playing = Rect::new(0, 21, 80, 1);
+    }
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.now_playing.duration = 240.0;
+    }
+    app.handle_mouse(click(40, 21)).await.unwrap();
 }
 
 #[tokio::test]

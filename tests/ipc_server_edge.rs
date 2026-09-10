@@ -91,6 +91,44 @@ async fn client_disconnect_mid_request_does_not_crash_server() {
 
 #[tokio::test]
 #[serial]
+async fn client_disconnect_releases_the_client_guard() {
+    let td = TestDaemon::new().await;
+    let socket = td.config_dir.path().join("idle-after-disconnect.sock");
+
+    let core = td.core.clone();
+    let socket_path = socket.clone();
+    let server = tokio::spawn(async move { serve(core, &socket_path).await });
+    assert!(wait_for_socket(&socket, 1500).await);
+
+    {
+        let client = SocketClient::connect(&socket).await.expect("connect");
+        client.request(DaemonRequest::Ping).await.expect("ping");
+        // Dropping `client` shuts down its write half, so the server sees EOF.
+    }
+
+    // The per-connection task must notice EOF, release its ClientGuard, and
+    // let the daemon become eligible for idle exit. A task that never returns
+    // (e.g. awaiting an event forwarder that its own writer keeps alive) would
+    // hold the guard forever and block idle exit for the daemon's lifetime.
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    let mut idle = false;
+    while std::time::Instant::now() < deadline {
+        if td.core.is_idle_for_exit().await {
+            idle = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        idle,
+        "the client guard must be released after the client disconnects"
+    );
+
+    server.abort();
+}
+
+#[tokio::test]
+#[serial]
 async fn server_handles_many_concurrent_clients() {
     let td = TestDaemon::new().await;
     let socket = td.config_dir.path().join("concurrent.sock");

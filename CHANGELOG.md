@@ -24,6 +24,72 @@
   confirmed rating/star changes survive a daemon restart. `Alt+1`-`Alt+5`
   can rate the highlighted row, with a clear notification when no song is
   highlighted.
+- **Per-connection shutdown deadlock.** A disconnected client left the daemon
+  connection task (and its client guard) alive forever, so the daemon never
+  auto-exited after the TUI closed. Connections now tear down promptly.
+- **Superseded pre-buffers.** A `Buffered` download is now cancelled by a
+  direct load, pause, stop, or end-of-queue, so it can no longer load and
+  unpause a track the user had already replaced or paused.
+- **Repeat and restart play reporting.** Repeat-one / duplicated queue entries
+  are scrobbled once per play, and the OpenSubsonic `playbackReport` path emits
+  the required `starting` marker on each new play instance.
+- **MPRIS track ids.** Song ids containing `-`, `.`, `:` or other path-unsafe
+  characters now yield a valid `mpris:trackid` instead of a silently missing one.
+- **Cover art retry.** A transient cover-art fetch failure no longer leaves the
+  track permanently blank; the next update retries.
+- **Now-playing click seek.** The click column is computed from the same
+  geometry as the drawn bar, so clicks land where the user clicked on tracks
+  of any length. A one-row now-playing strip no longer underflows.
+- **Modifier-blind page shortcuts.** Ctrl/Alt chords that are not bound to a
+  global action no longer fall through to page handlers (previously Ctrl+D on
+  the Queue removed the highlighted song and Ctrl+C cleared history).
+- **Mouse page switches.** Clicking a header tab now discards the same
+  search/modal/editor state as the keyboard page switch.
+- **Malformed theme colors.** A six-byte non-ASCII color value no longer panics
+  theme loading.
+- **Gapless advance race.** The mpv end-of-file listener and the idle tick can
+  no longer both advance the queue for one track end.
+- **Pre-buffer write failure.** A disk-write error mid-download falls back to a
+  direct `loadfile` instead of dropping the chosen track.
+- **Server HTTP errors.** A 4xx/5xx response is now reported as an HTTP status
+  (with the authenticated URL stripped) instead of a misleading parse error.
+- **Starred view scoping.** The Starred list honors the selected music folder
+  like every other browse view.
+- **Full album paging.** `get_all_albums` pages past a server that caps the
+  page size below the requested 500, with a duplicate/loop guard.
+- **mpv process lifecycle.** An exited or orphaned mpv child is now killed and
+  reaped, and a spawn whose IPC connect failed no longer wedges the backend.
+- **cava process lifecycle.** `openpty`/`dup`/`fcntl` results are checked and an
+  exited cava is reaped through the full cleanup path.
+- **Long-track duration in lists.** Tracks of an hour or more now render
+  `HH:MM:SS` in the queue, playlist, and search rows, matching the player.
+
+### Changed
+
+- **MPRIS repeat and volume.** `LoopStatus` now reflects and sets the repeat
+  mode; `Volume` round-trips through `SetVolume` (clamped to 0.0-1.0) instead
+  of always reporting 100%.
+- **Quick Play keyboard navigation.** On panes that render multiple option
+  columns, Up/Down move a full grid row; `Ctrl+R` keeps and refreshes the active
+  Quick Play mode instead of resetting to Starred.
+- **Daemon disconnect.** Requests now time out after 30s, and a dropped daemon
+  connection tells the TUI to exit with an error instead of rendering stale
+  state.
+
+### Security
+
+- **Environment password is not persisted.** `FERROSONIC_PASSWORD` remains a
+  non-persistent override; a settings save no longer writes it to `config.toml`.
+- **Keychain failures are surfaced.** A reachable-but-failing OS keychain no
+  longer silently downgrades to an inline plaintext credential.
+- **IPC config scrub.** `PasswordEval` (which may embed a secret) and the
+  keyring marker are stripped from snapshots and `ConfigChanged`, like the
+  password.
+- **MPRIS art URL.** The `Metadata` getter no longer publishes the
+  authenticated remote cover-art URL (which embeds a reusable token); only a
+  locally mirrored `file://` URL is exposed.
+- **Owner-only files.** The config directory is created `0700` and the log file
+  `0600`.
 
 ### Added
 

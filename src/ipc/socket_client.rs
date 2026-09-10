@@ -18,6 +18,9 @@ use crate::ipc::DaemonClient;
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 const WRITER_QUEUE_DEPTH: usize = 256;
+/// Upper bound on waiting for one reply. A daemon handler that wedges must not
+/// freeze the TUI forever; callers surface [`IpcError::Timeout`].
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// Keepalive cadence. The daemon closes a connection idle for
 /// `IDLE_TIMEOUT` (`server.rs`); this stays well under a third of it so a
 /// live-but-quiet TUI never trips that timeout.
@@ -101,10 +104,14 @@ impl SocketClient {
                     }
                     Err(FrameError::Closed) => {
                         debug!("Daemon socket closed cleanly");
+                        // Notify subscribers so the TUI quits with an explicit
+                        // error instead of rendering a stale state mirror.
+                        let _ = reader_events.send(DaemonEvent::Shutdown);
                         break;
                     }
                     Err(e) => {
                         error!("Frame read error, terminating reader: {}", e);
+                        let _ = reader_events.send(DaemonEvent::Shutdown);
                         break;
                     }
                 }
@@ -157,9 +164,15 @@ impl DaemonClient for SocketClient {
 
             return Err(IpcError::Disconnected);
         }
-        match rx.await {
-            Ok(result) => result,
-            Err(_) => Err(IpcError::Disconnected),
+        match tokio::time::timeout(REQUEST_TIMEOUT, rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(IpcError::Disconnected),
+            Err(_) => {
+                // Drop the pending entry so a late reply is ignored rather than
+                // warning about a removed id.
+                self.pending.lock().await.remove(&id);
+                Err(IpcError::Timeout)
+            }
         }
     }
 

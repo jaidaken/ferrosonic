@@ -2,8 +2,10 @@
 
 mod common;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ferrosonic::app::state::Page;
 use ferrosonic::app::App;
 use ferrosonic::config::Config;
+use ferrosonic::ipc::protocol::DaemonRequest;
 use ferrosonic::subsonic::models::Child;
 use serial_test::serial;
 
@@ -126,6 +128,70 @@ async fn unhandled_key_falls_through_silently() {
     fx.app.handle_key(key(KeyCode::Delete)).await.unwrap();
     fx.app.handle_key(key(KeyCode::Home)).await.unwrap();
     fx.app.handle_key(key(KeyCode::End)).await.unwrap();
+}
+
+async fn queue_app_with_recording() -> (App, std::sync::Arc<common::RecordingClient>) {
+    let tempdir = common::tempdir();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", tempdir.path());
+    std::mem::forget(tempdir);
+    let recording = common::RecordingClient::new();
+    let app = App::with_remote_client(recording.clone(), Config::new());
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::Queue;
+        cs.queue_state.selected = Some(0);
+    }
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.queue = vec![song("a"), song("b")];
+        ds.queue_position = Some(0);
+    }
+    (app, recording)
+}
+
+#[tokio::test]
+#[serial]
+async fn ctrl_d_on_queue_does_not_remove_song() {
+    let (mut app, recording) = queue_app_with_recording().await;
+    app.handle_key(key_mod(KeyCode::Char('d'), KeyModifiers::CONTROL))
+        .await
+        .unwrap();
+    let reqs = recording.requests().await;
+    assert!(
+        !reqs
+            .iter()
+            .any(|r| matches!(r, DaemonRequest::RemoveFromQueue(_))),
+        "Ctrl+D must not reach the Queue remove shortcut: {reqs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn ctrl_c_on_queue_does_not_clear_history() {
+    let (mut app, recording) = queue_app_with_recording().await;
+    app.handle_key(key_mod(KeyCode::Char('c'), KeyModifiers::CONTROL))
+        .await
+        .unwrap();
+    let reqs = recording.requests().await;
+    assert!(
+        !reqs
+            .iter()
+            .any(|r| matches!(r, DaemonRequest::ClearQueueHistory)),
+        "Ctrl+C must not reach the Queue clear-history shortcut: {reqs:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn plain_d_on_queue_still_removes_song() {
+    let (mut app, recording) = queue_app_with_recording().await;
+    app.handle_key(key(KeyCode::Char('d'))).await.unwrap();
+    let reqs = recording.requests().await;
+    assert!(
+        reqs.iter()
+            .any(|r| matches!(r, DaemonRequest::RemoveFromQueue(0))),
+        "an unmodified 'd' must still remove the selected song: {reqs:?}"
+    );
 }
 
 #[tokio::test]

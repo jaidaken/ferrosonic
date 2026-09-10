@@ -212,3 +212,50 @@ async fn custom_features_round_trip_over_socket_and_reconnect() {
     assert!(state.config.replay_gain_clip);
     server.abort();
 }
+
+#[tokio::test(start_paused = true)]
+#[serial]
+async fn request_returns_timeout_when_the_server_never_replies() {
+    // A daemon handler that wedges must not hang the TUI forever. Virtual time
+    // lets the 30s deadline fire immediately.
+    let dir = common::tempdir();
+    let path = dir.path().join("silent.sock");
+    let listener = tokio::net::UnixListener::bind(&path).expect("bind");
+    tokio::spawn(async move {
+        let (_stream, _) = listener.accept().await.expect("accept");
+        // Hold the connection open without ever writing a reply.
+        std::future::pending::<()>().await;
+    });
+
+    let client = SocketClient::connect(&path).await.expect("connect");
+    let err = client
+        .request(DaemonRequest::Ping)
+        .await
+        .expect_err("a silent server must time out");
+    assert!(
+        matches!(err, ferrosonic::ipc::IpcError::Timeout),
+        "expected Timeout, got {err:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn socket_close_emits_shutdown_for_subscribers() {
+    let dir = common::tempdir();
+    let path = dir.path().join("drop.sock");
+    let listener = tokio::net::UnixListener::bind(&path).expect("bind");
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        // Give the client a moment to subscribe before closing.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        drop(stream);
+    });
+
+    let client = SocketClient::connect(&path).await.expect("connect");
+    let mut rx = client.subscribe();
+    let ev = tokio::time::timeout(Duration::from_secs(2), rx.recv()).await;
+    assert!(
+        matches!(ev, Ok(Ok(ferrosonic::ipc::DaemonEvent::Shutdown))),
+        "a daemon disconnect must notify subscribers with Shutdown, got {ev:?}"
+    );
+}

@@ -28,6 +28,10 @@ pub enum Error {
     /// Daemon socket communication failed.
     #[error("Daemon IPC error: {0}")]
     Ipc(#[from] crate::ipc::IpcError),
+
+    /// OS keychain credential operation failed against a reachable backend.
+    #[error("Keychain error: {0}")]
+    KeyStore(#[from] crate::secret_store::KeyStoreError),
 }
 
 /// Errors from loading, parsing, or writing the config file.
@@ -99,6 +103,13 @@ pub enum SubsonicError {
     /// No server credentials are configured yet.
     #[error("Server not configured")]
     NotConfigured,
+
+    /// Server answered with a non-success HTTP status.
+    #[error("Server returned HTTP {status}")]
+    HttpStatus {
+        /// HTTP status code returned by the server.
+        status: u16,
+    },
 
     /// Response body did not match the expected shape.
     #[error("Failed to parse response: {0}")]

@@ -452,7 +452,11 @@ impl App {
             let server = server;
             loop {
                 match rx.recv().await {
-                    Ok(DaemonEvent::NowPlayingChanged(_) | DaemonEvent::QueueChanged { .. }) => {
+                    Ok(
+                        DaemonEvent::NowPlayingChanged(_)
+                        | DaemonEvent::QueueChanged { .. }
+                        | DaemonEvent::RepeatModeChanged(_),
+                    ) => {
                         let _ = update_mpris_properties(&server, &daemon_state).await;
                     }
                     Ok(DaemonEvent::SongRatingChanged { id, rating }) => {
@@ -477,7 +481,11 @@ impl App {
     pub async fn load_initial_data(&mut self) {
         {
             let mut cs = self.client_state.write().await;
-            cs.songs.selected_option = Some(SongOption::Starred);
+            // Default to Starred only on first load; a later refresh (Ctrl+R)
+            // must keep the user's current Quick Play selection.
+            if cs.songs.selected_option.is_none() {
+                cs.songs.selected_option = Some(SongOption::Starred);
+            }
         }
         let _ = self.client.request(DaemonRequest::RefreshStarred).await;
         let _ = self.client.request(DaemonRequest::RefreshArtists).await;

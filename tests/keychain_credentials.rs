@@ -116,3 +116,53 @@ fn resolution_clears_password_when_marker_set_but_keychain_empty() {
     );
     secret_store::clear_test_store();
 }
+
+/// A reachable keychain whose operations fail (locked keyring, D-Bus hiccup)
+/// must not be mistaken for "no keychain" and silently downgrade to a
+/// plaintext inline write.
+struct BackendFailingStore;
+
+impl secret_store::KeyStore for BackendFailingStore {
+    fn get(&self, _account: &str) -> secret_store::KeyStoreResult<Option<Secret>> {
+        Err(secret_store::KeyStoreError::Backend("locked".into()))
+    }
+    fn set(&self, _account: &str, _secret: &Secret) -> secret_store::KeyStoreResult<()> {
+        Err(secret_store::KeyStoreError::Backend("locked".into()))
+    }
+    fn delete(&self, _account: &str) -> secret_store::KeyStoreResult<()> {
+        Err(secret_store::KeyStoreError::Backend("locked".into()))
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn backend_keychain_error_is_surfaced_not_downgraded_to_plaintext() {
+    let td = TestDaemon::new().await;
+    let before_url = td.state.read().await.config.base_url.clone();
+    secret_store::install_test_store(Arc::new(BackendFailingStore));
+
+    let result = td
+        .core
+        .update_server_config(
+            "https://new.example",
+            "new",
+            &Secret::from("should-not-persist"),
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ferrosonic::error::Error::KeyStore(_))),
+        "a reachable-but-failing keychain must surface the error, got {result:?}"
+    );
+    let s = td.state.read().await;
+    assert_eq!(
+        s.config.base_url, before_url,
+        "a failed credential save must leave the prior config intact"
+    );
+    let written =
+        std::fs::read_to_string(td.config_dir.path().join("config.toml")).unwrap_or_default();
+    assert!(
+        !written.contains("should-not-persist"),
+        "the password must not be downgraded to plaintext:\n{written}"
+    );
+}

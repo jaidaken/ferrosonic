@@ -303,8 +303,8 @@ or Escape closes the overlay.
 |---|---|
 | `Tab` | Switch focus between song options and song list |
 | `Left` / `Right` | Switch focus between options pane and song list |
-| `Up` / `k` | Move selection up (navigate options or songs) |
-| `Down` / `j` | Move selection down (navigate options or songs) |
+| `Up` / `k` | Move selection up (a full option row when the pane wraps) |
+| `Down` / `j` | Move selection down (a full option row when the pane wraps) |
 | `Enter` | Play selected song (queues all visible songs and starts from selection) |
 | `m` | Star/unstar highlighted song |
 
@@ -321,7 +321,7 @@ The Quick Play page has seven modes selectable from the options pane:
 Album modes follow the active music folder. A category with no matching album
 shows an explicit empty message instead of a blank song pane.
 
-Returning to F3 or clicking an already selected Random Album retains that album. Switch to another option and back to fetch a new one.
+Returning to F3 or clicking an already selected Random Album retains that album. Switch to another option and back to fetch a new one. On a narrow terminal the options pane wraps into multiple columns, and `Up`/`Down` move by a whole row to match; `Ctrl+R` refreshes the active mode without resetting the selection to Starred. Ctrl/Alt chords that are not global keybindings do not trigger page shortcuts.
 
 ### Playlists Page (F4)
 

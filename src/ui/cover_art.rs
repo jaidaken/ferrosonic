@@ -184,6 +184,7 @@ impl CoverArtState {
             None => {}
         }
         let Some(picker) = self.picker.as_ref() else {
+            self.current_id = None;
             self.image = None;
             self.protocol = None;
             self.chafa_cache = None;
@@ -227,6 +228,15 @@ impl CoverArtState {
         self.image = None;
         self.protocol = None;
         self.chafa_cache = None;
+    }
+
+    /// Release a pending reservation after a failed fetch so the next
+    /// `NowPlayingChanged` retries instead of short-circuiting forever. No-op
+    /// if a newer fetch already superseded `id`.
+    pub fn fail_pending(&mut self, id: &str) {
+        if self.current_id.as_deref() == Some(id) {
+            self.clear();
+        }
     }
 
     /// Re-encode via chafa for the requested cell area, caching the

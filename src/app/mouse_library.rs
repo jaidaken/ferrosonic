@@ -176,6 +176,17 @@ impl App {
                     }
                     self.last_click = Some((x, y, std::time::Instant::now()));
                     return Ok(());
+                } else if let TreeItem::Song { song } = &tree_items[item_index] {
+                    // A single click on a song row must update the right pane
+                    // exactly like keyboard navigation does, instead of
+                    // leaving the previously shown album's songs in place.
+                    let item = TreeItem::Song { song: song.clone() };
+                    let _ = state;
+                    drop(cs);
+                    drop(ds);
+                    self.load_pane_for_tree_item(Some(item)).await;
+                    self.last_click = Some((x, y, std::time::Instant::now()));
+                    return Ok(());
                 }
             }
         } else if x >= right.x

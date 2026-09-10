@@ -209,6 +209,9 @@ pub struct ArtistDetail {
     pub id: String,
     /// Display name.
     pub name: String,
+    /// Cover art ID usable with `getCoverArt`.
+    #[serde(default, rename = "coverArt")]
+    pub cover_art: Option<String>,
     /// Albums by this artist.
     #[serde(default)]
     pub album: Vec<Album>,
@@ -320,6 +323,18 @@ pub struct AlbumDetail {
     /// ID of the album artist.
     #[serde(default, rename = "artistId")]
     pub artist_id: Option<String>,
+    /// Cover art ID usable with `getCoverArt`.
+    #[serde(default, rename = "coverArt")]
+    pub cover_art: Option<String>,
+    /// Total album duration in seconds.
+    #[serde(default)]
+    pub duration: Option<i32>,
+    /// Genre label.
+    #[serde(default)]
+    pub genre: Option<String>,
+    /// `OpenSubsonic` original release date.
+    #[serde(default, rename = "originalReleaseDate")]
+    pub original_release_date: Option<ItemDate>,
     /// Release year.
     #[serde(default)]
     pub year: Option<i32>,
@@ -419,17 +434,13 @@ impl Child {
         }
     }
 
-    /// Duration as `MM:SS`, or `--:--` when unknown.
+    /// Duration as `MM:SS` (or `HH:MM:SS` at an hour or more), or `--:--` when
+    /// unknown. Shares the canonical formatter with the now-playing bar so a
+    /// long track reads the same in lists and in the player.
     #[must_use]
-    // Named mins/secs in the Some arm read clearer than an inline map_or_else closure.
-    #[allow(clippy::option_if_let_else)]
     pub fn format_duration(&self) -> String {
         match self.duration {
-            Some(d) => {
-                let mins = d / 60;
-                let secs = d % 60;
-                format!("{mins:02}:{secs:02}")
-            }
+            Some(d) => crate::daemon::state::format_duration(f64::from(d)),
             None => "--:--".to_string(),
         }
     }

@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use common::RecordingClient;
 use ferrosonic::app::state::{new_shared_client_state, new_shared_daemon_state, SharedDaemonState};
-use ferrosonic::config::Config;
+use ferrosonic::config::{Config, RepeatMode};
+use ferrosonic::ipc::protocol::DaemonRequest;
 use ferrosonic::mpris::server::MprisPlayer;
 use mpris_server::{LoopStatus, PlaybackRate, PlayerInterface, RootInterface};
 
@@ -26,10 +27,17 @@ async fn loop_status_returns_none() {
 }
 
 #[tokio::test]
-async fn set_loop_status_is_silent_noop() {
-    let (player, _, _) = build_player();
+async fn set_loop_status_dispatches_repeat_mode_change() {
+    let (player, rec, _) = build_player();
     player.set_loop_status(LoopStatus::Track).await.unwrap();
-    assert_eq!(player.loop_status().await.unwrap(), LoopStatus::None);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(
+        rec.requests()
+            .await
+            .iter()
+            .any(|r| matches!(r, DaemonRequest::SetRepeatMode(RepeatMode::One))),
+        "MPRIS Track loop must map to repeat-one"
+    );
 }
 
 #[tokio::test]
@@ -64,6 +72,55 @@ async fn volume_returns_one() {
     let (player, _, _) = build_player();
     let v = player.volume().await.unwrap();
     assert!((v - 1.0).abs() < 1e-9);
+}
+
+#[tokio::test]
+async fn set_volume_round_trips_through_the_getter() {
+    let (player, rec, _) = build_player();
+    player.set_volume(0.4).await.unwrap();
+    let v = player.volume().await.unwrap();
+    assert!(
+        (v - 0.4).abs() < 1e-9,
+        "getter must reflect SetVolume, got {v}"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(
+        rec.requests()
+            .await
+            .iter()
+            .any(|r| matches!(r, DaemonRequest::SetVolume(40))),
+        "0.4 must dispatch 40 percent to the daemon"
+    );
+}
+
+#[tokio::test]
+async fn set_volume_clamps_out_of_range_values() {
+    let (player, _, _) = build_player();
+    player.set_volume(3.0).await.unwrap();
+    assert!((player.volume().await.unwrap() - 1.0).abs() < 1e-9);
+    player.set_volume(-1.0).await.unwrap();
+    assert!(player.volume().await.unwrap().abs() < 1e-9);
+}
+
+#[tokio::test]
+async fn metadata_getter_never_exposes_the_authenticated_remote_url() {
+    let (player, _, daemon_state) = build_player();
+    {
+        let mut ds = daemon_state.write().await;
+        ds.config.base_url = "https://nav.example".into();
+        ds.config.username = "u".into();
+        ds.config.password = "p".into();
+        let mut sng = common::song("track-1", "Track");
+        sng.cover_art = Some("cover-1".into());
+        ds.queue = vec![sng.clone()];
+        ds.queue_position = Some(0);
+        ds.now_playing.song = Some(sng);
+    }
+    let md = player.metadata().await.unwrap();
+    assert!(
+        md.art_url().is_none(),
+        "the MPRIS Metadata getter must not publish a token-bearing remote art URL"
+    );
 }
 
 #[tokio::test]

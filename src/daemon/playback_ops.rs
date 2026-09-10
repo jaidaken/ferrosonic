@@ -7,6 +7,16 @@ use tracing::{debug, error, info, warn};
 use crate::daemon::core::{DaemonCore, PlayMode};
 use crate::error::Error;
 
+/// Clears `DaemonCore::advance_in_flight` on drop, so every exit path (early
+/// return, `?`, or panic) releases the single-flight guard.
+struct AdvanceGuard<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl Drop for AdvanceGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
 impl DaemonCore {
     /// Toggle pause by current state: `Playing` pauses, `Paused` resumes, `Stopped` with a queued position starts playback. Delegates so the `PipeWire` pin release/re-apply lives in one place per direction.
     ///
@@ -51,6 +61,10 @@ impl DaemonCore {
         if !was_playing {
             return Ok(());
         }
+        // Pausing must also stop an in-flight Buffered download: without this
+        // the abandoned task would later loadfile and resume, playing audio
+        // while the UI/MPRIS say Paused.
+        self.cancel_prebuffer().await;
         {
             let mut mpv = self.mpv.lock().await;
             if let Err(e) = mpv.stop().await {
@@ -151,6 +165,23 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if mpv control or a server request fails.
     pub async fn advance_auto(self: &Arc<Self>) -> Result<(), Error> {
+        // The mpv EOF listener and the 500ms idle tick can both fire for the
+        // same track end; letting both resolve-and-play skips a track. Only the
+        // first caller advances; the other sees the guard and returns.
+        if self
+            .advance_in_flight
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_err()
+        {
+            debug!("advance_auto already in flight; skipping duplicate advance");
+            return Ok(());
+        }
+        let _advance_guard = AdvanceGuard(&self.advance_in_flight);
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
             (
@@ -251,7 +282,10 @@ impl DaemonCore {
 
         let (song, stream_url) = {
             let mut state = self.state.write().await;
-            match self.commit_play_state_in_lock(&mut state, &client, pos) {
+            // A load from the top (offset 0) is a genuine start/restart; a
+            // resume from pause passes a non-zero offset and is a continuation.
+            let new_instance = start_at <= 0.0;
+            match self.commit_play_state_in_lock(&mut state, &client, pos, new_instance) {
                 Ok(v) => v,
                 Err(()) => return Ok(()),
             }
@@ -355,6 +389,7 @@ impl DaemonCore {
     async fn finish_at_queue_end(self: &Arc<Self>) {
         use crate::daemon::state::PlaybackState;
         info!("Reached end of queue");
+        self.cancel_prebuffer().await;
         {
             let mut mpv = self.mpv.lock().await;
             let _ = mpv.stop().await;
@@ -374,6 +409,7 @@ impl DaemonCore {
     /// Returns an `Error` if mpv control or a server request fails.
     pub async fn stop_playback(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
+        self.cancel_prebuffer().await;
         {
             let mut mpv = self.mpv.lock().await;
             if let Err(e) = mpv.stop().await {
@@ -404,6 +440,7 @@ impl DaemonCore {
     /// Returns an `Error` if mpv control or a server request fails.
     pub async fn stop_keep_queue(self: &Arc<Self>) -> Result<(), Error> {
         use crate::daemon::state::PlaybackState;
+        self.cancel_prebuffer().await;
         {
             let mut mpv = self.mpv.lock().await;
             if let Err(e) = mpv.stop().await {
@@ -423,6 +460,7 @@ impl DaemonCore {
     /// Stop mpv without touching the queue.
     pub async fn halt_keep_queue(self: &Arc<Self>) {
         use crate::daemon::state::PlaybackState;
+        self.cancel_prebuffer().await;
         {
             let mut mpv = self.mpv.lock().await;
             if let Err(e) = mpv.stop().await {

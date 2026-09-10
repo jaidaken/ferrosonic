@@ -133,7 +133,10 @@ async fn fkey_on_server_page_reverts_unsaved_edits() {
     let cs = app.client_state.read().await;
     assert_eq!(cs.server_state.base_url, "");
     assert_eq!(cs.server_state.username, "");
-    assert!(cs.server_state.password.is_empty());
+    // The password is deliberately NOT reverted: the daemon-owned mirror is
+    // scrubbed, so resetting it here would erase the locally resolved secret
+    // and a later Save would persist an empty password.
+    assert_eq!(cs.server_state.password.reveal(), "edited-p");
     assert!(cs.server_state.status.is_none());
 }
 

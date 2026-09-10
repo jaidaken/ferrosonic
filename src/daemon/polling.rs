@@ -7,6 +7,17 @@ use tracing::{error, warn};
 use crate::daemon::core::DaemonCore;
 use crate::daemon::persistence::QueueSnapshot;
 
+/// Persist the queue snapshot on the blocking pool: `save` does
+/// `create_dir_all` plus an fsync-backed atomic write, which must not run
+/// directly on an async worker.
+async fn save_snapshot_off_thread(
+    snap: QueueSnapshot,
+) -> Result<std::path::PathBuf, std::io::Error> {
+    tokio::task::spawn_blocking(move || snap.save())
+        .await
+        .map_err(|e| std::io::Error::other(format!("queue save task failed: {e}")))?
+}
+
 impl DaemonCore {
     pub(super) fn spawn_queue_persistence(
         self: Arc<Self>,
@@ -32,7 +43,7 @@ impl DaemonCore {
                         position: s.queue_position,
                     }
                 };
-                if let Err(e) = snap.save() {
+                if let Err(e) = save_snapshot_off_thread(snap).await {
                     warn!("Queue persistence write failed: {}", e);
                 }
             }

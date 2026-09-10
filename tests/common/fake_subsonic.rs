@@ -441,6 +441,23 @@ impl FakeSubsonic {
         self.expect_get_album(id, name, songs).await;
     }
 
+    /// Mocks one page of `getAlbumList2?type=<sort_type>&size=500&offset=<offset>`
+    /// for `get_all_albums` paging tests.
+    pub async fn expect_album_list_page(&self, sort_type: &str, offset: u32, ids: &[&str]) {
+        let list: Vec<Value> = ids.iter().map(|id| json!({"id": id, "name": id})).collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumList2"))
+            .and(wiremock::matchers::query_param("type", sort_type))
+            .and(wiremock::matchers::query_param(
+                "offset",
+                offset.to_string(),
+            ))
+            .and(wiremock::matchers::query_param("size", "500"))
+            .respond_with(ok_body(json!({"albumList2": {"album": list}})))
+            .mount(&self.server)
+            .await;
+    }
+
     /// Mocks one `getAlbumList2` category plus `getAlbum` for its first result.
     pub async fn expect_quick_play_album(
         &self,
@@ -567,6 +584,22 @@ impl FakeSubsonic {
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_bytes(body)
+                    .insert_header("content-type", "audio/mpeg"),
+            )
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Like `expect_stream_for`, but withholds the response for `delay_ms` so a
+    /// test can supersede an in-flight Buffered pre-buffer before it finishes.
+    pub async fn expect_stream_for_delayed(&self, song_id: &str, body: Vec<u8>, delay_ms: u64) {
+        Mock::given(method("GET"))
+            .and(path("/rest/stream"))
+            .and(wiremock::matchers::query_param("id", song_id))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(body)
+                    .set_delay(std::time::Duration::from_millis(delay_ms))
                     .insert_header("content-type", "audio/mpeg"),
             )
             .mount(&self.server)

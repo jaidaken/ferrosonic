@@ -5,7 +5,9 @@ After=graphical-session.target pipewire.service
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/ferrosonic --daemon
+# Matches install.sh's INSTALL_DIR (/usr/local/bin). Adjust to
+# %h/.local/bin/ferrosonic for a user-local install.
+ExecStart=/usr/local/bin/ferrosonic --daemon
 Restart=on-failure
 RestartSec=2
 KillSignal=SIGTERM

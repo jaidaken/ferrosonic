@@ -21,8 +21,12 @@ impl App {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => match state.client.songs.focus {
                 0 => {
-                    if let Some(option) =
-                        state.client.songs.selected_option.and_then(previous_option)
+                    let step = option_columns_for(&state);
+                    if let Some(option) = state
+                        .client
+                        .songs
+                        .selected_option
+                        .and_then(|current| previous_option(current, step))
                     {
                         state.client.songs.selected_option = Some(option);
                         state.client.songs.selected_index = None;
@@ -46,7 +50,13 @@ impl App {
             },
             KeyCode::Down | KeyCode::Char('j') => match state.client.songs.focus {
                 0 => {
-                    if let Some(option) = state.client.songs.selected_option.and_then(next_option) {
+                    let step = option_columns_for(&state);
+                    if let Some(option) = state
+                        .client
+                        .songs
+                        .selected_option
+                        .and_then(|current| next_option(current, step))
+                    {
                         state.client.songs.selected_option = Some(option);
                         state.client.songs.selected_index = None;
                         state.client.songs.scroll_offset = 0;
@@ -140,18 +150,30 @@ impl App {
     }
 }
 
-fn previous_option(current: SongOption) -> Option<SongOption> {
+/// Grid columns currently used by the Quick Play option pane. On a short pane
+/// the renderer packs the options into multiple columns, so Up/Down must move
+/// by a whole row (±columns) to match what the user sees. Falls back to 1 when
+/// no split pane layout is available (wide terminals render one column).
+fn option_columns_for(state: &AppState<'_>) -> usize {
+    state
+        .client
+        .layout
+        .content_left
+        .map_or(1, crate::ui::pages::songs::option_columns)
+}
+
+fn previous_option(current: SongOption, step: usize) -> Option<SongOption> {
     let options = SongOption::iter().collect::<Vec<_>>();
     let index = options.iter().position(|option| *option == current)?;
     index
-        .checked_sub(1)
+        .checked_sub(step)
         .and_then(|index| options.get(index).copied())
 }
 
-fn next_option(current: SongOption) -> Option<SongOption> {
+fn next_option(current: SongOption, step: usize) -> Option<SongOption> {
     let options = SongOption::iter().collect::<Vec<_>>();
     let index = options.iter().position(|option| *option == current)?;
     index
-        .checked_add(1)
+        .checked_add(step)
         .and_then(|index| options.get(index).copied())
 }

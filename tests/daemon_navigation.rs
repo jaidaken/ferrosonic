@@ -200,3 +200,41 @@ async fn preload_next_track_with_no_subsonic_does_not_crash() {
     }
     td.core.preload_next_track(0).await;
 }
+
+#[tokio::test]
+#[serial]
+async fn advance_auto_is_single_flight() {
+    let td = TestDaemon::new().await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("a", "A"), song("b", "B")];
+        s.now_playing.song = Some(song("a", "A"));
+        s.now_playing.state = ferrosonic::daemon::state::PlaybackState::Playing;
+        s.queue_position = Some(0);
+        s.config.repeat_mode = RepeatMode::Off;
+        s.config.auto_continue = false;
+    }
+
+    // A concurrent advance (the mpv EOF listener) holds the guard, so the
+    // idle tick's duplicate must be skipped rather than advance a second time.
+    td.core.set_advance_in_flight_for_test(true);
+    td.core.advance_auto().await.unwrap();
+    assert_eq!(
+        td.state.read().await.queue_position,
+        Some(0),
+        "a duplicate advance must not move the queue"
+    );
+    assert!(
+        td.core.advance_in_flight_for_test(),
+        "a skipped advance must not clear another caller's in-flight guard"
+    );
+
+    // With the guard free the real advance runs and releases it.
+    td.core.set_advance_in_flight_for_test(false);
+    td.core.advance_auto().await.unwrap();
+    assert_eq!(td.state.read().await.queue_position, Some(1));
+    assert!(
+        !td.core.advance_in_flight_for_test(),
+        "the guard must be released after the advance completes"
+    );
+}

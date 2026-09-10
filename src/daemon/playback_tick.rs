@@ -225,6 +225,11 @@ impl DaemonCore {
                 // sample rates must not stay pinned to the previous track's rate.
                 state.now_playing.sample_rate = None;
                 state.now_playing.bit_depth = None;
+                state.now_playing.format = None;
+                state.now_playing.channels = None;
+                // A gapless jump is a new play instance even when it lands on
+                // the same id (repeat-one/duplicate queue entries).
+                self.mark_play_instance();
                 drop(state);
                 Some(next_pos)
             } else {
@@ -346,19 +351,30 @@ impl DaemonCore {
     /// notifications config is off or no session bus is reachable.
     async fn tick_desktop_notification(self: &Arc<Self>) {
         use crate::daemon::state::PlaybackState;
-        let (enabled, song) = {
+        // Gate on enabled/playing and read only the id, so the common
+        // unchanged-track case never clones the whole song.
+        let song_id = {
             let s = self.state.read().await;
-            if s.now_playing.state != PlaybackState::Playing {
+            if s.now_playing.state != PlaybackState::Playing || !s.config.notifications {
                 return;
             }
-            (s.config.notifications, s.now_playing.song.clone())
+            match s.now_playing.song.as_ref() {
+                Some(song) => song.id.clone(),
+                None => return,
+            }
         };
-        let Some(song) = song.filter(|_| enabled) else {
-            return;
-        };
-        if !self.notifier.mark_if_changed(&song.id) {
+        if !self.notifier.mark_if_changed(&song_id) {
             return;
         }
+        let song = {
+            let s = self.state.read().await;
+            // Re-read under the lock; if the track changed between the check
+            // and here, skip and let the next tick notify the new track.
+            match s.now_playing.song.as_ref() {
+                Some(song) if song.id == song_id => song.clone(),
+                _ => return,
+            }
+        };
         let core = self.clone();
         tokio::spawn(async move {
             if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {

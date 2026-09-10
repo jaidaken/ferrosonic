@@ -428,6 +428,9 @@ pub enum IpcError {
     /// Connection closed while a reply was pending.
     #[error("daemon disconnected")]
     Disconnected,
+    /// No reply arrived within the client's per-request deadline.
+    #[error("daemon request timed out")]
+    Timeout,
     /// Socket I/O failed.
     #[error("transport: {0}")]
     Transport(#[from] std::io::Error),

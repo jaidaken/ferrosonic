@@ -59,3 +59,46 @@ async fn connection_refused_returns_error_from_test_server() {
         msg
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn http_error_status_is_reported_as_http_status_not_parse() {
+    use ferrosonic::error::SubsonicError;
+    use ferrosonic::subsonic::SubsonicClient;
+
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_http_status("getStarred2", 503)
+        .await;
+    let client = SubsonicClient::new(&td.fake_subsonic.url(), "u", &"p".into()).expect("client");
+    let err = client
+        .get_starred_songs()
+        .await
+        .expect_err("503 must be an error");
+    assert!(
+        matches!(err, SubsonicError::HttpStatus { status: 503 }),
+        "a non-2xx response must surface as HttpStatus, not a parse error: {err:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn transport_error_does_not_leak_auth_token_or_salt() {
+    use ferrosonic::secret::Secret;
+    use ferrosonic::subsonic::SubsonicClient;
+
+    // Port 1 is closed, so the request fails at transport level. `reqwest`
+    // would otherwise append the full URL (with the `t` token and `s` salt) to
+    // its error Display; the client must strip it before it can be logged.
+    let client =
+        SubsonicClient::new("http://127.0.0.1:1", "u", &Secret::from("p")).expect("client");
+    let err = client
+        .get_starred_songs()
+        .await
+        .expect_err("connection to port 1 must fail");
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("127.0.0.1:1") && !msg.contains("rest/getStarred2"),
+        "transport error must have the URL (and its auth params) stripped: {msg}"
+    );
+}

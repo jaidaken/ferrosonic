@@ -190,3 +190,57 @@ async fn rapid_buffered_switches_only_load_latest_track() {
         "queue_position points at most recent switch"
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn direct_play_cancels_an_inflight_prebuffer() {
+    let td = TestDaemon::new().await;
+    // Track A's stream is withheld for 1.5s so its Buffered download is still
+    // in flight when the Direct load of B supersedes it.
+    td.fake_subsonic
+        .expect_stream_for_delayed("a", payload(2 * 1024 * 1024), 1500)
+        .await;
+    td.fake_subsonic
+        .expect_stream_for("b", payload(64 * 1024))
+        .await;
+
+    {
+        let mut s = td.state.write().await;
+        s.queue.push(song("a", "A"));
+        s.queue.push(song("b", "B"));
+    }
+
+    td.core
+        .play_queue_position(0, PlayMode::Buffered)
+        .await
+        .unwrap();
+    td.core
+        .play_queue_position(1, PlayMode::Direct)
+        .await
+        .unwrap();
+
+    // Give the abandoned pre-buffer download time to finish so a missing
+    // cancellation would surface as a late local-file loadfile that clobbers B.
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    let loadfiles: Vec<String> = td
+        .fake_mpv
+        .commands()
+        .await
+        .iter()
+        .filter(|c| c.first().and_then(Value::as_str) == Some("loadfile"))
+        .filter_map(|c| c.get(1).and_then(Value::as_str).map(String::from))
+        .collect();
+    assert!(
+        !loadfiles.iter().any(|p| p.contains("ferrosonic-prebuf-")),
+        "a superseded pre-buffer must not loadfile after a Direct load: {loadfiles:?}"
+    );
+
+    let s = td.state.read().await;
+    assert_eq!(
+        s.now_playing.song.as_ref().map(|x| x.id.as_str()),
+        Some("b"),
+        "the Directly-loaded track remains current"
+    );
+    assert_eq!(s.queue_position, Some(1));
+}

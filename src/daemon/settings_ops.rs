@@ -13,8 +13,15 @@ impl DaemonCore {
     /// Persist new credentials, swap in a fresh Subsonic client, refresh the
     /// library. The password is stored in priority: an existing `PasswordEval`
     /// or `PasswordFile` is honored, otherwise the OS keychain, falling back to
-    /// an inline owner-only config write when no keychain is reachable. Returns
-    /// where the password landed so the caller can inform the user.
+    /// an inline owner-only config write when no keychain is reachable
+    /// (`Unavailable`); a reachable-but-failing backend (`Backend`) is
+    /// surfaced rather than silently downgraded to plaintext. Returns where
+    /// the password landed so the caller can inform the user.
+    ///
+    /// Persistence happens before the live state is mutated, and all keychain
+    /// and file I/O runs outside the `state` lock, so a slow Secret Service or
+    /// fsync cannot stall playback or the UI mirror. A failed persist leaves
+    /// the prior config and client intact.
     ///
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
@@ -24,51 +31,98 @@ impl DaemonCore {
         username: &str,
         password: &crate::secret::Secret,
     ) -> Result<PasswordStorage, Error> {
-        let mut state = self.state.write().await;
-        let old_url = std::mem::replace(&mut state.config.base_url, base_url.to_string());
-        let old_user = std::mem::replace(&mut state.config.username, username.to_string());
-        let had_keyring = state.config.password_keyring;
-        let music_folder_id = state.config.music_folder_id;
-        let pf_opt = state.config.password_file.clone().filter(|s| !s.is_empty());
-        let storage = if state.config.password_eval.is_some() {
-            // The command owns the secret; never persist the typed password.
-            state.config.password_keyring = false;
-            state.config.password = crate::secret::Secret::new();
-            state.config.save_default().map_err(Error::Config)?;
-            state.config.password = password.clone();
+        // Snapshot under a short read lock; never hold `state` across the
+        // keychain/file/persist work below.
+        let (mut candidate, old_url, old_user, had_keyring, music_folder_id, eval_present, pf_opt) = {
+            let state = self.state.read().await;
+            (
+                state.config.clone(),
+                state.config.base_url.clone(),
+                state.config.username.clone(),
+                state.config.password_keyring,
+                state.config.music_folder_id,
+                state.config.password_eval.is_some(),
+                state.config.password_file.clone().filter(|s| !s.is_empty()),
+            )
+        };
+        candidate.base_url = base_url.to_string();
+        candidate.username = username.to_string();
+        // The user explicitly committed a credential, so it is no longer the
+        // transient `FERROSONIC_PASSWORD` env override and may be persisted.
+        candidate.password_from_env = false;
+
+        // Resolve where the secret lands, performing the secret side effect
+        // first. The candidate's inline `password` is cleared for external
+        // storage so a failed save can never leak the plaintext to disk.
+        let storage = if eval_present {
+            candidate.password_keyring = false;
+            candidate.password = crate::secret::Secret::new();
             PasswordStorage::PasswordEval
         } else if let Some(pf) = pf_opt.as_deref() {
             if let Err(e) = crate::config::write_password_file_atomic(pf, password) {
                 error!("Failed to write password to {}: {}", pf, e);
                 return Err(Error::Io(e));
             }
-            state.config.password_keyring = false;
-            state.config.password = crate::secret::Secret::new();
-            state.config.save_default().map_err(Error::Config)?;
-            state.config.password = password.clone();
+            candidate.password_keyring = false;
+            candidate.password = crate::secret::Secret::new();
             PasswordStorage::PasswordFile
         } else {
             match crate::secret_store::store(base_url, username, password) {
                 Ok(()) => {
-                    state.config.password_keyring = true;
-                    state.config.password = crate::secret::Secret::new();
-                    state.config.save_default().map_err(Error::Config)?;
-                    state.config.password = password.clone();
+                    candidate.password_keyring = true;
+                    candidate.password = crate::secret::Secret::new();
                     PasswordStorage::Keyring
                 }
-                Err(e) => {
+                Err(crate::secret_store::KeyStoreError::Unavailable(e)) => {
                     warn!("OS keychain unavailable ({e}); writing the password inline to the owner-only config file");
-                    state.config.password_keyring = false;
-                    state.config.password = password.clone();
-                    state.config.save_default().map_err(Error::Config)?;
+                    candidate.password_keyring = false;
+                    candidate.password = password.clone();
                     PasswordStorage::Inline
+                }
+                Err(e @ crate::secret_store::KeyStoreError::Backend(_)) => {
+                    // A reachable-but-failing keychain must not silently
+                    // downgrade to a plaintext write; keep the old config and
+                    // report the failure so the user can retry.
+                    error!("OS keychain error while storing credentials: {e}");
+                    return Err(Error::KeyStore(e));
                 }
             }
         };
-        drop(state);
 
-        // Outside the state lock so keychain IO never blocks readers: drop an
-        // orphaned entry when the credential left the keychain or its key changed.
+        // Persist before touching live state.
+        if let Err(e) = candidate.save_default() {
+            if storage == PasswordStorage::Keyring && (old_url != base_url || old_user != username)
+            {
+                let _ = crate::secret_store::delete(base_url, username);
+            }
+            return Err(Error::Config(e));
+        }
+
+        // Validate the URL up front so a malformed base_url cannot leave the
+        // persisted config and live client disagreeing.
+        let mut new_client = match SubsonicClient::new(base_url, username, password) {
+            Ok(client) => client,
+            Err(e) => {
+                if storage == PasswordStorage::Keyring
+                    && (old_url != base_url || old_user != username)
+                {
+                    let _ = crate::secret_store::delete(base_url, username);
+                }
+                return Err(Error::Subsonic(e));
+            }
+        };
+        new_client.set_music_folder(music_folder_id);
+
+        // Commit the persisted config, keeping the typed password live for the
+        // client (the file itself omits it for external storage).
+        {
+            let mut state = self.state.write().await;
+            let mut committed = candidate;
+            committed.password = password.clone();
+            state.config = committed;
+        }
+
+        // Drop an orphaned old keychain entry now the new config is committed.
         let key_changed = old_url != base_url || old_user != username;
         if had_keyring && (storage != PasswordStorage::Keyring || key_changed) {
             if let Err(e) = crate::secret_store::delete(&old_url, &old_user) {
@@ -76,9 +130,6 @@ impl DaemonCore {
             }
         }
 
-        let mut new_client =
-            SubsonicClient::new(base_url, username, password).map_err(Error::Subsonic)?;
-        new_client.set_music_folder(music_folder_id);
         {
             // R4: bump gen before installing client, both under subsonic write so refreshes serialize.
             let mut slot = self.subsonic.write().await;
@@ -97,16 +148,41 @@ impl DaemonCore {
         Ok(storage)
     }
 
+    /// Apply `mutate` to a config clone, persist it on a blocking thread, then
+    /// commit the same mutation to live state. The atomic fsync-backed write
+    /// never runs on an async worker and never holds the `state` lock, so a
+    /// slow filesystem cannot stall the playback tick or the UI mirror. On a
+    /// persist failure the live config is left untouched.
+    async fn persist_config<F>(self: &Arc<Self>, mutate: F) -> Result<(), Error>
+    where
+        F: Fn(&mut crate::config::Config),
+    {
+        let mut candidate = { self.state.read().await.config.clone() };
+        mutate(&mut candidate);
+        let to_write = candidate.clone();
+        tokio::task::spawn_blocking(move || to_write.save_default())
+            .await
+            .map_err(|e| {
+                Error::Io(std::io::Error::other(format!(
+                    "config save task failed: {e}"
+                )))
+            })?
+            .map_err(Error::Config)?;
+        // Re-apply to live state (rather than replacing it) so a concurrent
+        // setting change between the clone and here is preserved.
+        {
+            let mut state = self.state.write().await;
+            mutate(&mut state.config);
+        }
+        Ok(())
+    }
+
     /// Persist the scrobble toggle and broadcast the config change.
     ///
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_scrobble(self: &Arc<Self>, on: bool) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.scrobble = on;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.scrobble = on).await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -116,11 +192,7 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_notifications(self: &Arc<Self>, on: bool) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.notifications = on;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.notifications = on).await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -146,11 +218,7 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_theme(self: &Arc<Self>, name: &str) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.theme = name.to_string();
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(|c| c.theme = name.to_string()).await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -160,11 +228,7 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_cava_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.cava = on;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.cava = on).await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -174,11 +238,7 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_daemon_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.daemon = on;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.daemon = on).await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -188,11 +248,7 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_auto_continue(self: &Arc<Self>, on: bool) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.auto_continue = on;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.auto_continue = on).await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -205,12 +261,8 @@ impl DaemonCore {
         self: &Arc<Self>,
         mode: crate::config::RepeatMode,
     ) -> Result<(), Error> {
-        let cur_pos = {
-            let mut state = self.state.write().await;
-            state.config.repeat_mode = mode;
-            state.config.save_default().map_err(Error::Config)?;
-            state.queue_position
-        };
+        self.persist_config(move |c| c.repeat_mode = mode).await?;
+        let cur_pos = { self.state.read().await.queue_position };
         self.emit(DaemonEvent::RepeatModeChanged(mode));
         self.emit_config_changed().await;
         if let Some(pos) = cur_pos {
@@ -231,11 +283,7 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_cover_art_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.cover_art = on;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.cover_art = on).await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -246,11 +294,8 @@ impl DaemonCore {
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_cover_art_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
         let clamped = size.clamp(8, 24);
-        {
-            let mut state = self.state.write().await;
-            state.config.cover_art_size = clamped;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.cover_art_size = clamped)
+            .await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -261,11 +306,7 @@ impl DaemonCore {
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_cava_size(self: &Arc<Self>, size: u8) -> Result<(), Error> {
         let clamped = size.clamp(10, 80);
-        {
-            let mut state = self.state.write().await;
-            state.config.cava_size = clamped;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.cava_size = clamped).await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -279,11 +320,8 @@ impl DaemonCore {
         self: &Arc<Self>,
         mode: crate::config::ReplayGainMode,
     ) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.replay_gain_mode = mode;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.replay_gain_mode = mode)
+            .await?;
         // Best-effort like set_volume: mpv is always running (--idle) once
         // start_mpv has succeeded, but a not-yet-started mpv should not
         // block persisting the setting.
@@ -305,11 +343,8 @@ impl DaemonCore {
             crate::config::REPLAY_GAIN_PREAMP_MIN,
             crate::config::REPLAY_GAIN_PREAMP_MAX,
         );
-        {
-            let mut state = self.state.write().await;
-            state.config.replay_gain_preamp = clamped;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.replay_gain_preamp = clamped)
+            .await?;
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.set_replaygain_preamp(clamped).await;
         drop(mpv);
@@ -323,11 +358,8 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_replay_gain_clip(self: &Arc<Self>, on: bool) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            state.config.replay_gain_clip = on;
-            state.config.save_default().map_err(Error::Config)?;
-        }
+        self.persist_config(move |c| c.replay_gain_clip = on)
+            .await?;
         let mut mpv = self.mpv.lock().await;
         let _ = mpv.set_replaygain_clip(on).await;
         drop(mpv);
@@ -345,16 +377,8 @@ impl DaemonCore {
         self: &Arc<Self>,
         filters: crate::config::PlaybackFilters,
     ) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            let old = std::mem::replace(&mut state.config.playback_filters, filters);
-            if let Err(error) = state.config.save_default() {
-                state.config.playback_filters = old;
-                drop(state);
-                return Err(Error::Config(error));
-            }
-            drop(state);
-        }
+        self.persist_config(move |c| c.playback_filters.clone_from(&filters))
+            .await?;
         self.emit_config_changed().await;
         Ok(())
     }
@@ -371,16 +395,8 @@ impl DaemonCore {
             crate::config::keybind::KeyChord,
         >,
     ) -> Result<(), Error> {
-        {
-            let mut state = self.state.write().await;
-            let old = std::mem::replace(&mut state.config.keybindings, bindings);
-            if let Err(error) = state.config.save_default() {
-                state.config.keybindings = old;
-                drop(state);
-                return Err(Error::Config(error));
-            }
-            drop(state);
-        }
+        self.persist_config(move |c| c.keybindings.clone_from(&bindings))
+            .await?;
         self.emit_config_changed().await;
         Ok(())
     }

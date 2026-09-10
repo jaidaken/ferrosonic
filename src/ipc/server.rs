@@ -290,9 +290,15 @@ async fn handle_connection(core: Arc<DaemonCore>, stream: UnixStream) -> Result<
         }
     }
 
-    // Drop last writer_tx so writer_task ends.
-    drop(writer_tx);
+    // Stop the event forwarder before awaiting the writer. It owns a clone of
+    // `writer_tx`, and the writer task only ends once every sender is dropped,
+    // so awaiting the event task first would deadlock: the event task waits
+    // for the writer channel to close while the writer channel waits for the
+    // event task to drop its sender. Aborting drops that clone; dropping our
+    // own sender then lets the writer task drain queued frames and shut down.
+    event_task.abort();
     let _ = event_task.await;
+    drop(writer_tx);
     let _ = writer_task.await;
     Ok(())
 }

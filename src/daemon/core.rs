@@ -173,6 +173,12 @@ pub struct DaemonCore {
     /// has superseded it, so a rapid track switch can't start the wrong
     /// track at the previous track's pinned rate.
     pub(super) loadfile_gen: std::sync::atomic::AtomicU64,
+    /// Incremented on each genuinely new playback instance (a track start or
+    /// restart, including repeat-one/gapless of the same id) but not on resume
+    /// from pause. Lets the scrobble state machine tell a repeated track apart
+    /// from a continuation, so a repeat still reports `starting`/`NowPlaying` and
+    /// can submit again.
+    pub(super) play_instance: std::sync::atomic::AtomicU64,
     /// Bumped on every `update_server_config`; library refresh handlers
     /// capture the gen at start and discard their result if it changed,
     /// preventing stale results from one server polluting the next.
@@ -190,6 +196,10 @@ pub struct DaemonCore {
     /// Count of connected IPC clients; the idle-exit monitor shuts the daemon
     /// down once this is 0 and playback is Stopped, so a daemon never orphans.
     pub(super) active_clients: std::sync::atomic::AtomicUsize,
+    /// Single-flight guard for `advance_auto`: the mpv EOF event listener and
+    /// the 500ms idle tick can both fire an advance for the same track end, so
+    /// only one may be in flight or the queue would skip a track / double-load.
+    pub(super) advance_in_flight: AtomicBool,
     /// Per-play scrobble tracking; mutated only by the scrobble tick.
     pub(super) scrobble_state: Mutex<crate::daemon::scrobble::ScrobbleState>,
     /// True when the server advertises the `playbackReport` extension.
@@ -261,12 +271,14 @@ impl DaemonCore {
             prebuffer_loading: Mutex::new(None),
             last_loadfile: std::sync::Mutex::new(None),
             loadfile_gen: std::sync::atomic::AtomicU64::new(0),
+            play_instance: std::sync::atomic::AtomicU64::new(0),
             config_gen: std::sync::atomic::AtomicU64::new(0),
             shutdown: std::sync::atomic::AtomicBool::new(false),
             shutdown_notify: tokio::sync::Notify::new(),
             library_version: std::sync::atomic::AtomicU64::new(0),
             last_preload_attempt: std::sync::Mutex::new(None),
             active_clients: std::sync::atomic::AtomicUsize::new(0),
+            advance_in_flight: AtomicBool::new(false),
             scrobble_state: Mutex::new(crate::daemon::scrobble::ScrobbleState::default()),
             playback_report_supported: AtomicBool::new(false),
             notifier: crate::daemon::notify::Notifier::new(),
@@ -300,6 +312,34 @@ impl DaemonCore {
         *guard = Some(std::time::Instant::now());
         drop(guard);
         self.loadfile_gen.fetch_add(1, Ordering::Release) + 1
+    }
+
+    /// Mark a genuinely new playback instance and return its id. Called on a
+    /// track start or restart (repeat-one, gapless, explicit replay), never on
+    /// a pause/resume; the scrobble state machine keys off this so a repeated
+    /// track is reported as a fresh play.
+    pub(super) fn mark_play_instance(&self) -> u64 {
+        self.play_instance.fetch_add(1, Ordering::Release) + 1
+    }
+
+    /// Test seam: mark a new playback instance so scrobble tests can exercise
+    /// repeat/restart without driving the whole playback path.
+    #[doc(hidden)]
+    pub fn mark_play_instance_for_test(&self) -> u64 {
+        self.mark_play_instance()
+    }
+
+    /// Test seam: force the single-flight `advance_auto` guard.
+    #[doc(hidden)]
+    pub fn set_advance_in_flight_for_test(&self, in_flight: bool) {
+        self.advance_in_flight.store(in_flight, Ordering::Release);
+    }
+
+    /// Test seam: read the single-flight `advance_auto` guard.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn advance_in_flight_for_test(&self) -> bool {
+        self.advance_in_flight.load(Ordering::Acquire)
     }
 
     /// Idempotent — no-ops if mpv is already running.
@@ -416,8 +456,7 @@ impl DaemonCore {
             let state = self.state.read().await;
             state.clone()
         };
-        snap.config.password.clear();
-        snap.config.password_file = None;
+        scrub_config_for_wire(&mut snap.config);
         snap.mpv_version = self.mpv.lock().await.mpv_version();
         snap
     }
@@ -432,11 +471,23 @@ impl DaemonCore {
             let state = self.state.read().await;
             state.config.clone()
         };
-        // Mask the wire path explicitly. Secret::Serialize would emit "***" but we want "" so the client treats it as empty.
-        cfg.password.clear();
-        cfg.password_file = None;
+        scrub_config_for_wire(&mut cfg);
         self.emit(DaemonEvent::ConfigChanged(Box::new(cfg)));
     }
+}
+
+/// Strip every secret-bearing credential source before a config crosses the
+/// IPC boundary. The TUI never talks to the Subsonic server directly, so it
+/// must not receive the resolved password, its file path, the `PasswordEval`
+/// command (which can embed a secret in its string or argv), or the keyring
+/// marker. Without this, a `PasswordEval` such as `printf hunter2` leaks to
+/// every connected client.
+fn scrub_config_for_wire(cfg: &mut Config) {
+    cfg.password.clear();
+    cfg.password_file = None;
+    cfg.password_eval = None;
+    cfg.password_keyring = false;
+    cfg.password_from_env = false;
 }
 
 impl DaemonCore {
@@ -555,7 +606,7 @@ impl DaemonCore {
             let mut state = self.state.write().await;
             let start_pos = state.queue.len();
             state.queue.extend(songs);
-            self.commit_play_state_in_lock(&mut state, &client, start_pos)
+            self.commit_play_state_in_lock(&mut state, &client, start_pos, true)
                 .ok()
                 .map(|(s, u)| (s, u, start_pos))
         };
@@ -578,6 +629,7 @@ impl DaemonCore {
         state: &mut DaemonState,
         client: &SubsonicClient,
         pos: usize,
+        new_instance: bool,
     ) -> Result<(crate::subsonic::models::Child, String), ()> {
         use crate::daemon::state::PlaybackState;
         let song = match state.queue.get(pos) {
@@ -606,6 +658,9 @@ impl DaemonCore {
         state.now_playing.channels = None;
         // R2: stamp last_loadfile under the state write lock so the 1.5s idle-advance gate in update_playback_info covers the in-flight loadfile, not only the post-loadfile window.
         self.stamp_loadfile();
+        if new_instance {
+            self.mark_play_instance();
+        }
         Ok((song, url))
     }
 
@@ -620,6 +675,9 @@ impl DaemonCore {
     ) -> Result<(), Error> {
         match mode {
             PlayMode::Direct => {
+                // A Direct load supersedes any in-flight Buffered download;
+                // cancel it first so it cannot later loadfile over this track.
+                self.cancel_prebuffer().await;
                 // Reject non-finite/negative offsets so they can never reach
                 // `start=` formatting (start=NaN/inf = mpv invalid parameter).
                 let start_at = if start_at.is_finite() && start_at > 0.0 {
@@ -777,6 +835,25 @@ impl DaemonCore {
         self.state.read().await.now_playing.state == PlaybackState::Stopped
     }
 
+    /// Cancel any in-flight pre-buffer download because playback is being
+    /// superseded by a Direct load, pause, stop, or end-of-queue. Flips the
+    /// active task's cancel token and clears both slots (lock order 5 -> 6).
+    /// The task observes the token at its next checkpoint and returns without
+    /// loading; its own RAII gate clears the per-task loading flag. Without
+    /// this, only another Buffered dispatch could cancel a download, so a
+    /// stale task would later load (and unpause) a track the user had already
+    /// replaced, paused, or stopped.
+    pub(super) async fn cancel_prebuffer(&self) {
+        let cancelled = {
+            let mut slot = self.prebuffer_cancel.lock().await;
+            slot.take()
+        };
+        if let Some(token) = cancelled {
+            token.store(true, Ordering::Relaxed);
+        }
+        let _ = self.prebuffer_loading.lock().await.take();
+    }
+
     /// Download the new URL to a local temp file in full, then load it paused
     /// and run the rate-switch pre-roll. The whole file is fetched first so mpv
     /// reads the true track length; loading a still-growing file paused makes
@@ -830,7 +907,7 @@ impl DaemonCore {
 
         tokio::spawn(async move {
             use futures::StreamExt;
-            use std::io::Write;
+            use tokio::io::AsyncWriteExt;
 
             // RAII clears on every return: loading flag + cancel slot.
             let gate = PrebufferGate::new(loading);
@@ -857,7 +934,9 @@ impl DaemonCore {
                 }
             };
 
-            let mut file = match std::fs::File::create(&path) {
+            // Async file I/O keeps the disk write on the blocking pool instead
+            // of stalling a tokio worker (and the playback tick) during the copy.
+            let mut file = match tokio::fs::File::create(&path).await {
                 Ok(f) => f,
                 Err(e) => {
                     error!("Pre-buffer file open failed: {}", e);
@@ -902,14 +981,24 @@ impl DaemonCore {
                         return;
                     }
                 };
-                if let Err(e) = file.write_all(&chunk) {
-                    error!("Pre-buffer write error: {}", e);
+                if let Err(e) = file.write_all(&chunk).await {
+                    // Disk full / I/O error mid-download must not silently drop
+                    // the track while state says Playing; fall back to a direct
+                    // loadfile like every other pre-buffer failure path.
+                    error!(
+                        "Pre-buffer write error: {}; falling back to direct loadfile",
+                        e
+                    );
+                    drop(file);
+                    let mut mpv = core.mpv.lock().await;
+                    let _ = mpv.loadfile(&url).await;
+                    core.stamp_loadfile();
                     return;
                 }
                 bytes_written += chunk.len();
             }
 
-            let _ = file.flush();
+            let _ = file.flush().await;
             info!(
                 "Pre-buffer download complete ({} KB in {:?}); loading",
                 bytes_written / 1024,

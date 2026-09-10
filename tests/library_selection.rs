@@ -74,6 +74,57 @@ async fn set_music_folder_persists_and_scopes_browse_calls() {
 
 #[tokio::test]
 #[serial]
+async fn get_all_albums_pages_past_a_short_first_page() {
+    use ferrosonic::ipc::client::DaemonClient;
+
+    let td = TestDaemon::new().await;
+    // Server caps at 2 albums per page despite the requested size=500; paging
+    // must advance by what it received, not declare the first short page last.
+    td.fake_subsonic
+        .expect_album_list_page("alphabeticalByName", 0, &["a", "b"])
+        .await;
+    td.fake_subsonic
+        .expect_album_list_page("alphabeticalByName", 2, &["c", "d"])
+        .await;
+    td.fake_subsonic
+        .expect_album_list_page("alphabeticalByName", 4, &[])
+        .await;
+
+    let client = ferrosonic::ipc::InProcessClient::new(td.core.clone());
+    client
+        .request(ferrosonic::ipc::protocol::DaemonRequest::LoadAllAlbums)
+        .await
+        .expect("load all albums");
+
+    let st = td.state.read().await;
+    assert_eq!(
+        st.library.all_albums.len(),
+        4,
+        "both short pages must be fetched before the empty page ends paging"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn starred_refresh_scopes_to_the_selected_folder() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic.expect_starred().await;
+    td.core.set_music_folder(Some(2)).await.unwrap();
+    td.core.refresh_starred().await;
+
+    let reqs = td.fake_subsonic.received_requests().await;
+    let q = find(&reqs, "/rest/getStarred2")
+        .url
+        .query()
+        .unwrap_or_default();
+    assert!(
+        q.contains("musicFolderId=2"),
+        "the starred view must scope to the selected folder; query was {q}"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn no_folder_selected_omits_music_folder_id() {
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_artists(&["A"]).await;

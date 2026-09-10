@@ -177,7 +177,7 @@ impl AppState<'_> {
                 .queue_state
                 .selected
                 .and_then(|idx| self.daemon.queue.get(idx)),
-            Page::QuickPlay => self
+            Page::QuickPlay if self.client.songs.focus == 1 => self
                 .client
                 .songs
                 .selected_index
@@ -213,7 +213,9 @@ impl AppState<'_> {
                         _ => None,
                     });
             }
-            Page::Library | Page::Playlists | Page::Server | Page::Settings => None,
+            Page::QuickPlay | Page::Library | Page::Playlists | Page::Server | Page::Settings => {
+                None
+            }
         };
         song.map(|s| (s.id.clone(), s.user_rating))
     }

@@ -40,6 +40,7 @@ impl App {
         let layout = state.client.layout.clone();
         let page = state.client.page;
         let duration = state.daemon.now_playing.duration;
+        let position = state.daemon.now_playing.position;
         let _ = state;
         drop(cs);
         drop(ds);
@@ -50,10 +51,13 @@ impl App {
                     HeaderRegion::Tab(tab_page) => {
                         let ds = self.daemon_state.read().await;
                         let mut cs = self.client_state.write().await;
-                        let state = AppState {
+                        let mut state = AppState {
                             daemon: &ds,
                             client: &mut cs,
                         };
+                        // Match the keyboard page switch: discard unsaved
+                        // search/modal/editor state before navigating.
+                        crate::app::input::revert_page_edits(&mut state);
                         state.client.page = tab_page;
                     }
                     HeaderRegion::PrevButton => {
@@ -103,20 +107,34 @@ impl App {
             return Ok(());
         }
 
-        if y >= layout.now_playing.y && y < layout.now_playing.y + layout.now_playing.height {
-            let inner_bottom = layout.now_playing.y + layout.now_playing.height - 2;
+        if layout.now_playing.height >= 2
+            && y >= layout.now_playing.y
+            && y < layout.now_playing.y + layout.now_playing.height
+        {
+            let inner_bottom = layout.now_playing.y + layout.now_playing.height.saturating_sub(2);
             if y == inner_bottom && duration > 0.0 {
                 let inner_x_start = layout.now_playing.x + 1;
                 let inner_width = layout.now_playing.width.saturating_sub(2);
-                if inner_width > 15 && x >= inner_x_start {
-                    let rel_x = x - inner_x_start;
-                    let time_width = 15u16;
-                    let bar_width = inner_width.saturating_sub(time_width + 2);
-                    let bar_start = (inner_width.saturating_sub(time_width + 2 + bar_width)) / 2
-                        + time_width
-                        + 2;
-                    if bar_width > 0 && rel_x >= bar_start && rel_x < bar_start + bar_width {
-                        let fraction = f64::from(rel_x - bar_start) / f64::from(bar_width);
+                if inner_width >= 15 && x >= inner_x_start {
+                    // Reproduce the renderer's geometry from the same time
+                    // strings so the click column matches the drawn bar.
+                    let progress_area =
+                        ratatui::layout::Rect::new(inner_x_start, y, inner_width, 1);
+                    let time_width = crate::num::u16_sat(
+                        format!(
+                            "{} / {}",
+                            crate::daemon::state::format_duration(position),
+                            crate::daemon::state::format_duration(duration)
+                        )
+                        .len(),
+                    );
+                    let (_start, bar_start, bar_width) =
+                        crate::ui::widget_now_playing::progress_bar_geometry(
+                            progress_area,
+                            time_width,
+                        );
+                    if bar_width > 0 && x >= bar_start && x < bar_start + bar_width {
+                        let fraction = f64::from(x - bar_start) / f64::from(bar_width);
                         let seek_pos = fraction * duration;
                         let _ = self
                             .client

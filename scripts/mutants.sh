@@ -23,9 +23,10 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 build_jobs="${MUTANTS_BUILD_JOBS:-4}"
-# RAM tmpfs by default: disk scratch routes every rebuild through LUKS+btrfs
-# CoW writeback, which saturates long before the CPU does.
-scratch="${MUTANTS_SCRATCH:-/dev/shm}"
+# Disk scratch by default: /dev/shm caps at 32G and fits only a couple of the
+# big per-worker build trees, so it can fill and thrash. Override with
+# MUTANTS_SCRATCH=/dev/shm on a machine with ample RAM.
+scratch="${MUTANTS_SCRATCH:-/tmp}"
 worker_gb="${MUTANTS_WORKER_GB:-7}"
 # On a RAM tmpfs the binding limit is space, not cores: size workers to whichever
 # is smaller.

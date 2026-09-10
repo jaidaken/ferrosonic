@@ -234,3 +234,62 @@ Password = "kept"
     std::env::remove_var("FERROSONIC_PASSWORD");
     assert_eq!(c.password_str(), "kept");
 }
+
+#[test]
+#[serial]
+fn env_password_is_not_persisted_on_save() {
+    let tmp = common::tempdir();
+    let config_path = tmp.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"BaseURL = "https://x"
+Username = "u"
+"#,
+    )
+    .unwrap();
+    std::env::set_var("FERROSONIC_PASSWORD", "env-secret-never-persist");
+    let c = Config::load_from_file(&config_path).unwrap();
+    std::env::remove_var("FERROSONIC_PASSWORD");
+    assert_eq!(c.password_str(), "env-secret-never-persist");
+
+    let out = tmp.path().join("saved.toml");
+    c.save_to_file(&out).unwrap();
+    let saved = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !saved.contains("env-secret-never-persist"),
+        "env-sourced password must never be written to disk: {saved}"
+    );
+    assert!(
+        !saved.lines().any(|l| l.starts_with("Password")),
+        "no inline Password key should be written for an env-sourced secret: {saved}"
+    );
+}
+
+#[test]
+#[serial]
+fn explicitly_committed_password_is_persisted_over_env() {
+    let tmp = common::tempdir();
+    let config_path = tmp.path().join("config.toml");
+    std::fs::write(
+        &config_path,
+        r#"BaseURL = "https://x"
+Username = "u"
+"#,
+    )
+    .unwrap();
+    std::env::set_var("FERROSONIC_PASSWORD", "env-secret");
+    let mut c = Config::load_from_file(&config_path).unwrap();
+    std::env::remove_var("FERROSONIC_PASSWORD");
+
+    // Mirrors `update_server_config` committing a user-typed inline credential:
+    // the source is no longer the transient env override, so it must persist.
+    c.password_from_env = false;
+    c.password = "user-committed".into();
+    let out = tmp.path().join("saved.toml");
+    c.save_to_file(&out).unwrap();
+    let saved = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        saved.contains("user-committed"),
+        "an explicitly committed password must be persisted: {saved}"
+    );
+}

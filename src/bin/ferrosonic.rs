@@ -46,13 +46,29 @@ fn init_logging(
         eprintln!("Warning: Could not create log directory: {}", e);
         return None;
     }
+    // The config dir holds credentials and logs; keep it owner-only.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&log_dir, fs::Permissions::from_mode(0o700));
+    }
     let log_name = if daemon {
         "ferrosonicd.log"
     } else {
         "ferrosonic.log"
     };
     let log_file = log_dir.join(log_name);
-    let file = match OpenOptions::new().create(true).append(true).open(&log_file) {
+    // The log can contain server URLs and, historically, error text; keep it
+    // owner-only. `OpenOptionsExt::mode` only applies on creation, so an
+    // existing file keeps whatever mode it already had (fixed at install).
+    let mut opts = OpenOptions::new();
+    opts.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let file = match opts.open(&log_file) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Warning: Could not open log file: {}", e);

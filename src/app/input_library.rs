@@ -868,7 +868,10 @@ impl App {
     /// the tree). An album row shows its tracks; a song row shows that song's
     /// album with the song itself pre-selected so Right lands on it; anything
     /// else shows the playing queue.
-    async fn load_pane_for_tree_item(&self, item: Option<crate::ui::pages::library::TreeItem>) {
+    pub(super) async fn load_pane_for_tree_item(
+        &self,
+        item: Option<crate::ui::pages::library::TreeItem>,
+    ) {
         use crate::ui::pages::library::TreeItem;
         match item {
             Some(TreeItem::Album { album }) => {

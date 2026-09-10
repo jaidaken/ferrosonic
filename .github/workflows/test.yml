@@ -12,6 +12,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Cancel superseded runs on the same ref; each run builds ~200 test binaries.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   fmt:
     name: rustfmt
@@ -34,7 +39,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - name: Gating clippy run
-        run: cargo clippy --all-targets --all-features
+        run: cargo clippy --all-targets --all-features --locked
 
   clippy_audit:
     name: clippy (aspirational, non-gating)
@@ -48,7 +53,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - name: Pedantic + nursery + missing-docs warning count
-        run: cargo clippy --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -W missing_docs
+        run: cargo clippy --all-targets --all-features --locked -- -W clippy::pedantic -W clippy::nursery -W missing_docs
 
   deny:
     name: cargo-deny (advisories + licenses + bans)
@@ -80,7 +85,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - name: Clippy unwrap_used / expect_used on non-test build
         run: |
-          cargo clippy --lib --bins --all-features \
+          cargo clippy --lib --bins --all-features --locked \
             -- -D clippy::unwrap_used -D clippy::expect_used
 
   test:
@@ -101,9 +106,9 @@ jobs:
       # under parallel CI load (per CLAUDE.md) retries instead of failing the
       # gate; a genuine break still fails all attempts.
       - name: Run tests
-        run: cargo nextest run --profile ci --all-targets
+        run: cargo nextest run --profile ci --all-targets --locked
       - name: Doc tests (nextest skips these)
-        run: cargo test --doc
+        run: cargo test --doc --locked
 
   coverage:
     name: coverage (report only)
@@ -128,7 +133,7 @@ jobs:
       # already covers; profraw from every test that ran is still written.
       - name: Collect coverage (nextest backend, coverage profile)
         continue-on-error: true
-        run: NEXTEST_PROFILE=coverage cargo llvm-cov nextest --all-features --workspace --no-report
+        run: NEXTEST_PROFILE=coverage cargo llvm-cov nextest --all-features --workspace --locked --no-report
       - name: Generate lcov
         run: cargo llvm-cov report --lcov --output-path lcov.info
       - name: Generate HTML report

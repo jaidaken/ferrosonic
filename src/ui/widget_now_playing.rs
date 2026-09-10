@@ -246,6 +246,20 @@ fn render_info(
     }
 }
 
+/// Geometry of the progress row in absolute columns.
+///
+/// Returns `(start_x, bar_start, bar_width)` for the `area` passed to
+/// [`render_progress_bar`]. Shared with the click handler so a click maps to
+/// the same column the user sees; the `"MM:SS / MM:SS"` label width varies
+/// with the track length, so both sides must compute it from the same strings.
+#[must_use]
+pub const fn progress_bar_geometry(area: Rect, time_width: u16) -> (u16, u16, u16) {
+    let bar_width = area.width.saturating_sub(time_width + 3);
+    let total_width = time_width + 2 + bar_width;
+    let start_x = area.x + (area.width.saturating_sub(total_width)) / 2;
+    (start_x, start_x + time_width + 2, bar_width)
+}
+
 /// Paint the playback progress bar into `area`.
 pub fn render_progress_bar(
     area: Rect,
@@ -261,10 +275,13 @@ pub fn render_progress_bar(
 
     let time_str = format!("{pos} / {dur}");
     let time_width = crate::num::u16_sat(time_str.len());
-
-    let bar_width = area.width.saturating_sub(time_width + 3);
-    let total_width = time_width + 2 + bar_width;
-    let start_x = area.x + (area.width.saturating_sub(total_width)) / 2;
+    // A long (`HH:MM:SS`) label in a very narrow area would otherwise be
+    // written past the widget rect (set_string only clips at the buffer edge),
+    // overrunning the border. Skip the row rather than corrupt the frame.
+    if time_width.saturating_add(2) > area.width {
+        return;
+    }
+    let (start_x, bar_start, bar_width) = progress_bar_geometry(area, time_width);
 
     buf.set_string(
         start_x,
@@ -273,7 +290,6 @@ pub fn render_progress_bar(
         Style::default().fg(colors.highlight_fg),
     );
 
-    let bar_start = start_x + time_width + 2;
     if bar_width > 0 {
         // f64->u16 `as` saturates; bar_width*progress(0.0..=1.0) is bounded by bar_width.
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]

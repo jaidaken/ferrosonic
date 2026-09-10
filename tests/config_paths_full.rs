@@ -91,6 +91,26 @@ fn ensure_config_dir_creates_when_missing() {
 
 #[test]
 #[serial]
+fn ensure_config_dir_is_owner_only() {
+    let tmp = common::tempdir();
+    let target = tmp.path().join("private-cfg");
+    std::env::set_var("FERROSONIC_CONFIG_DIR", &target);
+    let created = ensure_config_dir().expect("ensure");
+    std::env::remove_var("FERROSONIC_CONFIG_DIR");
+    assert_eq!(created, target);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o700,
+            "credential dir must be owner-only, got {mode:o}"
+        );
+    }
+}
+
+#[test]
+#[serial]
 fn ensure_config_dir_is_idempotent_when_already_exists() {
     let tmp = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", tmp.path());

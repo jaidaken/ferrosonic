@@ -64,6 +64,12 @@ pub fn ensure_config_dir() -> std::io::Result<PathBuf> {
     if !dir.exists() {
         std::fs::create_dir_all(&dir)?;
     }
+    // Owner-only: the directory holds the credential config and logs.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
 
     Ok(dir)
 }

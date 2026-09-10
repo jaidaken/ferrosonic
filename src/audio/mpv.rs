@@ -221,21 +221,37 @@ impl MpvController {
         // Reap an exited child so a fresh mpv can be spawned. Without
         // this, an mpv crash leaves self.process = Some(<exited Child>)
         // and start_mpv() silently no-ops on every subsequent call.
-        if let Some(child) = self.process.as_mut() {
-            match child.try_wait() {
-                Ok(None) => return Ok(()),
-                Ok(Some(status)) => {
-                    warn!("mpv exited ({:?}), respawning", status);
-                    self.tear_down_connection().await;
-                }
-                Err(e) => {
-                    // try_wait Err means the process state is unknown;
-                    // treat as dead and respawn rather than silently
-                    // returning Ok and leaving the daemon half-broken.
-                    warn!("mpv try_wait failed ({}), forcing respawn", e);
-                    self.tear_down_connection().await;
+        let need_respawn = match self.process.as_mut() {
+            Some(child) => {
+                match child.try_wait() {
+                    // Only treat a live child as "already started" when the IPC
+                    // connection is actually up. A spawn whose connect() failed
+                    // leaves a live process with no writer; early-returning there
+                    // would wedge the backend forever (is_running() reports
+                    // dead, watchdog no-ops, no IPC ever returns).
+                    Ok(None) if self.writer.is_some() => return Ok(()),
+                    Ok(None) => {
+                        warn!("mpv process alive but IPC not connected; respawning");
+                        true
+                    }
+                    Ok(Some(status)) => {
+                        warn!("mpv exited ({:?}), respawning", status);
+                        true
+                    }
+                    Err(e) => {
+                        // try_wait Err means the process state is unknown;
+                        // treat as dead and respawn rather than silently
+                        // returning Ok and leaving the daemon half-broken.
+                        warn!("mpv try_wait failed ({}), forcing respawn", e);
+                        true
+                    }
                 }
             }
+            // No process, but a stale IPC writer/reader survived; reset it.
+            None => self.writer.is_some(),
+        };
+        if need_respawn {
+            self.tear_down_connection().await;
         }
         let _ = std::fs::remove_file(&self.socket_path);
         info!("Starting MPV with socket: {}", self.socket_path.display());
@@ -300,6 +316,9 @@ impl MpvController {
     }
 
     async fn connect(&mut self) -> Result<(), AudioError> {
+        // Never leak a previous reader/writer if called twice (explicit
+        // re-connect or a retry after a failed connect).
+        self.reset_ipc().await;
         let stream = UnixStream::connect(&self.socket_path)
             .await
             .map_err(AudioError::MpvSocket)?;
@@ -333,17 +352,40 @@ impl MpvController {
         parse_mpv_version(data.as_str()?)
     }
 
-    async fn tear_down_connection(&mut self) {
+    /// Drop the IPC reader/writer and fail any in-flight requests, leaving the
+    /// child process alone. Used before (re)connecting so a second `connect`
+    /// can never leak the previous reader task or socket half.
+    async fn reset_ipc(&mut self) {
         if let Some(h) = self.reader_handle.take() {
             h.abort();
         }
         self.writer = None;
-        self.process = None;
-        // Fail any in-flight requests so callers don't hang.
         let mut p = self.pending.lock().await;
         for (_, tx) in p.drain() {
-            let _ = tx.send(Err(AudioError::MpvIpc("connection torn down".to_string())));
+            let _ = tx.send(Err(AudioError::MpvIpc("connection reset".to_string())));
         }
+    }
+
+    /// Kill and reap the owned mpv child, releasing the handle. A dropped
+    /// `Child` neither kills nor reaps, so without this an exited mpv would
+    /// linger as a zombie and a still-live one (IPC socket closed but process
+    /// up) would be orphaned holding the audio device while the watchdog
+    /// spawned a second mpv.
+    fn reap_child(&mut self) {
+        if let Some(mut child) = self.process.take() {
+            // `try_wait` already reaps an exited child; only kill+wait when the
+            // process is still running or its state is unknown.
+            let already_reaped = matches!(child.try_wait(), Ok(Some(_)));
+            if !already_reaped {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+
+    async fn tear_down_connection(&mut self) {
+        self.reset_ipc().await;
+        self.reap_child();
     }
 
     /// Whether the IPC connection and mpv process are both alive; clears dead state as a side effect.
@@ -355,27 +397,24 @@ impl MpvController {
         // the writer too so callers see a consistent dead state.
         if let Some(h) = self.reader_handle.as_ref() {
             if h.is_finished() {
-                self.reader_handle = None;
                 self.writer = None;
-                self.process = None;
+                self.reader_handle = None;
+                self.reap_child();
                 return false;
             }
         }
-        match self.process.as_mut() {
+        let alive = match self.process.as_mut() {
             None => self.writer.is_some(),
-            Some(child) => {
-                if matches!(child.try_wait(), Ok(None)) {
-                    true
-                } else {
-                    self.writer = None;
-                    self.process = None;
-                    if let Some(h) = self.reader_handle.take() {
-                        h.abort();
-                    }
-                    false
-                }
+            Some(child) => matches!(child.try_wait(), Ok(None)),
+        };
+        if !alive {
+            self.writer = None;
+            if let Some(h) = self.reader_handle.take() {
+                h.abort();
             }
+            self.reap_child();
         }
+        alive
     }
 
     async fn send_command(&mut self, args: Vec<Value>) -> Result<Option<Value>, AudioError> {
@@ -825,10 +864,7 @@ impl MpvController {
 
     /// Sync teardown for Drop. No graceful quit IPC (would need async).
     fn shutdown_sync(&mut self) {
-        if let Some(mut child) = self.process.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        self.reap_child();
         if let Some(h) = self.reader_handle.take() {
             h.abort();
         }
@@ -998,5 +1034,52 @@ mod replaygain_tests {
             mpv_allow_clip(false),
             "prevent_clipping=false must send mpv \"allow clip\" (true)"
         );
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    /// Signal 0 probes process existence without delivering a signal; ESRCH
+    /// means the pid is gone, so the child was reaped (a zombie would still
+    /// answer).
+    fn pid_is_gone(pid: u32) -> bool {
+        let rc = unsafe { libc::kill(pid as i32, 0) };
+        rc == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+    }
+
+    #[test]
+    fn reap_child_kills_and_reaps_a_live_child() {
+        let mut ctrl = MpvController::with_socket_path(std::path::PathBuf::from(
+            "/tmp/ferrosonic-reap-test.sock",
+        ));
+        let child = Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .expect("spawn sleep");
+        let pid = child.id();
+        ctrl.process = Some(child);
+        ctrl.reap_child();
+        assert!(ctrl.process.is_none(), "process handle must be cleared");
+        assert!(
+            pid_is_gone(pid),
+            "a live child must be killed and reaped, not left running or zombie"
+        );
+    }
+
+    #[test]
+    fn reap_child_clears_an_already_exited_child() {
+        let mut ctrl = MpvController::with_socket_path(std::path::PathBuf::from(
+            "/tmp/ferrosonic-reap-test.sock",
+        ));
+        let child = Command::new("sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .expect("spawn sh");
+        std::thread::sleep(Duration::from_millis(100));
+        ctrl.process = Some(child);
+        ctrl.reap_child();
+        assert!(ctrl.process.is_none());
     }
 }

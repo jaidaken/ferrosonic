@@ -54,9 +54,17 @@ pub async fn apply_event(
 ) {
     match ev {
         DaemonEvent::QueueChanged { queue, position } => {
-            let mut ds = daemon_state.write().await;
-            ds.queue = queue;
-            ds.queue_position = position;
+            let len = queue.len();
+            {
+                let mut ds = daemon_state.write().await;
+                ds.queue = queue;
+                ds.queue_position = position;
+            }
+            // Clamp the TUI's queue cursor: the daemon may have removed or
+            // auto-advanced rows, and a stale index would highlight the wrong
+            // entry or leave the cursor past the end.
+            let mut cs = client_state.write().await;
+            clamp_selection(&mut cs.queue_state.selected, len);
         }
         DaemonEvent::NowPlayingChanged(np) => {
             apply_now_playing_changed(daemon_state, client, cover_art, *np).await;
@@ -165,6 +173,16 @@ pub async fn apply_event(
     }
 }
 
+/// Clamp a list cursor into `len`, clearing it when the list is empty. Keeps a
+/// TUI selection valid after the daemon replaces or shrinks the underlying list.
+const fn clamp_selection(selected: &mut Option<usize>, len: usize) {
+    if let Some(idx) = *selected {
+        if idx >= len {
+            *selected = len.checked_sub(1);
+        }
+    }
+}
+
 /// Apply `NowPlayingChanged`: store the new now-playing and refresh cover art.
 async fn apply_now_playing_changed(
     daemon_state: &SharedDaemonState,
@@ -204,20 +222,33 @@ async fn apply_now_playing_changed(
                     })
                     .await
                 {
-                    Ok(DaemonResponse::CoverArt(bytes)) => {
+                    Ok(DaemonResponse::CoverArt(bytes)) if !bytes.is_empty() => {
                         info!("Cover art bytes received: {} bytes", bytes.len());
-                        if !bytes.is_empty() {
-                            let mut guard = cover_art
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            guard.load(id, &bytes);
-                        }
+                        let mut guard = cover_art
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        guard.load(id, &bytes);
+                    }
+                    Ok(DaemonResponse::CoverArt(_)) => {
+                        warn!("FetchCoverArt returned empty bytes; will retry on next update");
+                        let mut guard = cover_art
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        guard.fail_pending(&id);
                     }
                     Ok(other) => {
                         warn!("FetchCoverArt: unexpected response: {:?}", other);
+                        let mut guard = cover_art
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        guard.fail_pending(&id);
                     }
                     Err(e) => {
                         warn!("FetchCoverArt failed: {}", e);
+                        let mut guard = cover_art
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        guard.fail_pending(&id);
                     }
                 }
             }
@@ -250,6 +281,10 @@ async fn apply_config_changed(
     let replay_gain_clip = cfg.replay_gain_clip;
     let playback_filters = cfg.playback_filters.clone();
     let keybindings = cfg.keybindings.clone();
+    let cava_enabled = cfg.cava;
+    let cava_size = cfg.cava_size;
+    let daemon_enabled = cfg.daemon;
+    let theme = cfg.theme.clone();
     {
         let mut ds = daemon_state.write().await;
         ds.config = cfg;
@@ -267,6 +302,13 @@ async fn apply_config_changed(
         cs.settings_state.replay_gain_clip = replay_gain_clip;
         cs.settings_state.playback_filters = playback_filters;
         cs.settings_state.keybindings = keybindings;
+        // Mirror the remaining settings so a ConfigChanged originating outside
+        // this TUI (another client or ferrosonicd) does not leave the Settings
+        // page showing stale values.
+        cs.settings_state.cava_enabled = cava_enabled;
+        cs.settings_state.cava_size = cava_size;
+        cs.settings_state.daemon_enabled = daemon_enabled;
+        cs.settings_state.set_theme_by_name(&theme);
     }
 
     if cover_art_enabled {
@@ -291,18 +333,26 @@ async fn apply_config_changed(
             };
             if should_fetch {
                 info!("Cover art enabled; fetching current id={}", id);
-                if let Ok(DaemonResponse::CoverArt(bytes)) = client
+                match client
                     .request(DaemonRequest::FetchCoverArt {
                         id: id.clone(),
                         size: 512,
                     })
                     .await
                 {
-                    if !bytes.is_empty() {
+                    Ok(DaemonResponse::CoverArt(bytes)) if !bytes.is_empty() => {
                         let mut guard = cover_art
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
                         guard.load(id, &bytes);
+                    }
+                    _ => {
+                        // Transient fetch failure: release the reservation so a
+                        // later NowPlayingChanged retries instead of staying blank.
+                        let mut guard = cover_art
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        guard.fail_pending(&id);
                     }
                 }
             }

@@ -75,6 +75,32 @@ async fn down_in_option_pane_starred_to_random_triggers_refresh() {
 
 #[tokio::test]
 #[serial]
+async fn down_in_option_pane_moves_a_full_grid_row_on_a_short_pane() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.focus = 0;
+        cs.songs.selected_option = Some(SongOption::Starred);
+        // height 6 -> 4 rows -> 2 columns, so Starred(row0,col0) is directly
+        // above RandomAlbum(row1,col0); Down must move by the column count.
+        cs.layout.content_left = Some(ratatui::layout::Rect::new(0, 0, 50, 6));
+    }
+    fx.app.handle_key(key(KeyCode::Down)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::RandomAlbum),
+        "Down must step a full grid row when the pane renders multiple columns"
+    );
+    fx.app.handle_key(key(KeyCode::Up)).await.unwrap();
+    assert_eq!(
+        fx.app.client_state.read().await.songs.selected_option,
+        Some(SongOption::Starred),
+        "Up must step a full grid row back"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn down_at_random_triggers_random_album_refresh() {
     let mut fx = build_app().await;
     {
@@ -594,4 +620,50 @@ async fn returning_to_quick_play_retains_random_album_without_refresh() {
         Some(SongOption::RandomAlbum)
     );
     assert!(rec.requests().await.is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn highlighted_song_requires_song_pane_focus_on_quick_play() {
+    use ferrosonic::app::state::AppState;
+
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.songs.selected_option = Some(SongOption::Starred);
+        cs.songs.selected_index = Some(0);
+        cs.songs.focus = 0;
+    }
+    {
+        let mut ds = fx.app.daemon_state.write().await;
+        ds.library.starred_songs = vec![song("s1")];
+    }
+
+    {
+        let ds = fx.app.daemon_state.read().await;
+        let mut cs = fx.app.client_state.write().await;
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
+        assert!(
+            state.highlighted_song().is_none(),
+            "with the option pane focused, no song row is highlighted"
+        );
+    }
+
+    fx.app.client_state.write().await.songs.focus = 1;
+    {
+        let ds = fx.app.daemon_state.read().await;
+        let mut cs = fx.app.client_state.write().await;
+        let state = AppState {
+            daemon: &ds,
+            client: &mut cs,
+        };
+        assert_eq!(
+            state.highlighted_song().map(|(id, _)| id),
+            Some("s1".to_string()),
+            "with the song pane focused, the highlighted row resolves"
+        );
+    }
 }

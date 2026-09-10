@@ -77,7 +77,7 @@ impl DaemonCore {
             state.queue_position = None;
             match (play_from, client_opt) {
                 (Some(idx), Some(client)) => self
-                    .commit_play_state_in_lock(&mut state, &client, idx)
+                    .commit_play_state_in_lock(&mut state, &client, idx, true)
                     .ok()
                     .map(|(s, u)| (s, u, idx)),
                 _ => None,

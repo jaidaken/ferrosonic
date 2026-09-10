@@ -261,3 +261,58 @@ async fn apply_event_config_changed_disables_cover_art_clears_guard() {
     ));
     ferrosonic::app::apply_event(&app.daemon_state, &app.client_state, &client, &cover, ev).await;
 }
+
+fn now_playing_cover_event(id: &str, cover_id: &str) -> DaemonEvent {
+    DaemonEvent::NowPlayingChanged(Box::new(ferrosonic::daemon::state::NowPlaying {
+        song: Some(song_with_cover(id, cover_id)),
+        state: ferrosonic::daemon::state::PlaybackState::Playing,
+        position: 0.0,
+        duration: 180.0,
+        sample_rate: None,
+        bit_depth: None,
+        format: None,
+        channels: None,
+    }))
+}
+
+#[tokio::test]
+#[serial]
+async fn cover_art_fetch_failure_releases_pending_and_retries() {
+    let (app, td) = build_app().await;
+    {
+        let mut ds = app.daemon_state.write().await;
+        ds.config.cover_art = true;
+    }
+    let client: std::sync::Arc<dyn ferrosonic::ipc::DaemonClient> =
+        std::sync::Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone()));
+    let cover = std::sync::Arc::new(std::sync::Mutex::new(
+        ferrosonic::ui::cover_art::CoverArtState {
+            picker: Some(ratatui_image::picker::Picker::from_fontsize((8, 16))),
+            protocol_type: Some(ratatui_image::picker::ProtocolType::Halfblocks),
+            cell_size: (8, 16),
+            current_id: None,
+            image: None,
+            protocol: None,
+            chafa_cache: None,
+        },
+    ));
+
+    // No cover-art mock: the fetch fails and must release the reservation.
+    let ev = now_playing_cover_event("s1", "art-retry");
+    ferrosonic::app::apply_event(&app.daemon_state, &app.client_state, &client, &cover, ev).await;
+    assert!(
+        cover.lock().unwrap().current_id.is_none(),
+        "a failed fetch must release the pending reservation so a retry is possible"
+    );
+
+    // Mount the art and re-send the SAME id: it must now fetch and load.
+    let png = small_jpeg();
+    td.fake_subsonic
+        .expect_get_cover_art("art-retry", png)
+        .await;
+    let ev = now_playing_cover_event("s1", "art-retry");
+    ferrosonic::app::apply_event(&app.daemon_state, &app.client_state, &client, &cover, ev).await;
+    let g = cover.lock().unwrap();
+    assert_eq!(g.current_id.as_deref(), Some("art-retry"));
+    assert!(g.image.is_some(), "retry must decode and hold the image");
+}

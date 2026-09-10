@@ -13,7 +13,7 @@ use tracing::info;
 use url::Url;
 
 use crate::app::state::{SharedClientState, SharedDaemonState};
-use crate::config::Config;
+use crate::config::{Config, RepeatMode};
 use crate::daemon::state::{NowPlaying, PlaybackState};
 use crate::ipc::{DaemonClient, DaemonRequest, DaemonResponse};
 use crate::subsonic::auth::generate_auth_params;
@@ -71,6 +71,10 @@ pub struct MprisPlayer {
     /// widget won't fetch the remote authenticated Subsonic URL, but it
     /// loads a `file://` reliably (same as our desktop notifications).
     cover_cache: Mutex<Option<CoverCache>>,
+    /// Last volume applied through MPRIS, in percent (0..=100). mpv owns the
+    /// authoritative value; caching it here keeps the `Volume` getter
+    /// consistent with `SetVolume` for the session instead of always 1.0.
+    volume: std::sync::atomic::AtomicI32,
 }
 
 impl MprisPlayer {
@@ -86,6 +90,7 @@ impl MprisPlayer {
             client,
             rt: tokio::runtime::Handle::current(),
             cover_cache: Mutex::new(None),
+            volume: std::sync::atomic::AtomicI32::new(100),
         }
     }
 
@@ -140,6 +145,18 @@ impl MprisPlayer {
                 tracing::warn!("MPRIS request failed: {}", e);
             }
         });
+    }
+
+    /// `file://` URL for `cover_id` if it has already been mirrored locally.
+    /// Synchronous (no fetch/await), so the `metadata()` getter's future stays
+    /// `Sync` as `mpris-server` requires; the push path does the mirroring.
+    // The guard must outlive `cache`, which borrows into it; an early drop
+    // would not compile, so tightening is borrow-blocked.
+    #[allow(clippy::significant_drop_tightening)]
+    fn cached_cover_uri(&self, cover_id: &str) -> Option<String> {
+        let guard = self.cover_cache.try_lock().ok()?;
+        let cache = guard.as_ref()?;
+        (cache.cover_id == cover_id).then(|| format!("file://{}", cache.file.path().display()))
     }
 
     async fn get_state(&self) -> (NowPlaying, Option<Child>, Config) {
@@ -272,10 +289,12 @@ impl PlayerInterface for MprisPlayer {
     }
 
     async fn loop_status(&self) -> fdo::Result<LoopStatus> {
-        Ok(LoopStatus::None)
+        let (_now_playing, _current_song, config) = self.get_state().await;
+        Ok(repeat_to_loop(config.repeat_mode))
     }
 
-    async fn set_loop_status(&self, _loop_status: LoopStatus) -> Result<()> {
+    async fn set_loop_status(&self, loop_status: LoopStatus) -> Result<()> {
+        self.fire(DaemonRequest::SetRepeatMode(loop_to_repeat(loop_status)));
         Ok(())
     }
 
@@ -297,19 +316,35 @@ impl PlayerInterface for MprisPlayer {
 
     async fn metadata(&self) -> fdo::Result<Metadata> {
         let (_now_playing, current_song, config) = self.get_state().await;
-
-        // Share metadata fields; cover downloads stay on the tokio runtime.
-        Ok(current_song.map_or_else(Metadata::new, |song| build_metadata_for(&song, &config)))
+        let Some(song) = current_song else {
+            return Ok(Metadata::new());
+        };
+        // Build the shared fields, then replace the authenticated remote art
+        // URL with a locally mirrored `file://` one. The remote URL embeds a
+        // reusable `t`/`s` credential pair, which must never reach the bus.
+        let mut metadata = build_metadata_for(&song, &config);
+        metadata.set_art_url(None::<String>);
+        if let Some(cover_id) = song.cover_id() {
+            if let Some(file_url) = self.cached_cover_uri(&cover_id) {
+                metadata.set_art_url(Some(file_url));
+            }
+        }
+        Ok(metadata)
     }
 
     async fn volume(&self) -> fdo::Result<Volume> {
-        Ok(1.0)
+        Ok(f64::from(self.volume.load(std::sync::atomic::Ordering::Relaxed)) / 100.0)
     }
 
-    // f64->i32 `as` saturates; volume is the 0.0..=1.0 MPRIS range, so 0..=100.
+    // f64->i32 `as` truncates; the value is clamped to 0.0..=1.0 first.
     #[allow(clippy::cast_possible_truncation)]
     async fn set_volume(&self, volume: Volume) -> Result<()> {
-        let volume_int = (volume * 100.0) as i32;
+        // Clamp a misbehaving client to MPRIS's 0.0..=1.0 range before
+        // rounding to mpv's 0..=100 percent.
+        let clamped = volume.clamp(0.0, 1.0);
+        let volume_int = (clamped * 100.0).round() as i32;
+        self.volume
+            .store(volume_int, std::sync::atomic::Ordering::Relaxed);
         self.fire(DaemonRequest::SetVolume(volume_int));
         Ok(())
     }
@@ -399,6 +434,8 @@ pub struct MprisPropertySnapshot {
     pub cover_id: Option<String>,
     /// Track metadata, when a song is loaded.
     pub metadata: Option<Metadata>,
+    /// Repeat mode mirrored to MPRIS `LoopStatus`.
+    pub loop_status: LoopStatus,
 }
 
 /// Pure: builds the property snapshot from daemon state.
@@ -425,6 +462,7 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
 
     let cover_id = current_song.as_ref().and_then(Child::cover_id);
     let metadata = current_song.map(|song| build_metadata_for(&song, &config));
+    let loop_status = repeat_to_loop(config.repeat_mode);
 
     MprisPropertySnapshot {
         playback,
@@ -433,14 +471,53 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
         can_play,
         cover_id,
         metadata,
+        loop_status,
+    }
+}
+
+/// Encode a Subsonic song id into a D-Bus object-path-safe track suffix.
+///
+/// D-Bus path elements permit only `[A-Za-z0-9_]`, but Subsonic ids are opaque
+/// and routinely contain `-`, `.`, `:`, and other punctuation, so
+/// `TrackId::try_from` would reject them and `mpris:trackid` would be silently
+/// dropped. Hex-encoding the UTF-8 bytes yields a stable, valid, reversible
+/// suffix for any id.
+fn encode_track_id(song_id: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(song_id.len() * 2);
+    for byte in song_id.as_bytes() {
+        // Writing into a String cannot fail; the `Result` is discarded.
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+/// Map ferrosonic's repeat mode to MPRIS `LoopStatus`.
+const fn repeat_to_loop(mode: RepeatMode) -> LoopStatus {
+    match mode {
+        RepeatMode::Off => LoopStatus::None,
+        RepeatMode::All => LoopStatus::Playlist,
+        RepeatMode::One => LoopStatus::Track,
+    }
+}
+
+/// Map MPRIS `LoopStatus` back to ferrosonic's repeat mode.
+const fn loop_to_repeat(status: LoopStatus) -> RepeatMode {
+    match status {
+        LoopStatus::None => RepeatMode::Off,
+        LoopStatus::Playlist => RepeatMode::All,
+        LoopStatus::Track => RepeatMode::One,
     }
 }
 
 fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
     let mut metadata = Metadata::new();
     metadata.set_trackid(
-        Some(TrackId::try_from(format!("/org/mpris/MediaPlayer2/Track/{}", song.id)).ok())
-            .flatten(),
+        TrackId::try_from(format!(
+            "/org/mpris/MediaPlayer2/Track/{}",
+            encode_track_id(&song.id)
+        ))
+        .ok(),
     );
     metadata.set_title(Some(song.title.clone()));
     metadata.set_artist(song.artist.clone().map(|a| vec![a]));
@@ -484,6 +561,7 @@ pub async fn update_mpris_properties(
             Property::CanGoNext(snap.can_go_next),
             Property::CanGoPrevious(snap.can_go_prev),
             Property::CanPlay(snap.can_play),
+            Property::LoopStatus(snap.loop_status),
         ])
         .await?;
 
@@ -527,6 +605,10 @@ async fn push_metadata(
     mut metadata: Metadata,
     cover_id: Option<&str>,
 ) -> Result<()> {
+    // Never publish the authenticated remote Subsonic art URL: it carries a
+    // reusable `t`/`s` credential pair. Publish only a locally mirrored
+    // `file://` URL, or no art at all when the mirror cannot be produced.
+    metadata.set_art_url(None::<String>);
     if let Some(cid) = cover_id {
         if let Some(file_url) = server.imp().cover_file_uri(cid).await {
             metadata.set_art_url(Some(file_url));
@@ -569,6 +651,25 @@ mod rating_event_tests {
             state.read().await.queue[0].user_rating,
             Some(1),
             "MPRIS must not race the TUI by mutating its state mirror"
+        );
+    }
+
+    #[test]
+    fn track_id_encoding_is_path_safe_for_punctuated_ids() {
+        // D-Bus path elements reject punctuation; hex-encoding keeps every id
+        // valid instead of silently dropping mpris:trackid.
+        assert_eq!(encode_track_id("abc"), "616263");
+        assert_eq!(encode_track_id("track-1"), "747261636b2d31");
+
+        let song = Child {
+            id: "f47ac10b-58cc-4372-a567-0e02b2c3d479".into(),
+            title: "UUID track".into(),
+            ..Default::default()
+        };
+        let metadata = build_metadata_for(&song, &Config::new());
+        assert!(
+            metadata.trackid().is_some(),
+            "a hyphenated/UUID id must still yield a valid trackid"
         );
     }
 }
