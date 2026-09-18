@@ -25,12 +25,16 @@ impl DaemonCore {
     ///
     /// # Errors
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    // One serialized transaction keeps validation, credential placement,
+    // persistence, live state, and client replacement visibly ordered.
+    #[allow(clippy::too_many_lines)]
     pub async fn update_server_config(
         self: &Arc<Self>,
         base_url: &str,
         username: &str,
         password: &crate::secret::Secret,
     ) -> Result<PasswordStorage, Error> {
+        let transaction = self.config_transactions.lock().await;
         // Snapshot under a short read lock; never hold `state` across the
         // keychain/file/persist work below.
         let (mut candidate, old_url, old_user, had_keyring, music_folder_id, eval_present, pf_opt) = {
@@ -51,6 +55,13 @@ impl DaemonCore {
         // transient `FERROSONIC_PASSWORD` env override and may be persisted.
         candidate.password_from_env = false;
 
+        // Validate before any credential or persistence side effect. In
+        // particular, a malformed URL must not create/delete a keychain entry
+        // or replace a password file belonging to the working configuration.
+        let mut new_client =
+            SubsonicClient::new(base_url, username, password).map_err(Error::Subsonic)?;
+        new_client.set_music_folder(music_folder_id);
+
         // Resolve where the secret lands, performing the secret side effect
         // first. The candidate's inline `password` is cleared for external
         // storage so a failed save can never leak the plaintext to disk.
@@ -59,7 +70,18 @@ impl DaemonCore {
             candidate.password = crate::secret::Secret::new();
             PasswordStorage::PasswordEval
         } else if let Some(pf) = pf_opt.as_deref() {
-            if let Err(e) = crate::config::write_password_file_atomic(pf, password) {
+            let pf_owned = pf.to_string();
+            let password_owned = password.clone();
+            let write_result = tokio::task::spawn_blocking(move || {
+                crate::config::write_password_file_atomic(&pf_owned, &password_owned)
+            })
+            .await
+            .map_err(|e| {
+                Error::Io(std::io::Error::other(format!(
+                    "password-file write task failed: {e}"
+                )))
+            })?;
+            if let Err(e) = write_result {
                 error!("Failed to write password to {}: {}", pf, e);
                 return Err(Error::Io(e));
             }
@@ -89,29 +111,23 @@ impl DaemonCore {
             }
         };
 
-        // Persist before touching live state.
-        if let Err(e) = candidate.save_default() {
+        // Persist before touching live state, and keep synchronous fsync work
+        // off the async worker.
+        let to_write = candidate.clone();
+        let save_result = tokio::task::spawn_blocking(move || to_write.save_default())
+            .await
+            .map_err(|e| {
+                Error::Io(std::io::Error::other(format!(
+                    "config save task failed: {e}"
+                )))
+            })?;
+        if let Err(e) = save_result {
             if storage == PasswordStorage::Keyring && (old_url != base_url || old_user != username)
             {
                 let _ = crate::secret_store::delete(base_url, username);
             }
             return Err(Error::Config(e));
         }
-
-        // Validate the URL up front so a malformed base_url cannot leave the
-        // persisted config and live client disagreeing.
-        let mut new_client = match SubsonicClient::new(base_url, username, password) {
-            Ok(client) => client,
-            Err(e) => {
-                if storage == PasswordStorage::Keyring
-                    && (old_url != base_url || old_user != username)
-                {
-                    let _ = crate::secret_store::delete(base_url, username);
-                }
-                return Err(Error::Subsonic(e));
-            }
-        };
-        new_client.set_music_folder(music_folder_id);
 
         // Commit the persisted config, keeping the typed password live for the
         // client (the file itself omits it for external storage).
@@ -138,6 +154,8 @@ impl DaemonCore {
             slot.replace(new_client);
         }
 
+        drop(transaction);
+
         self.refresh_starred().await;
         self.refresh_artists().await;
         self.refresh_playlists().await;
@@ -153,9 +171,19 @@ impl DaemonCore {
     /// never runs on an async worker and never holds the `state` lock, so a
     /// slow filesystem cannot stall the playback tick or the UI mirror. On a
     /// persist failure the live config is left untouched.
-    async fn persist_config<F>(self: &Arc<Self>, mutate: F) -> Result<(), Error>
+    pub(super) async fn persist_config<F>(self: &Arc<Self>, mutate: F) -> Result<(), Error>
     where
-        F: Fn(&mut crate::config::Config),
+        F: FnOnce(&mut crate::config::Config),
+    {
+        let _transaction = self.config_transactions.lock().await;
+        self.persist_config_locked(mutate).await
+    }
+
+    /// Persist and commit a config candidate while the caller holds
+    /// `config_transactions`.
+    pub(super) async fn persist_config_locked<F>(&self, mutate: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut crate::config::Config),
     {
         let mut candidate = { self.state.read().await.config.clone() };
         mutate(&mut candidate);
@@ -168,11 +196,12 @@ impl DaemonCore {
                 )))
             })?
             .map_err(Error::Config)?;
-        // Re-apply to live state (rather than replacing it) so a concurrent
-        // setting change between the clone and here is preserved.
+        // Commit the exact complete candidate that reached disk. The outer
+        // transaction lock prevents another setter from snapshotting until
+        // disk and live state agree.
         {
             let mut state = self.state.write().await;
-            mutate(&mut state.config);
+            state.config = candidate;
         }
         Ok(())
     }
@@ -249,6 +278,66 @@ impl DaemonCore {
     /// Returns an `Error` if persisting the config or a follow-up server request fails.
     pub async fn set_auto_continue(self: &Arc<Self>, on: bool) -> Result<(), Error> {
         self.persist_config(move |c| c.auto_continue = on).await?;
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the stream-on-start toggle. Takes effect on the next cold queue
+    /// start; the currently playing track is left alone.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_stream_on_start(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        self.persist_config(move |c| c.stream_on_start = on).await?;
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the resume-on-start toggle. Takes effect on the next daemon
+    /// shutdown/start.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_resume_on_start(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        self.persist_config(move |c| c.resume_on_start = on).await?;
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the autoplay-on-start toggle. Takes effect on the next start.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_autoplay_on_start(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        self.persist_config(move |c| c.autoplay_on_start = on)
+            .await?;
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the offline-cache toggle. Takes effect on the next play.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_offline_cache_enabled(self: &Arc<Self>, on: bool) -> Result<(), Error> {
+        self.persist_config(move |c| c.offline_cache_enabled = on)
+            .await?;
+        self.offline_cache_enabled
+            .store(on, std::sync::atomic::Ordering::Release);
+        self.emit_config_changed().await;
+        Ok(())
+    }
+
+    /// Persist the offline-cache size cap in MiB, clamped to 1..=102400.
+    ///
+    /// # Errors
+    /// Returns an `Error` if persisting the config or a follow-up server request fails.
+    pub async fn set_offline_cache_max_mb(self: &Arc<Self>, mb: u32) -> Result<(), Error> {
+        let clamped = mb.clamp(1, 102_400);
+        self.persist_config(move |c| c.offline_cache_max_mb = clamped)
+            .await?;
+        self.offline_cache_max_mb
+            .store(clamped, std::sync::atomic::Ordering::Release);
         self.emit_config_changed().await;
         Ok(())
     }

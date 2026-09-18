@@ -456,3 +456,51 @@ fn search_artist_when_expanded_lists_their_albums() {
         frame
     );
 }
+
+#[test]
+fn search_title_shows_result_counts() {
+    let (daemon, mut client) = build_state();
+    client.page = Page::Library;
+    client.artists.filter_active = true;
+    client.artists.filter = "b".into();
+    client.artists.search_results = Some(SearchResult3 {
+        artist: vec![Artist {
+            id: "a0".into(),
+            name: "Blur".into(),
+            album_count: Some(2),
+            cover_art: None,
+        }],
+        album: vec![
+            Album {
+                id: "alb0".into(),
+                name: "Blackstar".into(),
+                artist: Some("David Bowie".into()),
+                artist_id: Some("a1".into()),
+                cover_art: None,
+                song_count: Some(7),
+                original_release_date: None,
+                duration: Some(2000),
+                year: Some(2016),
+                genre: None,
+            },
+            Album {
+                id: "alb1".into(),
+                name: "Blackout".into(),
+                artist: Some("Britney Spears".into()),
+                artist_id: Some("a2".into()),
+                cover_art: None,
+                song_count: Some(12),
+                original_release_date: None,
+                duration: Some(2600),
+                year: Some(2007),
+                genre: None,
+            },
+        ],
+        song: vec![song("s0", "Breathe")],
+    });
+    let frame = render(120, 30, &daemon, &mut client);
+    assert!(
+        frame.contains("1 artists") && frame.contains("2 albums") && frame.contains("1 songs"),
+        "the search title must show per-section result counts;\n{frame}"
+    );
+}

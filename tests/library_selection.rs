@@ -170,6 +170,35 @@ async fn quick_play_album_uses_selected_music_folder() {
 
 #[tokio::test]
 #[serial]
+async fn later_same_category_quick_play_refresh_wins() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_reversed_quick_play_albums("newest")
+        .await;
+    let older = {
+        let core = td.core.clone();
+        tokio::spawn(async move {
+            core.refresh_quick_play_album(QuickPlayAlbumKind::Newest)
+                .await;
+        })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    td.core
+        .refresh_quick_play_album(QuickPlayAlbumKind::Newest)
+        .await;
+    older.await.unwrap();
+
+    let state = td.state.read().await;
+    let songs = state
+        .library
+        .quick_play_album_songs
+        .get(&QuickPlayAlbumKind::Newest)
+        .unwrap();
+    assert_eq!(songs.first().map(|s| s.title.as_str()), Some("Newer Track"));
+}
+
+#[tokio::test]
+#[serial]
 async fn f_on_library_page_cycles_to_the_next_folder() {
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_artists(&["A"]).await;

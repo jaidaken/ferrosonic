@@ -173,6 +173,62 @@ Reference:
 
 - <https://opensubsonic.netlify.app/docs/endpoints/getalbumlist2/>
 
+## Next cycle
+
+**Implemented.** Five approved follow-ups, delivered in order with regression
+coverage and the full verification set between stages.
+
+Shared config additions use the established settings path: serde default,
+`ConfigOnDisk`, `KNOWN_CONFIG_KEYS`, a `Set*` IPC request, and a Settings row.
+
+- `ResumeOnStart`, `AutoplayOnStart`
+- `OfflineCacheEnabled`, `OfflineCacheMaxMb`
+- `SearchDebounceMs`, `SearchArtistLimit`, `SearchAlbumLimit`, `SearchSongLimit`
+
+### 1. Playlist cover art
+
+Render the selected playlist's cover art in the Playlists page songs pane.
+`getPlaylists` already carries `coverArt`, but `PlaylistDetail` drops it and
+`get_playlist` hardcodes `None`; both are fixed. The Playlists state gets its
+own cover-art slot (separate from the now-playing image) and skips art below a
+measured pane size.
+
+### 2. Search polish
+
+- Debounce `search3` keystrokes by `SearchDebounceMs` (default 200) while
+  keeping the existing generation-based stale-reply guard.
+- Persist a capped, deduplicated recent-query history.
+- Highlight the matched substring in result rows.
+- Show per-section result counts and use the configurable result limits in
+  place of the hardcoded 100/100/200.
+
+### 3. Resume where you left off
+
+Extend `QueueSnapshot` with playhead seconds and paused state (defaulted for
+backward compatibility). When `ResumeOnStart` is on, a graceful daemon stop
+writes a final snapshot instead of deleting it; boot restores the queue and
+now-playing at the saved index. `AutoplayOnStart` chooses between starting
+playback immediately and restoring paused. Saving is event-driven plus a slow
+periodic timer, never per-tick. An unattended restored-paused daemon must still
+be eligible for idle exit.
+
+### 4. Artist/album info panel
+
+On-demand `getArtistInfo2` / `getAlbumInfo2` shown in a scrollable overlay
+(modeled on the lyrics overlay). Navidrome returns this data only with external
+(Last.fm) integration, so the panel must degrade to a clean empty state. The
+daemon caches results per id; the render loop never fetches.
+
+### 5. Offline track cache
+
+Auto-cache streamed tracks under `$XDG_CACHE_HOME/ferrosonic/tracks`
+(directory `0700`, files `0600`) with an atomic index and LRU eviction under
+`OfflineCacheMaxMb`. Playback prefers a cached local file and falls back to
+streaming; gapless preload uses the cached path when present. Disabled by
+default. Auto-caching during streaming costs a second fetch per track; the
+buffered path caches the file it already downloaded. Offline library browsing
+(metadata cache) is explicitly out of scope for this stage.
+
 ## Verification for every stage
 
 At minimum, run formatting, both repository Clippy checks, all-target nextest,

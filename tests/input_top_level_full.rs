@@ -133,11 +133,25 @@ async fn fkey_on_server_page_reverts_unsaved_edits() {
     let cs = app.client_state.read().await;
     assert_eq!(cs.server_state.base_url, "");
     assert_eq!(cs.server_state.username, "");
-    // The password is deliberately NOT reverted: the daemon-owned mirror is
-    // scrubbed, so resetting it here would erase the locally resolved secret
-    // and a later Save would persist an empty password.
-    assert_eq!(cs.server_state.password.reveal(), "edited-p");
+    assert_eq!(cs.server_state.password.reveal(), "");
     assert!(cs.server_state.status.is_none());
+}
+
+#[tokio::test]
+#[serial]
+async fn server_page_reverts_dirty_password_to_committed_local_secret() {
+    let mut app = build_app().await;
+    app.handle_key(key(KeyCode::F(5))).await.unwrap();
+    {
+        let mut cs = app.client_state.write().await;
+        cs.server_state.committed_password = "committed".into();
+        cs.server_state.password = "unsaved".into();
+    }
+    app.handle_key(key(KeyCode::F(1))).await.unwrap();
+    assert_eq!(
+        app.client_state.read().await.server_state.password.reveal(),
+        "committed"
+    );
 }
 
 #[tokio::test]

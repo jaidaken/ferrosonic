@@ -15,6 +15,8 @@ async fn save_then_load_restores_queue_and_position() {
     let snap = QueueSnapshot {
         queue: songs("t", 4),
         position: Some(2),
+        position_secs: None,
+        paused: false,
     };
     let written = snap.save().expect("save snapshot");
     assert!(written.exists(), "queue.json must exist after save");
@@ -55,6 +57,8 @@ async fn save_is_atomic_via_temp_file_rename() {
     let snap = QueueSnapshot {
         queue: vec![song("a", "A")],
         position: None,
+        position_secs: None,
+        paused: false,
     };
     snap.save().unwrap();
 
@@ -76,6 +80,39 @@ async fn save_is_atomic_via_temp_file_rename() {
 
 #[tokio::test]
 #[serial]
+async fn playhead_and_paused_round_trip() {
+    let dir = common::tempdir();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
+
+    let snap = QueueSnapshot {
+        queue: songs("t", 3),
+        position: Some(1),
+        position_secs: Some(42.5),
+        paused: true,
+    };
+    snap.save().expect("save snapshot");
+    let loaded = QueueSnapshot::load().unwrap();
+    assert_eq!(loaded.position_secs, Some(42.5));
+    assert!(loaded.paused);
+}
+
+#[tokio::test]
+#[serial]
+async fn pre_resume_snapshot_loads_with_defaulted_fields() {
+    // Snapshots written before resume-at-position lack `position_secs`/`paused`.
+    let dir = common::tempdir();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
+    let legacy = r#"{"queue":[{"id":"s1","title":"T"}],"position":0}"#;
+    std::fs::write(dir.path().join("queue.json"), legacy).unwrap();
+
+    let loaded = QueueSnapshot::load().expect("legacy snapshot must still load");
+    assert_eq!(loaded.position, Some(0));
+    assert_eq!(loaded.position_secs, None);
+    assert!(!loaded.paused);
+}
+
+#[tokio::test]
+#[serial]
 async fn empty_queue_round_trips() {
     let dir = common::tempdir();
     std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
@@ -83,6 +120,8 @@ async fn empty_queue_round_trips() {
     let snap = QueueSnapshot {
         queue: vec![],
         position: None,
+        position_secs: None,
+        paused: false,
     };
     snap.save().unwrap();
     let loaded = QueueSnapshot::load().unwrap();

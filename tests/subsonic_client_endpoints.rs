@@ -249,6 +249,51 @@ async fn get_playlist_parses_songs() {
 
 #[tokio::test]
 #[serial]
+async fn get_artist_info2_parses_biography() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_artist_info2("a1", "A long biography.").await;
+    let c = build_client(&fake).await;
+    let info = c.get_artist_info2("a1").await.unwrap();
+    assert_eq!(info.biography.as_deref(), Some("A long biography."));
+}
+
+#[tokio::test]
+#[serial]
+async fn get_album_info2_parses_notes() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_album_info2("al1", "Liner notes.").await;
+    let c = build_client(&fake).await;
+    let info = c.get_album_info2("al1").await.unwrap();
+    assert_eq!(info.notes.as_deref(), Some("Liner notes."));
+}
+
+#[tokio::test]
+#[serial]
+async fn get_playlist_preserves_cover_art() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_get_playlist_with_cover("p0", "Mix", "pl-cover")
+        .await;
+    let c = build_client(&fake).await;
+    let (pl, _songs) = c.get_playlist("p0").await.unwrap();
+    assert_eq!(
+        pl.cover_art.as_deref(),
+        Some("pl-cover"),
+        "getPlaylist coverArt must survive into the model"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn get_playlist_without_cover_art_is_none() {
+    let fake = FakeSubsonic::start().await;
+    fake.expect_get_playlist("p0", "Mix", &[]).await;
+    let c = build_client(&fake).await;
+    let (pl, _songs) = c.get_playlist("p0").await.unwrap();
+    assert!(pl.cover_art.is_none());
+}
+
+#[tokio::test]
+#[serial]
 async fn get_starred_songs_returns_list() {
     let fake = FakeSubsonic::start().await;
     fake.expect_starred_with(&["Star1", "Star2"]).await;

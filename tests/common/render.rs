@@ -29,10 +29,11 @@ pub fn render(width: u16, height: u16, daemon: &DaemonState, client: &mut Client
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("create test terminal");
     let cover_art = empty_cover_art_state();
+    let playlist_cover_art = empty_cover_art_state();
     terminal
         .draw(|frame| {
             let mut bundle = AppState { daemon, client };
-            ui::draw(frame, &mut bundle, &cover_art);
+            ui::draw(frame, &mut bundle, &cover_art, &playlist_cover_art);
         })
         .expect("render frame");
     buffer_to_text(terminal.backend().buffer())
@@ -65,10 +66,11 @@ pub fn render_styled(
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).expect("create test terminal");
     let cover_art = empty_cover_art_state();
+    let playlist_cover_art = empty_cover_art_state();
     terminal
         .draw(|frame| {
             let mut bundle = AppState { daemon, client };
-            ui::draw(frame, &mut bundle, &cover_art);
+            ui::draw(frame, &mut bundle, &cover_art, &playlist_cover_art);
         })
         .expect("render frame");
     StyledScreen {

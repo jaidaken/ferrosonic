@@ -167,7 +167,7 @@ async fn metadata_omits_user_rating_when_unrated() {
 
 #[tokio::test]
 #[serial]
-async fn metadata_includes_art_url_when_cover_art_present() {
+async fn metadata_carries_cover_id_without_embedding_authenticated_url() {
     let mut cfg = Config::new();
     cfg.base_url = "https://example.com".into();
     cfg.username = "u".into();
@@ -182,15 +182,8 @@ async fn metadata_includes_art_url_when_cover_art_present() {
         s.now_playing.song = Some(sng);
     }
     let snap = build_property_snapshot(&ds).await;
-    let md = snap.metadata.unwrap();
-    let art = md.art_url();
-    assert!(
-        art.is_some(),
-        "art_url should be set when cover_art id present"
-    );
-    let art = art.unwrap();
-    assert!(art.contains("id=art-99"));
-    assert!(art.contains("/rest/getCoverArt"));
+    assert_eq!(snap.cover_id.as_deref(), Some("art-99"));
+    assert!(snap.metadata.unwrap().art_url().is_none());
 }
 
 #[tokio::test]

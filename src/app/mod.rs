@@ -5,6 +5,7 @@ pub mod client_state;
 pub mod event_pump;
 pub mod event_source;
 mod input;
+mod input_info;
 mod input_library;
 mod input_lyrics;
 mod input_playlists;
@@ -18,6 +19,8 @@ mod mouse;
 mod mouse_library;
 mod mouse_playlists;
 pub mod page_state;
+mod playlist_cover;
+pub mod search_history;
 pub mod spawn_daemon;
 pub mod state;
 
@@ -66,6 +69,10 @@ pub struct App {
     pub(crate) last_click: Option<(u16, u16, std::time::Instant)>,
     /// Guard must never span an .await; `clippy::await_holding_lock` enforces.
     pub(crate) cover_art: std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
+    /// Separate cover-art state for the selected playlist's art on the
+    /// Playlists page, so it never fights the now-playing image.
+    pub(crate) playlist_cover_art:
+        std::sync::Arc<std::sync::Mutex<crate::ui::cover_art::CoverArtState>>,
     /// Resolved global-action keymap: `config.keybindings` merged onto the
     /// defaults, built once at startup. Picking up `config.toml` edits
     /// requires restarting the app; this is not live-reloaded.
@@ -106,6 +113,17 @@ impl App {
                     chafa_cache: None,
                 },
             )),
+            playlist_cover_art: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::ui::cover_art::CoverArtState {
+                    picker: None,
+                    protocol_type: None,
+                    cell_size: (10, 20),
+                    current_id: None,
+                    image: None,
+                    protocol: None,
+                    chafa_cache: None,
+                },
+            )),
             keymap,
         }
     }
@@ -130,6 +148,17 @@ impl App {
             cava_config: None,
             last_click: None,
             cover_art: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::ui::cover_art::CoverArtState {
+                    picker: None,
+                    protocol_type: None,
+                    cell_size: (10, 20),
+                    current_id: None,
+                    image: None,
+                    protocol: None,
+                    chafa_cache: None,
+                },
+            )),
+            playlist_cover_art: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::ui::cover_art::CoverArtState {
                     picker: None,
                     protocol_type: None,
@@ -291,11 +320,14 @@ impl App {
 
         // Split-build: ferrosonicd has already populated the library
         // and the snapshot delivered it. In-process: fetch here.
-        if let Some(ref core) = self.core {
+        if let Some(core) = self.core.clone() {
             let has_client = core.subsonic.read().await.is_some();
             if has_client {
                 self.load_initial_data().await;
             }
+            // In-process mode starts playback here; the daemon does the same in
+            // its run loop after mpv is up.
+            core.autoplay_restored_if_configured().await;
         }
 
         let result = self.event_loop(&mut terminal).await;
@@ -561,8 +593,9 @@ impl App {
             client: &mut cs,
         };
         let cover_art = self.cover_art.clone();
+        let playlist_cover_art = self.playlist_cover_art.clone();
         terminal
-            .draw(|frame| ui::draw(frame, &mut bundle, &cover_art))
+            .draw(|frame| ui::draw(frame, &mut bundle, &cover_art, &playlist_cover_art))
             .map_err(UiError::Render)?;
         Ok(())
     }
@@ -576,5 +609,6 @@ impl App {
     pub async fn tick_post(&mut self) {
         self.client_state.write().await.check_notification_timeout();
         self.ensure_open_lyrics().await;
+        self.ensure_playlist_cover().await;
     }
 }

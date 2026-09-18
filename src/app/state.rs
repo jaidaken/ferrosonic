@@ -11,8 +11,9 @@ use crate::config::Config;
 use crate::subsonic::models::Child;
 
 pub use crate::app::page_state::{
-    ArtistsState, FilterListEditor, FilterListKind, KeybindingEditor, LyricsState, LyricsStatus,
-    PlaylistPicker, PlaylistsState, QueueState, ServerState, SettingsState, SongsState,
+    ArtistsState, FilterListEditor, FilterListKind, InfoKind, InfoOverlayState, InfoPayload,
+    InfoStatus, KeybindingEditor, LyricsState, LyricsStatus, PlaylistPicker, PlaylistsState,
+    QueueState, ServerState, SettingsState, SongsState,
 };
 
 /// Top-level TUI page selected via the header tabs.
@@ -240,7 +241,24 @@ pub fn new_shared_daemon_state_with_restored_queue(config: Config) -> SharedDaem
         let pos = snap.position;
         state.queue = snap.queue;
         state.queue_position = pos;
-        tracing::info!("Restored {} queue items (position={:?})", count, pos);
+        // Restore the track and offset as Paused so the UI shows where you
+        // left off; `AutoplayOnStart` (if set) starts it after mpv is up.
+        if let (Some(secs), Some(song)) = (
+            snap.position_secs,
+            pos.and_then(|p| state.queue.get(p)).cloned(),
+        ) {
+            let duration = f64::from(song.duration.unwrap_or(0));
+            state.now_playing.song = Some(song);
+            state.now_playing.state = crate::daemon::state::PlaybackState::Paused;
+            state.now_playing.position = secs.max(0.0);
+            state.now_playing.duration = duration;
+        }
+        tracing::info!(
+            "Restored {} queue items (position={:?}, offset={:?}s)",
+            count,
+            pos,
+            snap.position_secs
+        );
     }
     Arc::new(RwLock::new(state))
 }
@@ -252,10 +270,16 @@ pub fn new_shared_client_state(config: &Config) -> SharedClientState {
     client.server_state.base_url.clone_from(&config.base_url);
     client.server_state.username.clone_from(&config.username);
     client.server_state.password = config.password.clone();
+    client.server_state.committed_password = config.password.clone();
     client.settings_state.cava_enabled = config.cava;
     client.settings_state.cava_size = config.cava_size.clamp(10, 80);
     client.settings_state.daemon_enabled = config.daemon;
     client.settings_state.auto_continue = config.auto_continue;
+    client.settings_state.stream_on_start = config.stream_on_start;
+    client.settings_state.resume_on_start = config.resume_on_start;
+    client.settings_state.autoplay_on_start = config.autoplay_on_start;
+    client.settings_state.offline_cache_enabled = config.offline_cache_enabled;
+    client.settings_state.offline_cache_max_mb = config.offline_cache_max_mb;
     client.settings_state.repeat_mode = config.repeat_mode;
     client.settings_state.cover_art = config.cover_art;
     client.settings_state.cover_art_size = config.cover_art_size.clamp(8, 24);
@@ -265,6 +289,7 @@ pub fn new_shared_client_state(config: &Config) -> SharedClientState {
     client.settings_state.replay_gain_preamp = config.replay_gain_preamp;
     client.settings_state.replay_gain_clip = config.replay_gain_clip;
     client.settings_state.playback_filters = config.playback_filters.clone();
+    client.search_history = crate::app::search_history::load();
     client
         .settings_state
         .keybindings

@@ -471,6 +471,27 @@ async fn shutdown_event_sets_should_quit() {
 
 #[tokio::test]
 #[serial]
+async fn duplicate_shutdown_events_are_idempotent() {
+    let h = build_harness();
+    for _ in 0..2 {
+        apply_event(
+            &h.daemon,
+            &h.client_state,
+            &h.client,
+            &h.cover_art,
+            DaemonEvent::Shutdown,
+        )
+        .await;
+    }
+    let cs = h.client_state.read().await;
+    assert!(cs.should_quit);
+    let notification = cs.notification.as_ref().unwrap();
+    assert!(notification.is_error);
+    assert_eq!(notification.message, "Daemon shut down, disconnecting");
+}
+
+#[tokio::test]
+#[serial]
 async fn rating_events_update_all_client_copies_and_clear() {
     let h = build_harness();
     let list = vec![

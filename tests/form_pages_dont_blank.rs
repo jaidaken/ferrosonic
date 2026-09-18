@@ -86,9 +86,9 @@ fn settings_row_order_matches_selected_field_index_order() {
     // input_settings.rs's Up/Down move `selected_field` by raw +-1 arithmetic
     // (see handle_settings_key), which only produces one-row-at-a-time
     // movement if increasing idx always renders further down the screen.
-    // Regression: ReplayGain (idx 10-12) briefly rendered ABOVE System
-    // (idx 8-9), so pressing Down from Scrobble (7) jumped past ReplayGain to
-    // Daemon (8) and then back up the screen to ReplayGain (10).
+    // Regression: ReplayGain (idx 11-13) briefly rendered ABOVE System
+    // (idx 9-10), so pressing Down from Scrobble (8) jumped past ReplayGain to
+    // Daemon (9) and then back up the screen to ReplayGain (11).
     let (daemon, mut client) = state(Page::Settings);
     let frame = render(80, 50, &daemon, &mut client);
     let pos = |label: &str| {
@@ -98,11 +98,11 @@ fn settings_row_order_matches_selected_field_index_order() {
     };
     assert!(
         pos("Scrobble") < pos("Daemon"),
-        "idx 7 (Scrobble) must render above idx 8 (Daemon):\n{frame}"
+        "idx 8 (Scrobble) must render above idx 9 (Daemon):\n{frame}"
     );
     assert!(
         pos("Notifications") < pos("ReplayGain"),
-        "idx 9 (Notifications) must render above idx 10 (ReplayGain heading):\n{frame}"
+        "idx 10 (Notifications) must render above idx 11 (ReplayGain heading):\n{frame}"
     );
     assert!(
         pos("Daemon") < pos("Mode")
@@ -112,7 +112,7 @@ fn settings_row_order_matches_selected_field_index_order() {
     );
     assert!(
         pos("Prevent Clipping") < pos("Playback Filters"),
-        "idx 12 (ReplayGain Prevent Clipping) must render above idx 13 (Playback Filters heading):\n{frame}"
+        "idx 13 (ReplayGain Prevent Clipping) must render above idx 14 (Playback Filters heading):\n{frame}"
     );
     assert!(
         pos("Min Rating") < pos("Year Min")
@@ -126,7 +126,7 @@ fn settings_row_order_matches_selected_field_index_order() {
 #[test]
 fn settings_scrolls_to_keep_the_selected_row_visible() {
     let (daemon, mut client) = state(Page::Settings);
-    client.settings_state.selected_field = 17; // Duration Max, the last row
+    client.settings_state.selected_field = 18; // Duration Max, the last filter row
     let frame = render(80, 14, &daemon, &mut client);
     assert!(
         frame.contains("Duration Max"),

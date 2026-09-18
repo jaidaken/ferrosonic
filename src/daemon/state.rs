@@ -54,7 +54,7 @@ pub enum PlaybackState {
 }
 
 /// Current track plus live playback properties.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NowPlaying {
     /// Loaded song, if any.
     pub song: Option<Child>,
@@ -72,6 +72,29 @@ pub struct NowPlaying {
     pub format: Option<String>,
     /// "Stereo", "Mono", "5.1ch", etc.
     pub channels: Option<String>,
+    /// Authoritative playback volume as an mpv percentage.
+    #[serde(default = "default_volume")]
+    pub volume: i32,
+}
+
+const fn default_volume() -> i32 {
+    100
+}
+
+impl Default for NowPlaying {
+    fn default() -> Self {
+        Self {
+            song: None,
+            state: PlaybackState::Stopped,
+            position: 0.0,
+            duration: 0.0,
+            sample_rate: None,
+            bit_depth: None,
+            format: None,
+            channels: None,
+            volume: default_volume(),
+        }
+    }
 }
 
 impl NowPlaying {

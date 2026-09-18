@@ -4,6 +4,20 @@
 
 ### Fixed
 
+- **Configuration transactions.** Concurrent settings, server, and music-folder
+  updates now serialize persistence with the matching live/client commit;
+  malformed server URLs are rejected before credential or disk side effects.
+- **Playback transition races.** Pre-buffer failure fallbacks recheck
+  cancellation while holding mpv, manual Next coalesces with an in-flight EOF
+  advance, and resuming from exactly zero no longer starts a second play instance.
+- **Quick Play request and mouse ordering.** A late older category refresh can
+  no longer replace a newer result, and pane borders or unused grid remainder
+  cells no longer select invisible options.
+- **Server detail HTTP errors.** Artist, album, and playlist detail requests now
+  return the same sanitized typed status errors as the common request path.
+- **Server password editor reversion.** Leaving the page discards dirty password
+  text while retaining the last locally committed credential despite scrubbed
+  daemon snapshots.
 - **Shortcut hints on narrow terminals.** The footer now wraps complete
   key/description pairs across the extra rows available on tall, narrow
   displays, while keeping notifications and sample-rate status visible.
@@ -66,6 +80,8 @@
 
 ### Changed
 
+- **Authoritative MPRIS volume.** Volume now lives in daemon now-playing state,
+  so MPRIS reflects changes from every control path and handles non-finite input.
 - **MPRIS repeat and volume.** `LoopStatus` now reflects and sets the repeat
   mode; `Volume` round-trips through `SetVolume` (clamped to 0.0-1.0) instead
   of always reporting 100%.
@@ -87,12 +103,42 @@
   password.
 - **MPRIS art URL.** The `Metadata` getter no longer publishes the
   authenticated remote cover-art URL (which embeds a reusable token); only a
-  locally mirrored `file://` URL is exposed.
+  locally mirrored `file://` URL is exposed. Intermediate property snapshots
+  now carry only the cover id and never construct the authenticated URL.
 - **Owner-only files.** The config directory is created `0700` and the log file
-  `0600`.
+  is enforced as `0600`, including pre-existing permissive log files.
 
 ### Added
 
+- **Stream on start.** Starting a cold queue (picking an album/artist/song,
+  shuffling the library, or auto-continue) now streams the track from the
+  server and begins playback as soon as mpv has enough data, instead of
+  downloading the whole file to disk first. The new `StreamOnStart` setting
+  (`F6` Settings) defaults on; turn it off to restore full pre-buffering for a
+  guaranteed clean start on slow or flaky networks. Gapless playback is
+  unaffected: the next track is still preloaded and prefetched by mpv.
+- **Offline track cache.** Opt-in (`OfflineCacheEnabled`, `F6` Settings):
+  streamed tracks are written to `$XDG_CACHE_HOME/ferrosonic/tracks` with an
+  atomic index and LRU eviction under `OfflineCacheMaxMb` (default 2048 MiB),
+  and subsequent plays load the cached file instead of re-fetching. Gapless
+  preload uses a cached next track when present. Partial downloads are never
+  indexed.
+- **Artist/album information.** Press `I` on a highlighted artist or album to
+  open a scrollable overlay with biography/liner notes, similar artists, and
+  Last.fm/MusicBrainz links, fetched on demand from
+  `getArtistInfo2`/`getAlbumInfo2`. Servers without an external integration
+  (including stock Navidrome) show a graceful empty state.
+- **Resume where you left off.** With `ResumeOnStart` on (the default), a
+  graceful daemon shutdown now persists the queue, current track, and playhead;
+  the next start restores the session paused at the saved offset. Set
+  `AutoplayOnStart` to start playing immediately instead. `ResumeOnStart=false`
+  restores the previous behavior of starting empty.
+- **Search polish.** Library search now debounces keystrokes
+  (`SearchDebounceMs`, default 200), remembers the last 20 queries and recalls
+  them with Up/Down while editing the filter, shows artist/album/song result
+  counts in the pane title, and honors configurable
+  `SearchArtistLimit`/`SearchAlbumLimit`/`SearchSongLimit` instead of fixed
+  caps. Match highlighting in the result tree was already present.
 - **Expanded Quick Play discovery.** Quick Play now includes Newest Album,
   Recently Played, Most Played, and Highest Rated album modes backed by the
   standard `getAlbumList2` categories. Each mode loads the selected album's

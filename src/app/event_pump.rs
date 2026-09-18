@@ -274,6 +274,11 @@ async fn apply_config_changed(
     let cover_art_enabled = cfg.cover_art;
     let cover_art_size = cfg.cover_art_size;
     let auto_continue = cfg.auto_continue;
+    let stream_on_start = cfg.stream_on_start;
+    let resume_on_start = cfg.resume_on_start;
+    let autoplay_on_start = cfg.autoplay_on_start;
+    let offline_cache_enabled = cfg.offline_cache_enabled;
+    let offline_cache_max_mb = cfg.offline_cache_max_mb;
     let scrobble = cfg.scrobble;
     let notifications = cfg.notifications;
     let replay_gain_mode = cfg.replay_gain_mode;
@@ -295,6 +300,11 @@ async fn apply_config_changed(
         cs.settings_state.cover_art = cover_art_enabled;
         cs.settings_state.cover_art_size = cover_art_size;
         cs.settings_state.auto_continue = auto_continue;
+        cs.settings_state.stream_on_start = stream_on_start;
+        cs.settings_state.resume_on_start = resume_on_start;
+        cs.settings_state.autoplay_on_start = autoplay_on_start;
+        cs.settings_state.offline_cache_enabled = offline_cache_enabled;
+        cs.settings_state.offline_cache_max_mb = offline_cache_max_mb;
         cs.settings_state.scrobble = scrobble;
         cs.settings_state.notifications = notifications;
         cs.settings_state.replay_gain_mode = replay_gain_mode;

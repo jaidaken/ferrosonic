@@ -9,6 +9,46 @@ use ferrosonic::daemon::state::PlaybackState;
 use serde_json::Value;
 use serial_test::serial;
 
+#[tokio::test]
+#[serial]
+async fn manual_next_and_automatic_advance_coalesce_to_one_transition() {
+    let td = TestDaemon::new().await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = common::songs("track", 3);
+        s.queue_position = Some(0);
+    }
+    td.fake_mpv.delay_next_loadfile(150).await;
+    let auto = {
+        let core = td.core.clone();
+        tokio::spawn(async move { core.advance_auto().await })
+    };
+    assert!(
+        td.fake_mpv
+            .wait_for(1000, |cmds| cmds
+                .iter()
+                .any(
+                    |c| c.first().and_then(serde_json::Value::as_str) == Some("loadfile")
+                ))
+            .await
+    );
+    td.core.next_track().await.unwrap();
+    auto.await.unwrap().unwrap();
+
+    let loads = td
+        .fake_mpv
+        .commands()
+        .await
+        .into_iter()
+        .filter(|c| {
+            c.first().and_then(serde_json::Value::as_str) == Some("loadfile")
+                && c.get(2).and_then(serde_json::Value::as_str) == Some("replace")
+        })
+        .count();
+    assert_eq!(loads, 1);
+    assert_eq!(td.state.read().await.queue_position, Some(1));
+}
+
 async fn loadfile_paths(td: &TestDaemon) -> Vec<String> {
     td.fake_mpv
         .commands()

@@ -309,3 +309,53 @@ async fn quick_play_left_pane_re_click_same_option_skips_refresh() {
     }
     app.handle_mouse(click(10, 2)).await.unwrap();
 }
+
+#[tokio::test]
+#[serial]
+async fn quick_play_option_borders_and_unused_remainder_are_not_clickable() {
+    let mut app = build_app().await;
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::QuickPlay;
+        cs.songs.selected_option = Some(SongOption::Random);
+        cs.layout.content_left = Some(Rect::new(0, 1, 40, 4));
+    }
+    for (x, y) in [(0, 2), (39, 2), (10, 1), (10, 4), (37, 2), (38, 2)] {
+        app.handle_mouse(click(x, y)).await.unwrap();
+        assert_eq!(
+            app.client_state.read().await.songs.selected_option,
+            Some(SongOption::Random),
+            "border/remainder click ({x},{y}) changed the option"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn quick_play_wrapped_grid_accepts_each_column_and_last_wrapped_cell() {
+    let mut app = build_app().await;
+    {
+        let mut cs = app.client_state.write().await;
+        cs.page = Page::QuickPlay;
+        cs.layout.content_left = Some(Rect::new(0, 1, 40, 4));
+    }
+    let expected = [
+        SongOption::Starred,
+        SongOption::Random,
+        SongOption::RandomAlbum,
+        SongOption::NewestAlbum,
+    ];
+    for (column, option) in expected.into_iter().enumerate() {
+        let x = 1 + u16::try_from(column * 9 + 4).unwrap();
+        app.handle_mouse(click(x, 2)).await.unwrap();
+        assert_eq!(
+            app.client_state.read().await.songs.selected_option,
+            Some(option)
+        );
+    }
+    app.handle_mouse(click(1 + 2 * 9 + 4, 3)).await.unwrap();
+    assert_eq!(
+        app.client_state.read().await.songs.selected_option,
+        Some(SongOption::HighestRated)
+    );
+}

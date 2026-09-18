@@ -175,6 +175,16 @@ pub enum DaemonRequest {
     SetDaemonEnabled(bool),
     /// Enable or disable auto-continue past the end of the queue.
     SetAutoContinue(bool),
+    /// Stream tracks on start instead of pre-buffering the whole file.
+    SetStreamOnStart(bool),
+    /// Persist and restore the queue, track, and playhead across daemon restarts.
+    SetResumeOnStart(bool),
+    /// Auto-play a restored session instead of restoring it paused.
+    SetAutoplayOnStart(bool),
+    /// Cache streamed tracks locally for repeat/offline playback.
+    SetOfflineCacheEnabled(bool),
+    /// Maximum offline cache size in MiB.
+    SetOfflineCacheMaxMb(u32),
     /// Enable or disable reporting plays to the server (scrobbling).
     SetScrobble(bool),
     /// Enable or disable desktop notifications on track change.
@@ -217,6 +227,16 @@ pub enum DaemonRequest {
         artist: Option<String>,
         /// Title used by the classic Subsonic fallback.
         title: String,
+    },
+    /// Fetch an artist's biography and external links.
+    FetchArtistInfo {
+        /// Artist ID.
+        id: String,
+    },
+    /// Fetch an album's notes and external links.
+    FetchAlbumInfo {
+        /// Album ID.
+        id: String,
     },
 
     /// Register this connection for `DaemonEvent` broadcasts.
@@ -291,6 +311,10 @@ pub enum DaemonResponse {
     CoverArt(Vec<u8>),
     /// Available lyric sources for the requested song.
     Lyrics(Vec<LyricsSource>),
+    /// Artist biography/links, boxed for frame-size economy.
+    ArtistInfo(Box<crate::subsonic::models::ArtistInfo2>),
+    /// Album notes/links, boxed for frame-size economy.
+    AlbumInfo(Box<crate::subsonic::models::AlbumInfo>),
     /// Reply to `Ping`.
     Pong,
 }
@@ -396,6 +420,17 @@ pub enum QuickPlayAlbumKind {
 }
 
 impl QuickPlayAlbumKind {
+    /// Stable index into daemon per-category request-generation storage.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Newest => 0,
+            Self::Recent => 1,
+            Self::Frequent => 2,
+            Self::Highest => 3,
+        }
+    }
+
     /// Subsonic `getAlbumList2` type value.
     #[must_use]
     pub const fn query_value(self) -> &'static str {

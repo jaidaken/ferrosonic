@@ -189,14 +189,23 @@ impl App {
         };
 
         if in_pane(left) {
-            let row_in_pane = y.saturating_sub(left.y + 1) as usize;
+            let inner = left.inner(ratatui::layout::Margin {
+                horizontal: 1,
+                vertical: 1,
+            });
+            if !in_pane(inner) {
+                return Ok(());
+            }
+            let row_in_pane = usize::from(y - inner.y);
             let columns = crate::ui::pages::songs::option_columns(left);
-            let inner_width = usize::from(left.width.saturating_sub(2));
+            let inner_width = usize::from(inner.width);
             let column_width = (inner_width / columns).max(1);
-            let column = usize::from(x.saturating_sub(left.x + 1)) / column_width;
-            let option_index = row_in_pane
-                .saturating_mul(columns)
-                .saturating_add(column.min(columns.saturating_sub(1)));
+            let x_in_pane = usize::from(x - inner.x);
+            if x_in_pane >= column_width.saturating_mul(columns) {
+                return Ok(());
+            }
+            let column = x_in_pane / column_width;
+            let option_index = row_in_pane.saturating_mul(columns).saturating_add(column);
             let option = SongOption::iter().nth(option_index);
             if let Some(option) = option {
                 let already;

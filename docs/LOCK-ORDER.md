@@ -11,8 +11,11 @@ call site.
 
 | # | Lock | Type | Field |
 |---|------|------|-------|
+| P | `config_transactions` | `Mutex<()>` | outer serialization for config snapshot, I/O, and live commit |
+| P | `playback_transitions` | `Mutex<()>` | outer serialization for queue-position-changing playback transitions |
 | 0 | `rating_updates` | `Mutex<()>` | serializes rating RPC/cache transactions |
 | 1 | `state` | `RwLock<DaemonState>` | shared state machine, queue, library, now-playing |
+| 1a | `track_cache` | `std::sync::Mutex<TrackCache>` | offline track cache index; taken only while already holding `state` (e.g. `commit_play_state_in_lock` calls `cached_track_path`), never before it |
 | 2 | `subsonic` | `RwLock<Option<SubsonicClient>>` | active Subsonic client (replaced on `update_server_config`) |
 | 3 | `mpv` | `Mutex<MpvController>` | mpv IPC controller |
 | 4 | `pipewire` | `Mutex<PipeWireController>` | PipeWire sample-rate switcher |
@@ -28,6 +31,12 @@ Rating changes hold lock 0 across their RPC to preserve server write and event
 order, but release state/subsonic before network I/O. Capturing and committing a
 rating takes locks 1 then 2 under lock 0 to keep the client generation consistent.
 No caller may acquire lock 0 while holding any other listed lock.
+
+The two `P` locks are independent prefix locks: neither may be acquired while
+holding another listed lock, and they are never acquired together. Once held,
+their transaction may briefly acquire the numbered locks in the order below;
+the numbered guards must still be released before file, keychain, or network
+I/O unless the owning operation explicitly documents otherwise.
 
 ## Standard idioms
 

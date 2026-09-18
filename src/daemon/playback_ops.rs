@@ -11,6 +11,12 @@ use crate::error::Error;
 /// return, `?`, or panic) releases the single-flight guard.
 struct AdvanceGuard<'a>(&'a std::sync::atomic::AtomicBool);
 
+#[derive(Clone, Copy)]
+enum PlayIntent {
+    Start,
+    Resume,
+}
+
 impl Drop for AdvanceGuard<'_> {
     fn drop(&mut self) {
         self.0.store(false, std::sync::atomic::Ordering::Release);
@@ -126,9 +132,32 @@ impl DaemonCore {
                 }
             }
         }
-        self.play_queue_position_at(pos, PlayMode::Direct, start_at)
+        let _transition = self.playback_transitions.lock().await;
+        self.play_queue_position_at_locked(pos, PlayMode::Direct, start_at, PlayIntent::Resume)
             .await?;
         Ok(())
+    }
+
+    /// Start restored playback when `AutoplayOnStart` is set and a track was
+    /// restored paused. No-op otherwise. Called once at startup after mpv is
+    /// running, in both daemon and standalone modes.
+    pub async fn autoplay_restored_if_configured(self: &Arc<Self>) {
+        use crate::daemon::state::PlaybackState;
+        let (autoplay, state, pos) = {
+            let s = self.state.read().await;
+            (
+                s.config.autoplay_on_start,
+                s.now_playing.state,
+                s.queue_position,
+            )
+        };
+        if !autoplay || state != PlaybackState::Paused || pos.is_none() {
+            return;
+        }
+        info!("Autoplay on start: resuming restored track");
+        if let Err(e) = self.resume_playback().await {
+            error!("Autoplay on start failed: {}", e);
+        }
     }
 
     /// Manual skip. Ignores `repeat=One` (user wants to move).
@@ -136,6 +165,14 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if mpv control or a server request fails.
     pub async fn next_track(self: &Arc<Self>) -> Result<(), Error> {
+        let auto_was_in_flight = self
+            .advance_in_flight
+            .load(std::sync::atomic::Ordering::Acquire);
+        let _transition = self.playback_transitions.lock().await;
+        if auto_was_in_flight {
+            debug!("manual Next coalesced with an in-flight automatic advance");
+            return Ok(());
+        }
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
             (
@@ -151,7 +188,9 @@ impl DaemonCore {
         let next_pos: Option<usize> =
             current_pos.map_or(Some(0), |p| repeat.next_manual(p, queue_len));
         if let Some(p) = next_pos {
-            return self.play_queue_position(p, PlayMode::Direct).await;
+            return self
+                .play_queue_position_at_locked(p, PlayMode::Direct, 0.0, PlayIntent::Start)
+                .await;
         }
         if auto_continue && self.extend_with_random_and_play().await? {
             return Ok(());
@@ -182,6 +221,18 @@ impl DaemonCore {
             return Ok(());
         }
         let _advance_guard = AdvanceGuard(&self.advance_in_flight);
+        let instance_at_request = self
+            .play_instance
+            .load(std::sync::atomic::Ordering::Acquire);
+        let _transition = self.playback_transitions.lock().await;
+        if self
+            .play_instance
+            .load(std::sync::atomic::Ordering::Acquire)
+            != instance_at_request
+        {
+            debug!("automatic advance superseded by a manual playback transition");
+            return Ok(());
+        }
         let (queue_len, current_pos, auto_continue, repeat) = {
             let state = self.state.read().await;
             (
@@ -197,7 +248,9 @@ impl DaemonCore {
         let next_pos: Option<usize> =
             current_pos.map_or(Some(0), |p| repeat.next_auto(p, queue_len));
         if let Some(p) = next_pos {
-            return self.play_queue_position(p, PlayMode::Direct).await;
+            return self
+                .play_queue_position_at_locked(p, PlayMode::Direct, 0.0, PlayIntent::Start)
+                .await;
         }
         if auto_continue && self.extend_with_random_and_play().await? {
             return Ok(());
@@ -211,6 +264,7 @@ impl DaemonCore {
     /// # Errors
     /// Returns an `Error` if mpv control or a server request fails.
     pub async fn prev_track(self: &Arc<Self>) -> Result<(), Error> {
+        let _transition = self.playback_transitions.lock().await;
         let (queue_len, current_pos, position, repeat) = {
             let state = self.state.read().await;
             (
@@ -226,10 +280,24 @@ impl DaemonCore {
         if position < 3.0 {
             if let Some(pos) = current_pos {
                 if pos > 0 {
-                    return self.play_queue_position(pos - 1, PlayMode::Direct).await;
+                    return self
+                        .play_queue_position_at_locked(
+                            pos - 1,
+                            PlayMode::Direct,
+                            0.0,
+                            PlayIntent::Start,
+                        )
+                        .await;
                 }
                 if let Some(wrap_to) = repeat.prev_wrap(queue_len) {
-                    return self.play_queue_position(wrap_to, PlayMode::Direct).await;
+                    return self
+                        .play_queue_position_at_locked(
+                            wrap_to,
+                            PlayMode::Direct,
+                            0.0,
+                            PlayIntent::Start,
+                        )
+                        .await;
                 }
             }
             let mut mpv = self.mpv.lock().await;
@@ -276,15 +344,25 @@ impl DaemonCore {
         mode: PlayMode,
         start_at: f64,
     ) -> Result<(), Error> {
+        let _transition = self.playback_transitions.lock().await;
+        self.play_queue_position_at_locked(pos, mode, start_at, PlayIntent::Start)
+            .await
+    }
+
+    async fn play_queue_position_at_locked(
+        self: &Arc<Self>,
+        pos: usize,
+        mode: PlayMode,
+        start_at: f64,
+        intent: PlayIntent,
+    ) -> Result<(), Error> {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Ok(());
         };
 
         let (song, stream_url) = {
             let mut state = self.state.write().await;
-            // A load from the top (offset 0) is a genuine start/restart; a
-            // resume from pause passes a non-zero offset and is a continuation.
-            let new_instance = start_at <= 0.0;
+            let new_instance = matches!(intent, PlayIntent::Start);
             match self.commit_play_state_in_lock(&mut state, &client, pos, new_instance) {
                 Ok(v) => v,
                 Err(()) => return Ok(()),
@@ -311,12 +389,12 @@ impl DaemonCore {
     #[allow(clippy::significant_drop_tightening)]
     pub async fn preload_next_track(self: &Arc<Self>, current_pos: usize) {
         let gen = self.loadfile_gen.load(std::sync::atomic::Ordering::Acquire);
-        let next_song = {
+        let (next_song, cache_enabled) = {
             let state = self.state.read().await;
             let queue_len = state.queue.len();
             let target = state.config.repeat_mode.next_auto(current_pos, queue_len);
             match target.and_then(|p| state.queue.get(p)) {
-                Some(s) => s.clone(),
+                Some(s) => (s.clone(), state.config.offline_cache_enabled),
                 None => return,
             }
         };
@@ -329,6 +407,14 @@ impl DaemonCore {
                 Ok(u) => u,
                 Err(_) => return,
             }
+        };
+        // Gapless preload prefers a cached copy so an already-downloaded next
+        // track never re-fetches.
+        let url = if cache_enabled {
+            self.cached_track_path(&next_song.id)
+                .map_or(url, |path| path.to_string_lossy().into_owned())
+        } else {
+            url
         };
 
         let mut mpv = self.mpv.lock().await;
@@ -519,8 +605,12 @@ impl DaemonCore {
     // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn set_volume(self: &Arc<Self>, vol: i32) -> Result<(), Error> {
+        let clamped = vol.clamp(0, 100);
         let mut mpv = self.mpv.lock().await;
-        let _ = mpv.set_volume(vol).await;
+        let _ = mpv.set_volume(clamped).await;
+        drop(mpv);
+        self.state.write().await.now_playing.volume = clamped;
+        self.emit_now_playing().await;
         Ok(())
     }
 }

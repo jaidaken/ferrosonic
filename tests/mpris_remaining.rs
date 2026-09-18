@@ -10,6 +10,7 @@ use ferrosonic::config::{Config, RepeatMode};
 use ferrosonic::ipc::protocol::DaemonRequest;
 use ferrosonic::mpris::server::MprisPlayer;
 use mpris_server::{LoopStatus, PlaybackRate, PlayerInterface, RootInterface};
+use serial_test::serial;
 
 fn build_player() -> (MprisPlayer, Arc<RecordingClient>, SharedDaemonState) {
     let config = Config::new();
@@ -100,6 +101,26 @@ async fn set_volume_clamps_out_of_range_values() {
     assert!((player.volume().await.unwrap() - 1.0).abs() < 1e-9);
     player.set_volume(-1.0).await.unwrap();
     assert!(player.volume().await.unwrap().abs() < 1e-9);
+    player.set_volume(f64::NAN).await.unwrap();
+    assert!(player.volume().await.unwrap().abs() < 1e-9);
+    player.set_volume(f64::INFINITY).await.unwrap();
+    assert!((player.volume().await.unwrap() - 1.0).abs() < 1e-9);
+    player.set_volume(f64::NEG_INFINITY).await.unwrap();
+    assert!(player.volume().await.unwrap().abs() < 1e-9);
+}
+
+#[tokio::test]
+#[serial]
+async fn volume_getter_reflects_non_mpris_daemon_updates() {
+    let td = common::TestDaemon::new().await;
+    let config = td.state.read().await.config.clone();
+    let player = MprisPlayer::new(
+        td.state.clone(),
+        new_shared_client_state(&config),
+        Arc::new(ferrosonic::ipc::InProcessClient::new(td.core.clone())),
+    );
+    td.core.set_volume(37).await.unwrap();
+    assert!((player.volume().await.unwrap() - 0.37).abs() < 1e-9);
 }
 
 #[tokio::test]

@@ -156,7 +156,7 @@ impl App {
                             .request(DaemonRequest::UpdateServerConfig {
                                 base_url,
                                 username,
-                                password,
+                                password: password.clone(),
                             })
                             .await
                         {
@@ -168,6 +168,10 @@ impl App {
                                     daemon: &ds,
                                     client: &mut cs,
                                 };
+                                if matches!(resp, crate::ipc::DaemonResponse::ServerConfigSaved(_))
+                                {
+                                    state.client.server_state.committed_password = password;
+                                }
                                 state.client.server_state.status = Some(server_save_status(&resp));
                             }
                             Err(e) => {

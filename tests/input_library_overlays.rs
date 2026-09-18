@@ -82,7 +82,14 @@ impl DaemonClient for OverlayClient {
 }
 
 fn app_with(client: Arc<OverlayClient>) -> App {
-    App::with_remote_client(client, Config::new())
+    // Point the persisted search history at a throwaway dir, and disable the
+    // debounce so the spawn settles within the tests' yield loops.
+    let dir = common::tempdir();
+    std::env::set_var("FERROSONIC_CONFIG_DIR", dir.path());
+    drop(dir);
+    let mut config = Config::new();
+    config.search_debounce_ms = 0;
+    App::with_remote_client(client, config)
 }
 
 // (713/720/729 - the LoadAllAlbums fetch path - are already killed by the

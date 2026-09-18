@@ -67,6 +67,31 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
     }
     .to_string();
     let auto_val = if settings.auto_continue { "On" } else { "Off" }.to_string();
+    let stream_val = if settings.stream_on_start {
+        "On"
+    } else {
+        "Off"
+    }
+    .to_string();
+    let resume_val = if settings.resume_on_start {
+        "On"
+    } else {
+        "Off"
+    }
+    .to_string();
+    let autoplay_val = if settings.autoplay_on_start {
+        "On"
+    } else {
+        "Off"
+    }
+    .to_string();
+    let offline_val = if settings.offline_cache_enabled {
+        "On"
+    } else {
+        "Off"
+    }
+    .to_string();
+    let offline_size_val = format!("{} MB", settings.offline_cache_max_mb);
     let scrobble_val = if settings.scrobble { "On" } else { "Off" }.to_string();
     let daemon_val = if settings.daemon_enabled { "On" } else { "Off" }.to_string();
     let notifications_val = if settings.notifications { "On" } else { "Off" }.to_string();
@@ -150,82 +175,109 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
             idx: 6,
         },
         Item::Row {
+            label: "Stream on Start",
+            value: stream_val,
+            idx: 7,
+        },
+        Item::Row {
             label: "Scrobble",
             value: scrobble_val,
-            idx: 7,
+            idx: 8,
         },
         Item::Gap,
         Item::Heading("System"),
         Item::Row {
             label: "Daemon",
             value: daemon_val,
-            idx: 8,
+            idx: 9,
         },
         Item::Row {
             label: "Notifications",
             value: notifications_val,
-            idx: 9,
+            idx: 10,
         },
         Item::Gap,
         Item::Heading("ReplayGain"),
         Item::Row {
             label: "Mode",
             value: rg_mode_val,
-            idx: 10,
+            idx: 11,
         },
         Item::Row {
             label: "Preamp",
             value: rg_preamp_val,
-            idx: 11,
+            idx: 12,
         },
         Item::Row {
             label: "Prevent Clipping",
             value: rg_clip_val,
-            idx: 12,
+            idx: 13,
         },
         Item::Gap,
         Item::Heading("Playback Filters"),
         Item::Row {
             label: "Min Rating",
             value: min_rating_val,
-            idx: 13,
+            idx: 14,
         },
         Item::Row {
             label: "Year Min",
             value: year_min_val,
-            idx: 14,
+            idx: 15,
         },
         Item::Row {
             label: "Year Max",
             value: year_max_val,
-            idx: 15,
+            idx: 16,
         },
         Item::Row {
             label: "Duration Min",
             value: duration_min_val,
-            idx: 16,
+            idx: 17,
         },
         Item::Row {
             label: "Duration Max",
             value: duration_max_val,
-            idx: 17,
+            idx: 18,
         },
         Item::Row {
             label: "Excluded Genres",
             value: excluded_genres_val,
-            idx: 18,
+            idx: 19,
         },
         Item::Row {
             label: "Excluded Artists",
             value: excluded_artists_val,
-            idx: 19,
+            idx: 20,
         },
         Item::Gap,
         Item::Heading("Controls"),
         Item::Row {
             label: "Global Keybinds",
             value: keybindings_val,
-            idx: 20,
+            idx: 21,
+        },
+        Item::Gap,
+        Item::Heading("Startup"),
+        Item::Row {
+            label: "Resume on Start",
+            value: resume_val,
+            idx: 22,
+        },
+        Item::Row {
+            label: "Autoplay on Start",
+            value: autoplay_val,
+            idx: 23,
+        },
+        Item::Row {
+            label: "Offline Cache",
+            value: offline_val,
+            idx: 24,
+        },
+        Item::Row {
+            label: "Offline Cache Size",
+            value: offline_size_val,
+            idx: 25,
         },
     ];
 
@@ -270,10 +322,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &AppState<'_>) {
 }
 
 /// Help-line text for the selected settings field. Indices MUST track the
-/// `Item::Row { idx }` order in `render`: 7 Scrobble, 8 Daemon, 9
-/// Notifications, 10 `ReplayGain` Mode, 11 `ReplayGain` Preamp, 12 `ReplayGain`
-/// Prevent Clipping, 13 Min Rating, 14 Year Min, 15 Year Max, 16 Duration Min,
-/// 17 Duration Max.
+/// `Item::Row { idx }` order in `render`: 7 Stream on Start, 8 Scrobble, 9
+/// Daemon, 10 Notifications, 11 `ReplayGain` Mode, 12 `ReplayGain` Preamp,
+/// 13 `ReplayGain` Prevent Clipping, 14 Min Rating, 15 Year Min, 16 Year Max,
+/// 17 Duration Min, 18 Duration Max, 19 Excluded Genres, 20 Excluded Artists,
+/// 21 Global Keybinds, 22 Resume on Start, 23 Autoplay on Start, 24 Offline
+/// Cache, 25 Offline Cache Size.
 // Each setting's cava-ok/not-installed cases kept adjacent; merging would split setting 2.
 #[allow(clippy::match_same_arms)]
 const fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
@@ -287,20 +341,27 @@ const fn settings_help_text(sel: usize, cava_ok: bool) -> &'static str {
         4 => "← → to adjust now-playing height when art is visible (8-24 rows, step 2)",
         5 => "← → or Enter to cycle repeat mode (off / one / all)",
         6 => "← → or Enter to toggle auto-continue (random songs when queue ends)",
-        7 => "← → or Enter to toggle scrobbling (report plays to the server)",
-        8 => "← → or Enter to toggle background daemon (takes effect on next launch)",
-        9 => "← → or Enter to toggle desktop notifications on track change",
-        10 => "← → or Enter to cycle ReplayGain mode (off / track / album); applies live",
-        11 => "← → to adjust ReplayGain preamp (-15.0 to 15.0 dB, step 0.5); applies live",
-        12 => "← → or Enter to toggle clip prevention; applies live",
-        13 => "← → to exclude songs rated at or below this (0 = off, step 1)",
-        14 => "← → to exclude songs released before this year (off = no lower bound)",
-        15 => "← → to exclude songs released after this year (off = no upper bound)",
-        16 => "← → to exclude songs shorter than this (off = no lower bound, step 15s)",
-        17 => "← → to exclude songs longer than this (off = no upper bound, step 15s)",
-        18 => "Enter to edit excluded genres",
-        19 => "Enter to edit excluded artists",
-        20 => "Enter to edit global keybindings",
+        7 => {
+            "← → or Enter to stream on start (play immediately) or pre-buffer the whole track first"
+        }
+        8 => "← → or Enter to toggle scrobbling (report plays to the server)",
+        9 => "← → or Enter to toggle background daemon (takes effect on next launch)",
+        10 => "← → or Enter to toggle desktop notifications on track change",
+        11 => "← → or Enter to cycle ReplayGain mode (off / track / album); applies live",
+        12 => "← → to adjust ReplayGain preamp (-15.0 to 15.0 dB, step 0.5); applies live",
+        13 => "← → or Enter to toggle clip prevention; applies live",
+        14 => "← → to exclude songs rated at or below this (0 = off, step 1)",
+        15 => "← → to exclude songs released before this year (off = no lower bound)",
+        16 => "← → to exclude songs released after this year (off = no upper bound)",
+        17 => "← → to exclude songs shorter than this (off = no lower bound, step 15s)",
+        18 => "← → to exclude songs longer than this (off = no upper bound, step 15s)",
+        19 => "Enter to edit excluded genres",
+        20 => "Enter to edit excluded artists",
+        21 => "Enter to edit global keybindings",
+        22 => "← → or Enter to restore the queue, track, and playhead on the next daemon start",
+        23 => "← → or Enter to auto-play a restored session instead of restoring it paused",
+        24 => "← → or Enter to cache streamed tracks locally for repeat/offline playback",
+        25 => "← → to set the offline cache size cap (MB, step 512)",
         _ => "",
     }
 }
@@ -381,53 +442,65 @@ mod tests {
             "idx 6 is Auto-continue"
         );
         assert!(
-            settings_help_text(7, true).contains("scrobbling"),
-            "idx 7 is Scrobble, not the daemon row"
+            settings_help_text(7, true).contains("stream on start"),
+            "idx 7 is Stream on Start"
         );
         assert!(
-            settings_help_text(8, true).contains("daemon"),
-            "idx 8 is Daemon"
+            settings_help_text(8, true).contains("scrobbling"),
+            "idx 8 is Scrobble, not the daemon row"
         );
         assert!(
-            settings_help_text(9, true).contains("notifications"),
-            "idx 9 is Desktop Notifications"
+            settings_help_text(9, true).contains("daemon"),
+            "idx 9 is Daemon"
         );
         assert!(
-            settings_help_text(10, true).contains("ReplayGain mode"),
-            "idx 10 is ReplayGain Mode"
+            settings_help_text(10, true).contains("notifications"),
+            "idx 10 is Desktop Notifications"
         );
         assert!(
-            settings_help_text(11, true).contains("preamp"),
-            "idx 11 is ReplayGain Preamp"
+            settings_help_text(11, true).contains("ReplayGain mode"),
+            "idx 11 is ReplayGain Mode"
         );
         assert!(
-            settings_help_text(12, true).contains("clip prevention"),
-            "idx 12 is ReplayGain Prevent Clipping"
+            settings_help_text(12, true).contains("preamp"),
+            "idx 12 is ReplayGain Preamp"
         );
         assert!(
-            settings_help_text(13, true).contains("rated at or below"),
-            "idx 13 is Min Rating"
+            settings_help_text(13, true).contains("clip prevention"),
+            "idx 13 is ReplayGain Prevent Clipping"
         );
         assert!(
-            settings_help_text(14, true).contains("before this year"),
-            "idx 14 is Year Min"
+            settings_help_text(14, true).contains("rated at or below"),
+            "idx 14 is Min Rating"
         );
         assert!(
-            settings_help_text(15, true).contains("after this year"),
-            "idx 15 is Year Max"
+            settings_help_text(15, true).contains("before this year"),
+            "idx 15 is Year Min"
         );
         assert!(
-            settings_help_text(16, true).contains("shorter than"),
-            "idx 16 is Duration Min"
+            settings_help_text(16, true).contains("after this year"),
+            "idx 16 is Year Max"
         );
         assert!(
-            settings_help_text(17, true).contains("longer than"),
-            "idx 17 is Duration Max"
+            settings_help_text(17, true).contains("shorter than"),
+            "idx 17 is Duration Min"
+        );
+        assert!(
+            settings_help_text(18, true).contains("longer than"),
+            "idx 18 is Duration Max"
+        );
+        assert!(
+            settings_help_text(22, true).contains("restore the queue"),
+            "idx 22 is Resume on Start"
+        );
+        assert!(
+            settings_help_text(24, true).contains("cache streamed tracks"),
+            "idx 24 is Offline Cache"
         );
         assert_eq!(
-            settings_help_text(21, true),
+            settings_help_text(26, true),
             "",
-            "no field beyond keybindings"
+            "no field beyond Offline Cache Size"
         );
     }
 

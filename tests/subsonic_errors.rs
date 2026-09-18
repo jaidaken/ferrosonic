@@ -102,3 +102,48 @@ async fn transport_error_does_not_leak_auth_token_or_salt() {
         "transport error must have the URL (and its auth params) stripped: {msg}"
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn detail_endpoints_return_sanitized_typed_http_statuses() {
+    use ferrosonic::error::SubsonicError;
+    use ferrosonic::secret::Secret;
+    use ferrosonic::subsonic::SubsonicClient;
+
+    for endpoint in ["getArtist", "getAlbum", "getPlaylist"] {
+        for status in [401, 404, 500] {
+            let fake = common::FakeSubsonic::start().await;
+            fake.expect_http_status(endpoint, status).await;
+            let base = fake.url();
+            let client =
+                SubsonicClient::new(&base, "sensitive-user", &Secret::from("sensitive-password"))
+                    .unwrap();
+            let err = match endpoint {
+                "getArtist" => client.get_artist("secret-id").await.map(|_| ()),
+                "getAlbum" => client.get_album("secret-id").await.map(|_| ()),
+                "getPlaylist" => client.get_playlist("secret-id").await.map(|_| ()),
+                _ => unreachable!(),
+            }
+            .expect_err("non-success detail response must fail");
+            assert!(matches!(
+                err,
+                SubsonicError::HttpStatus { status: actual } if actual == status
+            ));
+            let rendered = format!("{err} {err:?}");
+            for secret in [
+                "sensitive-user",
+                "sensitive-password",
+                "secret-id",
+                base.as_str(),
+                "?u=",
+                "&t=",
+                "&s=",
+            ] {
+                assert!(
+                    !rendered.contains(secret),
+                    "{endpoint} status error leaked {secret:?}: {rendered}"
+                );
+            }
+        }
+    }
+}

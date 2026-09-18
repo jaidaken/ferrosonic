@@ -475,6 +475,53 @@ fn library_label(id: Option<i64>, folders: &[crate::subsonic::models::MusicFolde
     }
 }
 
+/// Toggle-hint pane title: `Artists -> Albums [· sort] · library`. The active
+/// mode takes its accent colour; the other label and arrow are muted.
+fn library_toggle_title(
+    album_label: Option<&str>,
+    lib_label: &str,
+    colors: &ThemeColors,
+) -> Line<'static> {
+    let muted = Style::default().fg(colors.muted);
+    let album_view = album_label.is_some();
+    let artists_style = if album_view {
+        muted
+    } else {
+        Style::default().fg(colors.artist)
+    };
+    let albums_style = if album_view {
+        Style::default().fg(colors.album)
+    } else {
+        muted
+    };
+    let mut spans = vec![
+        Span::styled(" Artists ", artists_style),
+        Span::styled("\u{2192} ", muted),
+        Span::styled("Albums", albums_style),
+    ];
+    if let Some(label) = album_label {
+        spans.push(Span::styled(format!(" \u{00b7} {label}"), muted));
+    }
+    spans.push(Span::styled(
+        format!(" \u{00b7} {lib_label} "),
+        Style::default().fg(colors.accent),
+    ));
+    Line::from(spans)
+}
+
+/// Search-pane title: query, per-section result counts, and the library label.
+fn search_title(filter: &str, results: Option<&SearchResult3>, lib_label: &str) -> String {
+    let counts = results.map_or_else(String::new, |r| {
+        format!(
+            "  \u{00b7}  {} artists \u{00b7} {} albums \u{00b7} {} songs",
+            r.artist.len(),
+            r.album.len(),
+            r.song.len()
+        )
+    });
+    format!(" Search ({filter}){counts}  \u{00b7}  {lib_label} ")
+}
+
 fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colors: &ThemeColors) {
     let artists = &state.client.artists;
 
@@ -504,38 +551,14 @@ fn render_tree(frame: &mut Frame<'_>, area: Rect, state: &mut AppState<'_>, colo
         .borders(Borders::ALL)
         .border_style(border_style);
     let block = if searching {
-        base_block.title(format!(
-            " Search ({})  \u{00b7}  {lib_label} ",
-            artists.filter
+        base_block.title(search_title(
+            &artists.filter,
+            artists.search_results.as_ref(),
+            &lib_label,
         ))
     } else {
-        // Toggle hint: Artists <-> Albums. The active mode shows in its accent
-        // colour, the other label and the arrow are muted; they flip on 'v'.
-        let muted = Style::default().fg(colors.muted);
-        let artists_style = if album_view {
-            muted
-        } else {
-            Style::default().fg(colors.artist)
-        };
-        let albums_style = if album_view {
-            Style::default().fg(colors.album)
-        } else {
-            muted
-        };
-        let mut spans = vec![
-            Span::styled(" Artists ", artists_style),
-            Span::styled("\u{2192} ", muted),
-            Span::styled("Albums", albums_style),
-        ];
-        if album_view {
-            let label = artists.album_sort.label();
-            spans.push(Span::styled(format!(" \u{00b7} {label}"), muted));
-        }
-        spans.push(Span::styled(
-            format!(" \u{00b7} {lib_label} "),
-            Style::default().fg(colors.accent),
-        ));
-        base_block.title(Line::from(spans))
+        let album_label = album_view.then(|| artists.album_sort.label());
+        base_block.title(library_toggle_title(album_label, &lib_label, colors))
     };
 
     let items: Vec<ListItem<'_>> = if album_view {

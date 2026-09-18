@@ -34,6 +34,23 @@ impl App {
             return self.handle_library_filter_key(key).await;
         }
 
+        // 'I' opens the info overlay for the highlighted artist or album.
+        if key.code == KeyCode::Char('I') {
+            let selection = Self::selected_artist_or_album(&state);
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            if let Some((kind, id, title)) = selection {
+                self.open_info(kind, id, title).await;
+            } else {
+                self.client_state
+                    .write()
+                    .await
+                    .notify("Highlight an artist or album for info");
+            }
+            return Ok(());
+        }
+
         // 'v' toggles the left pane between the artist tree and the flat album
         // list; switching to the list loads it from the daemon on first use.
         if key.code == KeyCode::Char('v') {
@@ -625,6 +642,7 @@ impl App {
                 state.client.artists.filter_active = false;
                 state.client.artists.filter.clear();
                 state.client.artists.search_results = None;
+                state.client.artists.history_cursor = None;
                 let _ = state;
                 drop(cs);
                 drop(ds);
@@ -637,12 +655,41 @@ impl App {
                 drop(ds);
                 return Ok(());
             }
+            // Up walks to older remembered queries; Down walks back toward the
+            // live query, clearing the box once past the newest entry.
+            KeyCode::Up if !state.client.search_history.is_empty() => {
+                let len = state.client.search_history.len();
+                let next = state
+                    .client
+                    .artists
+                    .history_cursor
+                    .map_or(0, |c| (c + 1).min(len - 1));
+                let recalled = state.client.search_history[next].clone();
+                state.client.artists.history_cursor = Some(next);
+                state.client.artists.filter = recalled;
+                scope_or_query_changed = true;
+            }
+            KeyCode::Down if state.client.artists.history_cursor.is_some() => {
+                let cursor = state.client.artists.history_cursor.unwrap_or(0);
+                if cursor == 0 {
+                    state.client.artists.history_cursor = None;
+                    state.client.artists.filter.clear();
+                } else {
+                    let next = cursor - 1;
+                    let recalled = state.client.search_history[next].clone();
+                    state.client.artists.history_cursor = Some(next);
+                    state.client.artists.filter = recalled;
+                }
+                scope_or_query_changed = true;
+            }
             KeyCode::Backspace => {
                 state.client.artists.filter.pop();
+                state.client.artists.history_cursor = None;
                 scope_or_query_changed = true;
             }
             KeyCode::Char(c) => {
                 state.client.artists.filter.push(c);
+                state.client.artists.history_cursor = None;
                 scope_or_query_changed = true;
             }
             _ => {}
@@ -656,6 +703,11 @@ impl App {
         state.client.artists.search_gen = state.client.artists.search_gen.wrapping_add(1);
         let gen = state.client.artists.search_gen;
         let query = state.client.artists.filter.clone();
+        let debounce =
+            std::time::Duration::from_millis(u64::from(ds.config.search_debounce_ms.min(2000)));
+        let artist_count = ds.config.search_artist_limit.clamp(1, 1000);
+        let album_count = ds.config.search_album_limit.clamp(1, 1000);
+        let song_count = ds.config.search_song_limit.clamp(1, 2000);
         let _ = state;
         drop(cs);
         drop(ds);
@@ -664,15 +716,49 @@ impl App {
             cs.artists.search_results = None;
             return Ok(());
         }
+        self.spawn_debounced_search(
+            query,
+            gen,
+            debounce,
+            (artist_count, album_count, song_count),
+        );
+        Ok(())
+    }
+
+    /// Issue a debounced `search3` on a background task. Waits out the typing
+    /// pause, records the query in the client's recent-search history, then
+    /// commits results only while `gen` is still current so a stale reply
+    /// cannot overwrite a newer query.
+    fn spawn_debounced_search(
+        &self,
+        query: String,
+        gen: u64,
+        debounce: std::time::Duration,
+        counts: (u32, u32, u32),
+    ) {
         let client = self.client.clone();
         let client_state = self.client_state.clone();
+        let (artist_count, album_count, song_count) = counts;
         tokio::spawn(async move {
+            if !debounce.is_zero() {
+                tokio::time::sleep(debounce).await;
+            }
+            let history_snapshot = {
+                let mut cs = client_state.write().await;
+                // Superseded by a newer keystroke while we slept.
+                if cs.artists.search_gen != gen {
+                    return;
+                }
+                crate::app::search_history::record(&mut cs.search_history, &query);
+                cs.search_history.clone()
+            };
+            crate::app::search_history::save(&history_snapshot);
             let resp = client
                 .request(DaemonRequest::Search {
                     query,
-                    artist_count: 100,
-                    album_count: 100,
-                    song_count: 200,
+                    artist_count,
+                    album_count,
+                    song_count,
                 })
                 .await;
             if let Ok(crate::ipc::DaemonResponse::SearchResults(r)) = resp {
@@ -683,7 +769,6 @@ impl App {
                 }
             }
         });
-        Ok(())
     }
 
     async fn handle_library_view_toggle(&self) -> Result<(), Error> {

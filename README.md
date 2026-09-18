@@ -13,6 +13,7 @@ It is a ground-up Rust rewrite of [Termsonic](https://git.sixfoisneuf.fr/termson
 - **Quality readout** - live sample rate, bit depth, codec, and channel layout.
 - **Visualizer** - built-in cava pane with theme-matched gradient colors.
 - **ReplayGain** - track/album/off mode, preamp, and clip prevention, applied via mpv and adjustable live from Settings (`F6`).
+- **Offline track cache** - optional: streamed tracks are cached on disk and replayed locally, with LRU eviction under a size cap (`OfflineCacheEnabled` / `OfflineCacheMaxMb`, `F6` Settings).
 
 ### Library and queue
 
@@ -59,15 +60,15 @@ Ferrosonic requires the following at runtime:
 | Dependency | Purpose | Required |
 |---|---|---|
 | **mpv** | Audio playback engine (via JSON IPC). 0.38+ recommended; older versions run a playback compatibility path (ferrosonic detects the version and warns). | Yes |
-| **PipeWire** | Automatic sample rate switching for bit-perfect audio | Recommended |
-| **WirePlumber** | PipeWire session manager | Recommended |
-| **D-Bus** | MPRIS2 desktop media controls | Recommended |
+| **PipeWire** | Automatic sample rate switching for bit-perfect audio (Linux) | Recommended |
+| **WirePlumber** | PipeWire session manager (Linux) | Recommended |
+| **D-Bus** | MPRIS2 desktop media controls (Linux session bus; macOS needs `dbus` too) | Recommended |
 | **cava** | Audio visualizer | Optional |
 | **chafa** | Higher-fidelity cover-art half-blocks (sextants / braille / dithering). Loaded via `dlopen` at runtime; if absent, ferrosonic falls back to primitive `▀▄` half-blocks. | Optional |
 
 ### Quick Install
 
-Supports Arch, Fedora, and Debian/Ubuntu. Installs runtime dependencies, downloads the latest precompiled binary, and installs to `/usr/local/bin/`:
+Supports Arch, Fedora, and Debian/Ubuntu (Linux only). Installs runtime dependencies, downloads the latest precompiled binary, and installs to `/usr/local/bin/`:
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/jaidaken/ferrosonic/master/install.sh | sh
@@ -77,7 +78,9 @@ The install drops a single `ferrosonic` binary into `/usr/local/bin/`. It runs a
 
 ### Build from Source
 
-If you prefer to build from source, you'll also need: Rust toolchain, pkg-config, OpenSSL dev headers, and D-Bus dev headers. Then:
+You need a Rust toolchain. No C libraries are linked at build time: TLS uses
+`rustls`, D-Bus is pure-Rust `zbus`, cover-art `chafa` is loaded via `dlopen`
+at runtime, and the keychain uses the platform API. Then:
 
 ```bash
 git clone https://github.com/jaidaken/ferrosonic.git
@@ -85,6 +88,39 @@ cd ferrosonic
 cargo build --release
 sudo cp target/release/ferrosonic /usr/local/bin/
 ```
+
+### macOS
+
+There is no prebuilt macOS binary and `install.sh` is Linux-only, so build from
+source. Homebrew supplies the runtime pieces:
+
+```bash
+xcode-select --install                       # Command Line Tools
+brew install mpv                             # required playback engine
+brew install cava chafa                      # optional: visualizer / better half-blocks
+brew install dbus                            # optional: only if you want MPRIS
+cargo build --release
+./target/release/ferrosonic                  # add --standalone to skip the daemon
+```
+
+macOS differences and limitations:
+
+- **Config, logs, and queue** live under `~/Library/Application Support/ferrosonic/`
+  (macOS's config dir, not `~/.config`). Override with `FERROSONIC_CONFIG_DIR`.
+- **Passwords** are stored in the macOS Keychain, the equivalent of Secret
+  Service on Linux.
+- **No bit-perfect sample-rate switching.** macOS has no PipeWire, so
+  `pw-metadata` is unavailable and rate matching is skipped automatically.
+  Playback still goes through mpv and CoreAudio; the quality readout still shows
+  the decoded rate.
+- **Notifications** use `osascript`'s `display notification`. They are text-only
+  (no cover art), because AppleScript's notification API has no image field.
+- **MPRIS** requires a D-Bus session bus (`brew services start dbus`, or
+  `dbus-launch`). macOS has no native MPRIS consumer, so this alone does not wire
+  up the media keys / Control Center; a native Now Playing backend would be
+  needed for that.
+- **Persistent playback** works. With no `XDG_RUNTIME_DIR`, the daemon IPC
+  socket falls back to `/tmp/ferrosonic-<uid>/ferrosonicd.sock`.
 
 ## Usage
 
@@ -129,6 +165,15 @@ Daemon = true
 Cava = false
 CavaSize = 40
 AutoContinue = false
+StreamOnStart = true
+SearchDebounceMs = 200
+SearchArtistLimit = 100
+SearchAlbumLimit = 100
+SearchSongLimit = 200
+ResumeOnStart = true
+AutoplayOnStart = false
+OfflineCacheEnabled = false
+OfflineCacheMaxMb = 2048
 RepeatMode = "Off"
 CoverArt = false
 CoverArtSize = 16
@@ -152,6 +197,15 @@ ReplayGainClip = false
 | `Cava` | Enable the cava visualizer pane |
 | `CavaSize` | Cava pane height percentage (10-80, step 5) |
 | `AutoContinue` | Fetch fresh random songs and keep playing when the queue ends |
+| `StreamOnStart` | `true` (default) streams a cold queue start and begins as soon as mpv has data; `false` downloads the whole track first for a guaranteed clean start on slow networks |
+| `SearchDebounceMs` | Milliseconds to wait after the last keystroke before running `search3`, default 200 (`0` disables). The Library filter records recent queries and recalls them with Up/Down while editing |
+| `SearchArtistLimit` | Maximum artist search results, default 100 |
+| `SearchAlbumLimit` | Maximum album search results, default 100 |
+| `SearchSongLimit` | Maximum song search results, default 200 |
+| `ResumeOnStart` | `true` (default) restores the queue, current track, and playhead on the next daemon start, paused. `false` starts empty |
+| `AutoplayOnStart` | `true` auto-plays a restored session instead of restoring it paused. Default `false` |
+| `OfflineCacheEnabled` | `true` caches streamed tracks under `$XDG_CACHE_HOME/ferrosonic/tracks` so repeat and offline queue plays do not re-fetch. Default `false` |
+| `OfflineCacheMaxMb` | Offline cache size cap in MiB, default 2048; least-recently-used tracks are evicted past it |
 | `RepeatMode` | Queue repeat: `"Off"`, `"One"`, or `"All"` |
 | `CoverArt` | Show cover art in the now-playing section (kitty / iTerm2 / sixel terminals) |
 | `CoverArtSize` | Cover art pane width in columns (default 16) |
@@ -281,6 +335,11 @@ or Escape closes the overlay.
 | `m` | Star/unstar highlighted song (songs pane focus only) |
 | `v` | Toggle the left pane between the artist tree and the flat album list |
 | `f` | Cycle the active library / music folder (All, then each folder); shown in the pane title |
+| `I` (Shift+i) | Show artist/album information overlay (biography/notes, similar artists, external links) |
+
+Search requests are debounced (`SearchDebounceMs`, default 200ms) so a query fires once per typing pause rather than per keypress, and the pane title shows the artist/album/song result counts. Matching text is highlighted in the result rows. While editing the filter, `Up`/`Down` walk back through your recent queries (most recent first); the last 20 are remembered across restarts.
+
+Press `I` on a highlighted artist or album for an information overlay: biography or liner notes, similar artists, and Last.fm/MusicBrainz links. The data comes from the server's `getArtistInfo2`/`getAlbumInfo2`; Navidrome only fills it when an external (Last.fm) integration is configured, so without one the overlay shows a clean empty state. `j`/`k`/Page Up/Page Down scroll, `r` retries, and `I` or Escape closes.
 
 ### Queue Page (F2)
 
@@ -353,7 +412,9 @@ available from the Library, Queue, and Quick Play song panes.
 | `Enter` | Test connection or Save configuration |
 | `Backspace` | Delete character in text field |
 
-F-keys still switch pages from the Server page; any unsaved edits are discarded on the way out.
+F-keys still switch pages from the Server page; any unsaved edits are discarded
+on the way out. Password text reverts to the last locally loaded or successfully
+saved credential (the daemon's configuration snapshots intentionally omit it).
 
 ### Settings Page (F6)
 
@@ -365,7 +426,9 @@ F-keys still switch pages from the Server page; any unsaved edits are discarded 
 
 The genre, artist, and global-keybind rows open modal editors with Enter. In the filter editors use `a` to add, `d` to remove, `Ctrl+S` to save, and `Esc` to cancel. In the keybinding editor use Enter to capture a chord, `d` to reset one action, `D` to reset all, `Ctrl+S` to save, and `Esc` to cancel.
 
-Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, scrobbling, desktop notifications, ReplayGain mode/preamp/clip prevention, all playback filters, global keybindings, and the daemon-mode preference. Scalar changes save automatically; the two list editors save with `Ctrl+S`. ReplayGain applies live to mpv where relevant, and saved keybindings apply live to the TUI. The daemon-mode toggle takes effect on the next launch. Note `h`/`l`/`Space` are fixed field controls on this page.
+Settings include theme selection, cava visualizer toggle + size, cover art toggle + size, repeat mode, auto-continue, stream on start, resume on start, autoplay on start, offline cache + size, scrobbling, desktop notifications, ReplayGain mode/preamp/clip prevention, all playback filters, global keybindings, and the daemon-mode preference. Scalar changes save automatically; the two list editors save with `Ctrl+S`. ReplayGain applies live to mpv where relevant, and saved keybindings apply live to the TUI. The daemon-mode toggle takes effect on the next launch. Note `h`/`l`/`Space` are fixed field controls on this page.
+
+**Stream on start** (`StreamOnStart`, on by default) controls how a cold queue begins. When on, ferrosonic hands mpv the authenticated `rest/stream` URL and playback starts as soon as enough data has arrived; when off, the whole track is downloaded to a local temp file first, guaranteeing a clean start from frame 0 at the cost of waiting for the full download on slow or flaky networks. Turning it off restores the earlier full pre-buffer behavior. Gapless playback is unaffected either way: the next track is preloaded and prefetched by mpv.
 
 ## Mouse Support
 

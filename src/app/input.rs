@@ -124,6 +124,15 @@ impl App {
             return Ok(());
         }
 
+        // Artist/album info is modal while visible.
+        if state.client.info.open {
+            let _ = state;
+            drop(cs);
+            drop(ds);
+            self.handle_info_key(key).await?;
+            return Ok(());
+        }
+
         // Settings editors are modal and must receive keys such as q, Space,
         // and function keys before the configurable global dispatcher.
         if state.client.settings_state.filter_editor.is_some()
@@ -428,9 +437,9 @@ pub(super) fn revert_page_edits(state: &mut AppState<'_>) {
         let cfg = state.daemon.config.clone();
         state.client.server_state.base_url = cfg.base_url;
         state.client.server_state.username = cfg.username;
-        // Do NOT reset the password from `cfg`: the daemon-owned mirror is
-        // scrubbed, so overwriting here would erase the locally resolved
-        // secret and a later Save would persist an empty one.
+        // Revert dirty editor text to the last local committed value. Do not
+        // use `cfg`: daemon-owned wire snapshots deliberately scrub secrets.
+        state.client.server_state.password = state.client.server_state.committed_password.clone();
         state.client.server_state.status = None;
     }
     if state.client.page == Page::Library && state.client.artists.filter_active {

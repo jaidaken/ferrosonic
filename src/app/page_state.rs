@@ -42,6 +42,60 @@ pub struct LyricsState {
     pub request_generation: u64,
 }
 
+/// Which entity an info overlay describes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InfoKind {
+    /// Artist biography/links.
+    #[default]
+    Artist,
+    /// Album notes/links.
+    Album,
+}
+
+/// Loaded payload for the info overlay.
+#[derive(Debug, Clone)]
+pub enum InfoPayload {
+    /// Artist biography/links.
+    Artist(crate::subsonic::models::ArtistInfo2),
+    /// Album notes/links.
+    Album(crate::subsonic::models::AlbumInfo),
+}
+
+/// Result state of the info overlay.
+#[derive(Debug, Clone, Default)]
+pub enum InfoStatus {
+    /// No request has been made.
+    #[default]
+    Idle,
+    /// A background request is in flight.
+    Loading,
+    /// Information is available.
+    Ready(InfoPayload),
+    /// The server returned no information (common without Last.fm).
+    Empty,
+    /// Retrieval failed; contains a user-facing reason.
+    Error(String),
+}
+
+/// Client-owned artist/album info overlay.
+#[derive(Debug, Clone, Default)]
+pub struct InfoOverlayState {
+    /// Whether the overlay is visible.
+    pub open: bool,
+    /// Artist or album.
+    pub kind: InfoKind,
+    /// ID of the described entity.
+    pub target_id: Option<String>,
+    /// Display name shown in the title.
+    pub title: String,
+    /// Loading/result state.
+    pub status: InfoStatus,
+    /// First visible body row.
+    pub scroll: usize,
+    /// Guards against stale background replies replacing a newer target.
+    pub request_generation: u64,
+}
+
 /// Which playback-filter name list is being edited.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterListKind {
@@ -112,6 +166,9 @@ pub struct ArtistsState {
     pub search_results: Option<crate::subsonic::models::SearchResult3>,
     /// Bumped on every keystroke; spawned search tasks only commit a reply if the gen still matches, drops stale results.
     pub search_gen: u64,
+    /// Recall cursor into `ClientState::search_history` while the filter is
+    /// being edited; `None` means the live typed query, not a recalled one.
+    pub history_cursor: Option<usize>,
     /// 0 = tree, 1 = songs.
     pub focus: usize,
     /// First visible row of the artist tree.
@@ -145,6 +202,7 @@ impl ArtistsState {
         self.filter_active = false;
         self.filter.clear();
         self.search_results = None;
+        self.history_cursor = None;
         self.expanded.clear();
         self.selected_index = Some(0);
     }
@@ -248,6 +306,9 @@ pub struct ServerState {
     pub username: String,
     /// Password being edited.
     pub password: Secret,
+    /// Last locally committed/resolved password. Daemon snapshots are
+    /// scrubbed, so this remains the safe source for reverting editor text.
+    pub committed_password: Secret,
     /// Status line from the last test or save action.
     pub status: Option<String>,
 }
@@ -271,6 +332,16 @@ pub struct SettingsState {
     pub daemon_enabled: bool,
     /// Auto-continue with random songs when the queue ends. Daemon fetches a fresh batch and keeps playing.
     pub auto_continue: bool,
+    /// Stream the next cold track immediately instead of pre-buffering it fully.
+    pub stream_on_start: bool,
+    /// Restore the queue, track, and playhead across daemon restarts.
+    pub resume_on_start: bool,
+    /// Auto-play a restored session instead of restoring it paused.
+    pub autoplay_on_start: bool,
+    /// Cache streamed tracks locally for repeat/offline playback.
+    pub offline_cache_enabled: bool,
+    /// Maximum offline cache size in MiB.
+    pub offline_cache_max_mb: u32,
     /// Repeat mode for the queue. Cycled by `r` globally.
     pub repeat_mode: crate::config::RepeatMode,
     /// Show cover art in the now-playing section.
@@ -311,6 +382,11 @@ impl Default for SettingsState {
             cava_size: 40,
             daemon_enabled: true,
             auto_continue: false,
+            stream_on_start: true,
+            resume_on_start: true,
+            autoplay_on_start: false,
+            offline_cache_enabled: false,
+            offline_cache_max_mb: 2048,
             repeat_mode: crate::config::RepeatMode::Off,
             cover_art: false,
             cover_art_size: 16,

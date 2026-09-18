@@ -13,6 +13,11 @@ enum SettingChange {
     CoverArtSize,
     Repeat,
     AutoContinue,
+    StreamOnStart,
+    ResumeOnStart,
+    AutoplayOnStart,
+    OfflineCache,
+    OfflineCacheSize,
     Scrobble,
     Daemon,
     Notifications,
@@ -24,7 +29,7 @@ enum SettingChange {
     PlaybackFilters,
 }
 
-const SETTINGS_FIELD_COUNT: usize = 21;
+const SETTINGS_FIELD_COUNT: usize = 26;
 /// `adjust_setting`'s Left/Right step for the `ReplayGain` preamp, in dB.
 const REPLAY_GAIN_PREAMP_STEP: f64 = 0.5;
 /// `adjust_setting`'s Left/Right step for the Year Min/Max filters.
@@ -63,14 +68,14 @@ impl App {
                         cs.notify(msg);
                     }
                 }
-                KeyCode::Enter if (18..=20).contains(&field) => match field {
-                    18 | 19 => {
-                        let kind = if field == 18 {
+                KeyCode::Enter if (19..=21).contains(&field) => match field {
+                    19 | 20 => {
+                        let kind = if field == 19 {
                             crate::app::state::FilterListKind::Genres
                         } else {
                             crate::app::state::FilterListKind::Artists
                         };
-                        let entries = if field == 18 {
+                        let entries = if field == 19 {
                             cs.settings_state.playback_filters.excluded_genres.clone()
                         } else {
                             cs.settings_state.playback_filters.excluded_artists.clone()
@@ -84,7 +89,7 @@ impl App {
                                 input: String::new(),
                             });
                     }
-                    20 => {
+                    21 => {
                         cs.settings_state.keybinding_editor =
                             Some(crate::app::state::KeybindingEditor {
                                 bindings: cs.settings_state.keybindings.clone(),
@@ -117,6 +122,11 @@ impl App {
             cover_art_size,
             repeat_mode,
             auto_continue,
+            stream_on_start,
+            resume_on_start,
+            autoplay_on_start,
+            offline_cache_enabled,
+            offline_cache_max_mb,
             scrobble,
             daemon_enabled,
             notifications,
@@ -142,6 +152,11 @@ impl App {
                 s.cover_art_size,
                 s.repeat_mode,
                 s.auto_continue,
+                s.stream_on_start,
+                s.resume_on_start,
+                s.autoplay_on_start,
+                s.offline_cache_enabled,
+                s.offline_cache_max_mb,
                 s.scrobble,
                 s.daemon_enabled,
                 s.notifications,
@@ -161,6 +176,15 @@ impl App {
             SettingChange::CoverArtSize => DaemonRequest::SetCoverArtSize(cover_art_size),
             SettingChange::Repeat => DaemonRequest::SetRepeatMode(repeat_mode),
             SettingChange::AutoContinue => DaemonRequest::SetAutoContinue(auto_continue),
+            SettingChange::StreamOnStart => DaemonRequest::SetStreamOnStart(stream_on_start),
+            SettingChange::ResumeOnStart => DaemonRequest::SetResumeOnStart(resume_on_start),
+            SettingChange::AutoplayOnStart => DaemonRequest::SetAutoplayOnStart(autoplay_on_start),
+            SettingChange::OfflineCache => {
+                DaemonRequest::SetOfflineCacheEnabled(offline_cache_enabled)
+            }
+            SettingChange::OfflineCacheSize => {
+                DaemonRequest::SetOfflineCacheMaxMb(offline_cache_max_mb)
+            }
             SettingChange::Scrobble => DaemonRequest::SetScrobble(scrobble),
             SettingChange::Daemon => DaemonRequest::SetDaemonEnabled(daemon_enabled),
             SettingChange::Notifications => DaemonRequest::SetNotifications(notifications),
@@ -209,6 +233,11 @@ impl App {
             | SettingChange::CoverArtSize
             | SettingChange::Repeat
             | SettingChange::AutoContinue
+            | SettingChange::StreamOnStart
+            | SettingChange::ResumeOnStart
+            | SettingChange::AutoplayOnStart
+            | SettingChange::OfflineCache
+            | SettingChange::OfflineCacheSize
             | SettingChange::Scrobble
             | SettingChange::Daemon
             | SettingChange::Notifications
@@ -520,18 +549,22 @@ fn adjust_setting(
             Some(SettingChange::AutoContinue)
         }
         7 => {
+            s.stream_on_start = !s.stream_on_start;
+            Some(SettingChange::StreamOnStart)
+        }
+        8 => {
             s.scrobble = !s.scrobble;
             Some(SettingChange::Scrobble)
         }
-        8 => {
+        9 => {
             s.daemon_enabled = !s.daemon_enabled;
             Some(SettingChange::Daemon)
         }
-        9 => {
+        10 => {
             s.notifications = !s.notifications;
             Some(SettingChange::Notifications)
         }
-        10 => {
+        11 => {
             // Left and right both cycle; left goes one back, right one forward.
             s.replay_gain_mode = if step < 0 {
                 s.replay_gain_mode.prev()
@@ -540,7 +573,7 @@ fn adjust_setting(
             };
             Some(SettingChange::ReplayGainMode)
         }
-        11 => {
+        12 => {
             let step_db = REPLAY_GAIN_PREAMP_STEP * f64::from(step);
             let new = (s.replay_gain_preamp + step_db).clamp(
                 crate::config::REPLAY_GAIN_PREAMP_MIN,
@@ -558,11 +591,11 @@ fn adjust_setting(
                 Some(SettingChange::ReplayGainPreamp)
             }
         }
-        12 => {
+        13 => {
             s.replay_gain_clip = !s.replay_gain_clip;
             Some(SettingChange::ReplayGainClip)
         }
-        13 => {
+        14 => {
             let cur = i32::from(s.playback_filters.min_rating);
             let new = crate::num::u8_sat((cur + step).clamp(0, 5));
             if new == s.playback_filters.min_rating {
@@ -572,7 +605,7 @@ fn adjust_setting(
                 Some(SettingChange::PlaybackFilters)
             }
         }
-        14 => {
+        15 => {
             let new = cycle_optional_year(s.playback_filters.year_min, step);
             if new == s.playback_filters.year_min {
                 None
@@ -581,7 +614,7 @@ fn adjust_setting(
                 Some(SettingChange::PlaybackFilters)
             }
         }
-        15 => {
+        16 => {
             let new = cycle_optional_year(s.playback_filters.year_max, step);
             if new == s.playback_filters.year_max {
                 None
@@ -590,7 +623,7 @@ fn adjust_setting(
                 Some(SettingChange::PlaybackFilters)
             }
         }
-        16 => {
+        17 => {
             let new = cycle_optional_duration(s.playback_filters.duration_min_secs, step);
             if new == s.playback_filters.duration_min_secs {
                 None
@@ -599,13 +632,37 @@ fn adjust_setting(
                 Some(SettingChange::PlaybackFilters)
             }
         }
-        17 => {
+        18 => {
             let new = cycle_optional_duration(s.playback_filters.duration_max_secs, step);
             if new == s.playback_filters.duration_max_secs {
                 None
             } else {
                 s.playback_filters.duration_max_secs = new;
                 Some(SettingChange::PlaybackFilters)
+            }
+        }
+        22 => {
+            s.resume_on_start = !s.resume_on_start;
+            Some(SettingChange::ResumeOnStart)
+        }
+        23 => {
+            s.autoplay_on_start = !s.autoplay_on_start;
+            Some(SettingChange::AutoplayOnStart)
+        }
+        24 => {
+            s.offline_cache_enabled = !s.offline_cache_enabled;
+            Some(SettingChange::OfflineCache)
+        }
+        25 => {
+            let cur = i64::from(s.offline_cache_max_mb);
+            let step_mb = i64::from(step) * 512;
+            let new = (cur + step_mb).clamp(1, 102_400);
+            let new = crate::num::u32_sat(new);
+            if new == s.offline_cache_max_mb {
+                None
+            } else {
+                s.offline_cache_max_mb = new;
+                Some(SettingChange::OfflineCacheSize)
             }
         }
         _ => None,
@@ -659,6 +716,17 @@ fn change_message(
         SettingChange::CoverArtSize => format!("Cover Art Size: {} rows", s.cover_art_size),
         SettingChange::Repeat => format!("Repeat: {}", s.repeat_mode.label()),
         SettingChange::AutoContinue => format!("Auto-continue: {}", on_off(s.auto_continue)),
+        SettingChange::StreamOnStart => format!("Stream on start: {}", on_off(s.stream_on_start)),
+        SettingChange::ResumeOnStart => format!("Resume on start: {}", on_off(s.resume_on_start)),
+        SettingChange::AutoplayOnStart => {
+            format!("Autoplay on start: {}", on_off(s.autoplay_on_start))
+        }
+        SettingChange::OfflineCache => {
+            format!("Offline cache: {}", on_off(s.offline_cache_enabled))
+        }
+        SettingChange::OfflineCacheSize => {
+            format!("Offline cache size: {} MB", s.offline_cache_max_mb)
+        }
         SettingChange::Scrobble => format!("Scrobble: {}", on_off(s.scrobble)),
         SettingChange::Daemon => format!("Daemon: {} (restart to apply)", on_off(s.daemon_enabled)),
         SettingChange::Notifications => format!("Notifications: {}", on_off(s.notifications)),
@@ -689,15 +757,15 @@ fn format_optional(v: Option<impl std::fmt::Display>) -> String {
 
 fn playback_filter_message(filters: &crate::config::PlaybackFilters, field: usize) -> String {
     match field {
-        13 if filters.min_rating == 0 => "Min Rating: Off".to_string(),
-        13 => format!("Min Rating: {}★ and below", filters.min_rating),
-        14 => format!("Year Min: {}", format_optional(filters.year_min)),
-        15 => format!("Year Max: {}", format_optional(filters.year_max)),
-        16 => format!(
+        14 if filters.min_rating == 0 => "Min Rating: Off".to_string(),
+        14 => format!("Min Rating: {}★ and below", filters.min_rating),
+        15 => format!("Year Min: {}", format_optional(filters.year_min)),
+        16 => format!("Year Max: {}", format_optional(filters.year_max)),
+        17 => format!(
             "Duration Min: {}",
             format_optional(filters.duration_min_secs.map(|s| format!("{s}s")))
         ),
-        17 => format!(
+        18 => format!(
             "Duration Max: {}",
             format_optional(filters.duration_max_secs.map(|s| format!("{s}s")))
         ),

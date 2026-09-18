@@ -11,8 +11,16 @@ use crate::subsonic::models::Child;
 pub struct QueueSnapshot {
     /// Queue contents at save time.
     pub queue: Vec<Child>,
-    /// Playing position at save time, if any.
+    /// Playing position (queue index) at save time, if any.
     pub position: Option<usize>,
+    /// Playhead in seconds within the current track, when a track was loaded.
+    /// Absent in snapshots written before resume-at-position existed.
+    #[serde(default)]
+    pub position_secs: Option<f64>,
+    /// Whether playback was paused at save time. Restored paused regardless
+    /// unless `AutoplayOnStart` is set.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 impl QueueSnapshot {

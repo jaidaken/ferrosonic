@@ -17,10 +17,10 @@ expression: frame
 │Playback                                                                      │
 │  Repeat            Off                                                       │
 │  Auto-continue     Off                                                       │
+│  Stream on Start   On                                                        │
 │  Scrobble          On                                                        │
 │                                                                              │
 │System                                                                        │
-│  Daemon            On                                                        │
 │← → or Enter to change theme (auto-saves)                                     │
 └──────────────────────────────────────────────────────────────────────────────┘
 q:Quit │ p/Space:Pause │ h:Prev │ l:Next │ r:Repeat (off) │ y:Lyrics            

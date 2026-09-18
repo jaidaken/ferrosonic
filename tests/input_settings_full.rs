@@ -65,7 +65,7 @@ async fn down_stops_at_max_field() {
             .await
             .settings_state
             .selected_field,
-        20
+        25
     );
 }
 
@@ -359,11 +359,11 @@ async fn auto_continue_field_six_toggles() {
 
 #[tokio::test]
 #[serial]
-async fn daemon_enabled_field_eight_toggles() {
+async fn daemon_enabled_field_nine_toggles() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 8;
+        cs.settings_state.selected_field = 9;
         cs.settings_state.daemon_enabled = false;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
@@ -379,15 +379,35 @@ async fn daemon_enabled_field_eight_toggles() {
 
 #[tokio::test]
 #[serial]
-async fn scrobble_field_seven_toggles() {
+async fn scrobble_field_eight_toggles() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 7;
+        cs.settings_state.selected_field = 8;
         cs.settings_state.scrobble = false;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
     assert!(fx.app.client_state.read().await.settings_state.scrobble);
+}
+
+#[tokio::test]
+#[serial]
+async fn stream_on_start_field_seven_toggles() {
+    let mut fx = build_app().await;
+    {
+        let mut cs = fx.app.client_state.write().await;
+        cs.settings_state.selected_field = 7;
+        cs.settings_state.stream_on_start = false;
+    }
+    fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
+    assert!(
+        fx.app
+            .client_state
+            .read()
+            .await
+            .settings_state
+            .stream_on_start
+    );
 }
 
 #[tokio::test]
@@ -471,11 +491,11 @@ async fn cava_size_clamps_at_max() {
 
 #[tokio::test]
 #[serial]
-async fn replay_gain_mode_field_ten_cycles_forward_with_right() {
+async fn replay_gain_mode_field_eleven_cycles_forward_with_right() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 10;
+        cs.settings_state.selected_field = 11;
         cs.settings_state.replay_gain_mode = ferrosonic::config::ReplayGainMode::Off;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
@@ -492,11 +512,11 @@ async fn replay_gain_mode_field_ten_cycles_forward_with_right() {
 
 #[tokio::test]
 #[serial]
-async fn replay_gain_mode_field_ten_cycles_backward_with_left() {
+async fn replay_gain_mode_field_eleven_cycles_backward_with_left() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 10;
+        cs.settings_state.selected_field = 11;
         cs.settings_state.replay_gain_mode = ferrosonic::config::ReplayGainMode::Off;
     }
     fx.app.handle_key(key(KeyCode::Left)).await.unwrap();
@@ -513,11 +533,11 @@ async fn replay_gain_mode_field_ten_cycles_backward_with_left() {
 
 #[tokio::test]
 #[serial]
-async fn replay_gain_preamp_field_eleven_adjusts_by_half_db() {
+async fn replay_gain_preamp_field_twelve_adjusts_by_half_db() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 11;
+        cs.settings_state.selected_field = 12;
         cs.settings_state.replay_gain_preamp = 0.0;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
@@ -545,11 +565,11 @@ async fn replay_gain_preamp_field_eleven_adjusts_by_half_db() {
 
 #[tokio::test]
 #[serial]
-async fn replay_gain_preamp_field_eleven_clamps_at_bounds() {
+async fn replay_gain_preamp_field_twelve_clamps_at_bounds() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 11;
+        cs.settings_state.selected_field = 12;
         cs.settings_state.replay_gain_preamp = 15.0;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
@@ -567,11 +587,11 @@ async fn replay_gain_preamp_field_eleven_clamps_at_bounds() {
 
 #[tokio::test]
 #[serial]
-async fn replay_gain_clip_field_twelve_toggles() {
+async fn replay_gain_clip_field_thirteen_toggles() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 12;
+        cs.settings_state.selected_field = 13;
         cs.settings_state.replay_gain_clip = false;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
@@ -587,11 +607,11 @@ async fn replay_gain_clip_field_twelve_toggles() {
 
 #[tokio::test]
 #[serial]
-async fn min_rating_field_thirteen_adjusts_and_clamps() {
+async fn min_rating_field_fourteen_adjusts_and_clamps() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 13;
+        cs.settings_state.selected_field = 14;
         cs.settings_state.playback_filters.min_rating = 0;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
@@ -623,11 +643,11 @@ async fn min_rating_field_thirteen_adjusts_and_clamps() {
 
 #[tokio::test]
 #[serial]
-async fn year_min_field_fourteen_cycles_off_to_a_year_and_back() {
+async fn year_min_field_fifteen_cycles_off_to_a_year_and_back() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 14;
+        cs.settings_state.selected_field = 15;
         cs.settings_state.playback_filters.year_min = None;
     }
     fx.app.handle_key(key(KeyCode::Right)).await.unwrap();
@@ -658,11 +678,11 @@ async fn year_min_field_fourteen_cycles_off_to_a_year_and_back() {
 
 #[tokio::test]
 #[serial]
-async fn duration_max_field_seventeen_cycles_off_to_a_value_and_back() {
+async fn duration_max_field_eighteen_cycles_off_to_a_value_and_back() {
     let mut fx = build_app().await;
     {
         let mut cs = fx.app.client_state.write().await;
-        cs.settings_state.selected_field = 17;
+        cs.settings_state.selected_field = 18;
         cs.settings_state.playback_filters.duration_max_secs = None;
     }
     fx.app.handle_key(key(KeyCode::Left)).await.unwrap();

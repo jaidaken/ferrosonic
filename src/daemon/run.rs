@@ -48,6 +48,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let _mpv_events = core.spawn_mpv_event_listener().await;
     let _idle_exit = core.spawn_idle_exit_monitor();
 
+    core.autoplay_restored_if_configured().await;
+
     if config.is_configured() {
         let bg = Arc::clone(&core);
         tokio::spawn(async move {
@@ -105,6 +107,12 @@ async fn shutdown(core: &Arc<DaemonCore>, socket: &std::path::Path) {
             warn!("Failed to remove socket {}: {}", socket.display(), e);
         }
     }
-    // The queue belongs to this daemon session; drop it so the next start is empty.
-    crate::daemon::persistence::QueueSnapshot::remove();
+    // With resume enabled, persist the queue, current track, and playhead so
+    // the next start restores them; otherwise drop the queue so the next start
+    // is empty, the historical behavior.
+    if core.state.read().await.config.resume_on_start {
+        core.save_queue_snapshot_now().await;
+    } else {
+        crate::daemon::persistence::QueueSnapshot::remove();
+    }
 }

@@ -36,6 +36,7 @@ struct FakeMpvState {
     playlist: Vec<String>,
     commands: Vec<Vec<Value>>,
     fail_loadfile: bool,
+    delay_next_loadfile_ms: u64,
     /// Unsolicited event messages queued by tests; flushed to the connection
     /// on `emit` notify, modeling mpv pushing events like `end-file`.
     pending_events: Vec<Value>,
@@ -186,6 +187,10 @@ impl FakeMpv {
         self.changed.notify_one();
     }
 
+    pub async fn delay_next_loadfile(&self, delay_ms: u64) {
+        self.state.lock().await.delay_next_loadfile_ms = delay_ms;
+    }
+
     /// Push an unsolicited event message over the socket, like real mpv.
     pub async fn emit_event(&self, event: Value) {
         self.state.lock().await.pending_events.push(event);
@@ -279,6 +284,12 @@ async fn process_command(
     let name = cmd.first().and_then(|v| v.as_str()).unwrap_or("");
     match name {
         "loadfile" => {
+            let delay_ms = std::mem::take(&mut s.delay_next_loadfile_ms);
+            if delay_ms > 0 {
+                drop(s);
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                s = state.lock().await;
+            }
             if s.fail_loadfile {
                 return ("loadfile injected failure".into(), None);
             }

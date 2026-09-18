@@ -110,6 +110,37 @@ jobs:
       - name: Doc tests (nextest skips these)
         run: cargo test --doc --locked
 
+  build_macos:
+    name: build (macOS ${{ matrix.label }})
+    # Report-only while the macOS port is validated end to end. The Linux
+    # jobs remain the gate. Flip `continue-on-error` off once both macOS
+    # targets build and clippy cleanly on a regular basis.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x86_64 (Intel). macos-15-intel is GitHub's last Intel image
+          # (supported until Fall 2027); macos-13 is retired.
+          - label: macos-15-intel
+            target: x86_64-apple-darwin
+          # arm64 (Apple Silicon).
+          - label: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.label }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      # No C build deps: rustls, pure-Rust zbus, runtime-dlopen chafa,
+      # platform keychain. mpv/cava are runtime-only.
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features --locked --target ${{ matrix.target }}
+
   coverage:
     name: coverage (report only)
     runs-on: ubuntu-latest

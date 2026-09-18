@@ -9,10 +9,11 @@ use url::Url;
 
 use super::auth::generate_auth_params;
 use super::models::{
-    Album, AlbumData, AlbumList2Data, Artist, ArtistData, ArtistsData, Child, ClassicLyricsData,
-    LyricLine, LyricsListData, LyricsSource, MusicFolder, MusicFoldersData,
-    OpenSubsonicExtensionsData, PingData, Playlist, PlaylistData, PlaylistsData, RandomSongsData,
-    Search3Data, SearchResult3, StarredSongsData, SubsonicResponse,
+    Album, AlbumData, AlbumInfo, AlbumInfoData, AlbumList2Data, Artist, ArtistData, ArtistInfo2,
+    ArtistInfo2Data, ArtistsData, Child, ClassicLyricsData, LyricLine, LyricsListData,
+    LyricsSource, MusicFolder, MusicFoldersData, OpenSubsonicExtensionsData, PingData, Playlist,
+    PlaylistData, PlaylistsData, RandomSongsData, Search3Data, SearchResult3, StarredSongsData,
+    SubsonicResponse,
 };
 use crate::error::SubsonicError;
 use crate::secret::Secret;
@@ -599,8 +600,12 @@ impl SubsonicClient {
         let url = self.build_url(&format!("getArtist?id={}", urlencoding::encode(id)))?;
         debug!("Fetching artist: {}", id);
 
-        let response = self.http.get(url).send().await.map_err(redact_url)?;
-        let text = response.text().await.map_err(redact_url)?;
+        let (status, text) = self.get_body(url).await?;
+        if !status.is_success() {
+            return Err(SubsonicError::HttpStatus {
+                status: status.as_u16(),
+            });
+        }
 
         let parsed: SubsonicResponse<ArtistData> = serde_json::from_str(&text)
             .map_err(|e| SubsonicError::Parse(format!("Failed to parse artist response: {e}")))?;
@@ -642,8 +647,12 @@ impl SubsonicClient {
         let url = self.build_url(&format!("getAlbum?id={}", urlencoding::encode(id)))?;
         debug!("Fetching album: {}", id);
 
-        let response = self.http.get(url).send().await.map_err(redact_url)?;
-        let text = response.text().await.map_err(redact_url)?;
+        let (status, text) = self.get_body(url).await?;
+        if !status.is_success() {
+            return Err(SubsonicError::HttpStatus {
+                status: status.as_u16(),
+            });
+        }
 
         let parsed: SubsonicResponse<AlbumData> = serde_json::from_str(&text)
             .map_err(|e| SubsonicError::Parse(format!("Failed to parse album response: {e}")))?;
@@ -683,6 +692,30 @@ impl SubsonicClient {
         Ok((album, detail.song))
     }
 
+    /// Fetch artist biography/links via `getArtistInfo2`. Servers without an
+    /// external integration return an all-empty [`ArtistInfo2`].
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
+    pub async fn get_artist_info2(&self, id: &str) -> Result<ArtistInfo2, SubsonicError> {
+        let data: ArtistInfo2Data = self
+            .request(&format!("getArtistInfo2?id={}", urlencoding::encode(id)))
+            .await?;
+        Ok(data.artist_info)
+    }
+
+    /// Fetch album notes/links via `getAlbumInfo2`. Servers without an
+    /// external integration return an all-empty [`AlbumInfo`].
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
+    pub async fn get_album_info2(&self, id: &str) -> Result<AlbumInfo, SubsonicError> {
+        let data: AlbumInfoData = self
+            .request(&format!("getAlbumInfo2?id={}", urlencoding::encode(id)))
+            .await?;
+        Ok(data.album_info)
+    }
+
     /// Fetch all playlists visible to the account.
     ///
     /// # Errors
@@ -702,8 +735,12 @@ impl SubsonicClient {
         let url = self.build_url(&format!("getPlaylist?id={}", urlencoding::encode(id)))?;
         debug!("Fetching playlist: {}", id);
 
-        let response = self.http.get(url).send().await.map_err(redact_url)?;
-        let text = response.text().await.map_err(redact_url)?;
+        let (status, text) = self.get_body(url).await?;
+        if !status.is_success() {
+            return Err(SubsonicError::HttpStatus {
+                status: status.as_u16(),
+            });
+        }
 
         let parsed: SubsonicResponse<PlaylistData> = serde_json::from_str(&text)
             .map_err(|e| SubsonicError::Parse(format!("Failed to parse playlist response: {e}")))?;
@@ -728,7 +765,7 @@ impl SubsonicClient {
             owner: detail.owner,
             song_count: detail.song_count,
             duration: detail.duration,
-            cover_art: None,
+            cover_art: detail.cover_art,
             public: None,
             comment: None,
         };

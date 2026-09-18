@@ -69,6 +69,7 @@ impl DaemonCore {
         play_from: Option<usize>,
         mode: PlayMode,
     ) -> Result<(), Error> {
+        let _transition = self.playback_transitions.lock().await;
         let client_opt = self.subsonic.read().await.clone();
 
         let prepared = {
@@ -194,7 +195,8 @@ impl DaemonCore {
         self.clear_cover_cache().await;
         self.emit(DaemonEvent::RandomChanged(songs));
         self.emit_queue().await;
-        self.play_queue_position(0, PlayMode::Buffered).await
+        let mode = self.preferred_start_mode().await;
+        self.play_queue_position(0, mode).await
     }
 
     /// Shuffle preserving the currently-playing track in place.

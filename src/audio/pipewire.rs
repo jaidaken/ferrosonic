@@ -47,6 +47,10 @@ impl CommandRunner for PwMetadataCommand {
 pub struct PipeWireController {
     original_rate: Option<u32>,
     current_rate: Option<u32>,
+    /// Set from the construction probe. When `pw-metadata` cannot be executed
+    /// at all (e.g. it is not installed, as on macOS), the controller degrades
+    /// to a silent no-op instead of warning on every track.
+    available: bool,
     runner: Arc<dyn CommandRunner>,
 }
 
@@ -57,7 +61,7 @@ impl PipeWireController {
         Self::with_runner(Arc::new(PwMetadataCommand))
     }
 
-    /// Construct with an injected runner. Probes `clock.force-rate` once at construction time so [`get_original_rate`](Self::get_original_rate) can restore it on drop; a failing probe leaves `original_rate` as `None` so a missing pw-metadata binary stays non-fatal.
+    /// Construct with an injected runner. Probes `clock.force-rate` once at construction time so [`get_original_rate`](Self::get_original_rate) can restore it on drop; a failing probe leaves `original_rate` as `None` and marks the controller unavailable, so a missing pw-metadata binary (or a platform without `PipeWire`) stays non-fatal and warning-free.
     ///
     /// ```
     /// use std::process::Output;
@@ -83,17 +87,22 @@ impl PipeWireController {
         // The blocking pw-metadata fork+exec+wait would park a tokio
         // worker for tens of ms; only use block_in_place on a multi-
         // thread runtime since it panics on current_thread (tests).
-        let probe = || Self::query_rate_via(&*runner).ok();
-        let original_rate = match tokio::runtime::Handle::try_current() {
+        let probe = || Self::query_rate_via(&*runner);
+        let probed = match tokio::runtime::Handle::try_current() {
             Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
                 tokio::task::block_in_place(probe)
             }
             _ => probe(),
         };
-        debug!("Original PipeWire sample rate: {:?}", original_rate);
+        let available = probed.is_ok();
+        let original_rate = probed.ok();
+        debug!(
+            "PipeWire pw-metadata available: {available}; original sample rate: {original_rate:?}"
+        );
         Self {
             original_rate,
             current_rate: None,
+            available,
             runner,
         }
     }
@@ -121,6 +130,10 @@ impl PipeWireController {
     /// # Errors
     /// Returns an `AudioError` if the `PipeWire` command fails.
     pub async fn set_rate(&mut self, rate: u32) -> Result<(), AudioError> {
+        if !self.available {
+            debug!("PipeWire unavailable; skipping sample-rate switch to {rate} Hz");
+            return Ok(());
+        }
         // No cache short-circuit: external pw-metadata changes would
         // make the cache stale and bit-perfect would silently break.
         info!("Setting PipeWire sample rate to {} Hz", rate);
@@ -144,6 +157,10 @@ impl PipeWireController {
     /// # Errors
     /// Returns an `AudioError` if the `PipeWire` command fails.
     pub async fn clear_forced_rate(&mut self) -> Result<(), AudioError> {
+        if !self.available {
+            debug!("PipeWire unavailable; nothing to clear");
+            return Ok(());
+        }
         info!("Clearing PipeWire forced sample rate");
         let output = self
             .runner

@@ -41,6 +41,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
             arb_replay_gain_mode(),
             -15.0f64..=15.0f64,
             any::<bool>(),
+            any::<bool>(),
         ),
     )
         .prop_map(
@@ -65,6 +66,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
                     replay_gain_mode,
                     replay_gain_preamp,
                     replay_gain_clip,
+                    stream_on_start,
                 ),
             )| Config {
                 base_url,
@@ -79,6 +81,15 @@ fn arb_config() -> impl Strategy<Value = Config> {
                 cava_size,
                 daemon,
                 auto_continue,
+                stream_on_start,
+                search_debounce_ms: 200,
+                search_artist_limit: 100,
+                search_album_limit: 100,
+                search_song_limit: 200,
+                resume_on_start: true,
+                autoplay_on_start: false,
+                offline_cache_enabled: false,
+                offline_cache_max_mb: 2048,
                 repeat_mode,
                 cover_art,
                 cover_art_size,
@@ -119,6 +130,7 @@ fn config_round_trips_through_toml() {
             prop_assert_eq!(parsed.daemon, c.daemon);
             prop_assert_eq!(parsed.cover_art, c.cover_art);
             prop_assert_eq!(parsed.auto_continue, c.auto_continue);
+            prop_assert_eq!(parsed.stream_on_start, c.stream_on_start);
             prop_assert_eq!(parsed.scrobble, c.scrobble);
             prop_assert_eq!(parsed.notifications, c.notifications);
             prop_assert_eq!(parsed.rate_switch_delay_ms, c.rate_switch_delay_ms);

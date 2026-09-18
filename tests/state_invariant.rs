@@ -20,6 +20,8 @@ async fn r1_restore_queue_blocking_does_not_silently_skip() {
     let snap = ferrosonic::daemon::persistence::QueueSnapshot {
         queue: songs("t", 5),
         position: Some(2),
+        position_secs: None,
+        paused: false,
     };
     snap.save().expect("save snapshot");
 

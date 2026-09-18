@@ -49,6 +49,28 @@ pub fn queue_file() -> Option<PathBuf> {
     config_dir().map(|p| p.join("queue.json"))
 }
 
+/// Path of the persisted recent-search history.
+#[must_use]
+pub fn search_history_file() -> Option<PathBuf> {
+    config_dir().map(|p| p.join("search_history.json"))
+}
+
+/// Root cache directory for on-disk artifacts. Honors `FERROSONIC_CACHE_DIR`
+/// for tests; XDG cache otherwise.
+#[must_use]
+pub fn cache_dir() -> Option<PathBuf> {
+    if let Some(override_path) = std::env::var_os("FERROSONIC_CACHE_DIR") {
+        return Some(PathBuf::from(override_path));
+    }
+    dirs::cache_dir().map(|p| p.join("ferrosonic"))
+}
+
+/// Directory holding cached track audio.
+#[must_use]
+pub fn tracks_dir() -> Option<PathBuf> {
+    cache_dir().map(|p| p.join("tracks"))
+}
+
 /// Create the config directory if missing and return it.
 ///
 /// # Errors

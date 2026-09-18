@@ -176,6 +176,17 @@ impl DaemonClient for InProcessClient {
             DaemonRequest::SetCavaSize(sz) => ok_response(core.set_cava_size(sz).await),
             DaemonRequest::SetDaemonEnabled(on) => ok_response(core.set_daemon_enabled(on).await),
             DaemonRequest::SetAutoContinue(on) => ok_response(core.set_auto_continue(on).await),
+            DaemonRequest::SetStreamOnStart(on) => ok_response(core.set_stream_on_start(on).await),
+            DaemonRequest::SetResumeOnStart(on) => ok_response(core.set_resume_on_start(on).await),
+            DaemonRequest::SetAutoplayOnStart(on) => {
+                ok_response(core.set_autoplay_on_start(on).await)
+            }
+            DaemonRequest::SetOfflineCacheEnabled(on) => {
+                ok_response(core.set_offline_cache_enabled(on).await)
+            }
+            DaemonRequest::SetOfflineCacheMaxMb(mb) => {
+                ok_response(core.set_offline_cache_max_mb(mb).await)
+            }
             DaemonRequest::SetScrobble(on) => ok_response(core.set_scrobble(on).await),
             DaemonRequest::SetNotifications(on) => ok_response(core.set_notifications(on).await),
             DaemonRequest::SetRepeatMode(mode) => ok_response(core.set_repeat_mode(mode).await),
@@ -206,6 +217,12 @@ impl DaemonClient for InProcessClient {
                     .await
                     .map_err(|error| IpcError::Daemon(error.to_string()))?,
             )),
+            DaemonRequest::FetchArtistInfo { id } => Ok(DaemonResponse::ArtistInfo(Box::new(
+                core.fetch_artist_info(&id).await,
+            ))),
+            DaemonRequest::FetchAlbumInfo { id } => Ok(DaemonResponse::AlbumInfo(Box::new(
+                core.fetch_album_info(&id).await,
+            ))),
             DaemonRequest::Subscribe => {
                 warn!("Subscribe sent as request; use DaemonClient::subscribe instead");
                 Ok(DaemonResponse::Ok)
@@ -254,12 +271,9 @@ impl InProcessClient {
                 // to start playing (play_from was Some) rather than silently
                 // leaving the queue stopped.
                 let play_from = new_play_from.or_else(|| play_from.map(|_| 0));
+                let mode = self.core.preferred_start_mode().await;
                 self.core
-                    .replace_queue_and_play(
-                        songs,
-                        play_from,
-                        crate::daemon::core::PlayMode::Buffered,
-                    )
+                    .replace_queue_and_play(songs, play_from, mode)
                     .await
                     .map_err(err)?;
             }

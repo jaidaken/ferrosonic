@@ -536,9 +536,81 @@ pub struct PlaylistDetail {
     /// Total playlist duration in seconds.
     #[serde(default)]
     pub duration: Option<i32>,
+    /// Cover art ID usable with `getCoverArt`.
+    #[serde(default, rename = "coverArt")]
+    pub cover_art: Option<String>,
     /// Songs in playlist order.
     #[serde(default)]
     pub entry: Vec<Child>,
+}
+
+/// Payload of `getArtistInfo2`.
+#[derive(Debug, Deserialize)]
+pub struct ArtistInfo2Data {
+    /// The `artistInfo2` result object; empty on servers without it.
+    #[serde(rename = "artistInfo2", default)]
+    pub artist_info: ArtistInfo2,
+}
+
+/// Artist biography and external links from `getArtistInfo2`.
+///
+/// Navidrome only fills these when an external (Last.fm) integration is
+/// configured; otherwise every field is empty and the panel shows an empty
+/// state.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ArtistInfo2 {
+    /// Biography text, when available.
+    #[serde(default)]
+    pub biography: Option<String>,
+    /// `MusicBrainz` artist ID.
+    #[serde(default, rename = "musicBrainzId")]
+    pub music_brainz_id: Option<String>,
+    /// Last.fm artist page.
+    #[serde(default, rename = "lastFmUrl")]
+    pub last_fm_url: Option<String>,
+    /// Small image URL.
+    #[serde(default, rename = "smallImageUrl")]
+    pub small_image_url: Option<String>,
+    /// Medium image URL.
+    #[serde(default, rename = "mediumImageUrl")]
+    pub medium_image_url: Option<String>,
+    /// Large image URL.
+    #[serde(default, rename = "largeImageUrl")]
+    pub large_image_url: Option<String>,
+    /// Similar artists, when the server provides them.
+    #[serde(default, rename = "similarArtist")]
+    pub similar_artist: Vec<Artist>,
+}
+
+/// Payload of `getAlbumInfo2`.
+#[derive(Debug, Deserialize)]
+pub struct AlbumInfoData {
+    /// The `albumInfo` result object; empty on servers without it.
+    #[serde(rename = "albumInfo", default)]
+    pub album_info: AlbumInfo,
+}
+
+/// Album notes and external links from `getAlbumInfo2`.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct AlbumInfo {
+    /// Liner notes / review, when available.
+    #[serde(default)]
+    pub notes: Option<String>,
+    /// `MusicBrainz` release-group ID.
+    #[serde(default, rename = "musicBrainzId")]
+    pub music_brainz_id: Option<String>,
+    /// Last.fm album page.
+    #[serde(default, rename = "lastFmUrl")]
+    pub last_fm_url: Option<String>,
+    /// Small image URL.
+    #[serde(default, rename = "smallImageUrl")]
+    pub small_image_url: Option<String>,
+    /// Medium image URL.
+    #[serde(default, rename = "mediumImageUrl")]
+    pub medium_image_url: Option<String>,
+    /// Large image URL.
+    #[serde(default, rename = "largeImageUrl")]
+    pub large_image_url: Option<String>,
 }
 
 /// Empty payload of `ping`.

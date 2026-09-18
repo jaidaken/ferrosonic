@@ -31,6 +31,15 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "CavaSize",
     "Daemon",
     "AutoContinue",
+    "StreamOnStart",
+    "SearchDebounceMs",
+    "SearchArtistLimit",
+    "SearchAlbumLimit",
+    "SearchSongLimit",
+    "ResumeOnStart",
+    "AutoplayOnStart",
+    "OfflineCacheEnabled",
+    "OfflineCacheMaxMb",
     "RepeatMode",
     "CoverArt",
     "CoverArtSize",
@@ -129,6 +138,75 @@ pub struct Config {
     /// Auto-continue with random songs when the queue ends.
     #[serde(rename = "AutoContinue", default)]
     pub auto_continue: bool,
+
+    /// Start playback as soon as mpv has enough data, streaming the track
+    /// from the server instead of downloading it in full first. Applies to
+    /// queue replacement (picking an album/artist/song, shuffle library) and
+    /// auto-continue. When false, the track is fully pre-buffered to local
+    /// disk before playback begins, trading startup latency for a clean start
+    /// on slow or flaky networks.
+    #[serde(rename = "StreamOnStart", default = "Config::default_stream_on_start")]
+    pub stream_on_start: bool,
+
+    /// Milliseconds to wait after the last keystroke before issuing a
+    /// server-side `search3`, so typing a query fires one request instead of
+    /// one per character. `0` disables debouncing. Clamped 0..=2000.
+    #[serde(
+        rename = "SearchDebounceMs",
+        default = "Config::default_search_debounce_ms"
+    )]
+    pub search_debounce_ms: u32,
+
+    /// Maximum artist results requested from `search3`. Clamped 1..=1000.
+    #[serde(
+        rename = "SearchArtistLimit",
+        default = "Config::default_search_artist_limit"
+    )]
+    pub search_artist_limit: u32,
+
+    /// Maximum album results requested from `search3`. Clamped 1..=1000.
+    #[serde(
+        rename = "SearchAlbumLimit",
+        default = "Config::default_search_album_limit"
+    )]
+    pub search_album_limit: u32,
+
+    /// Maximum song results requested from `search3`. Clamped 1..=2000.
+    #[serde(
+        rename = "SearchSongLimit",
+        default = "Config::default_search_song_limit"
+    )]
+    pub search_song_limit: u32,
+
+    /// Persist the queue, current track, and playhead across a graceful daemon
+    /// shutdown so the next start restores them. Off means each start is empty,
+    /// the historical behavior.
+    #[serde(rename = "ResumeOnStart", default = "Config::default_resume_on_start")]
+    pub resume_on_start: bool,
+
+    /// When restoring a saved session, start playing immediately instead of
+    /// restoring paused. No effect unless `ResumeOnStart` is on.
+    #[serde(
+        rename = "AutoplayOnStart",
+        default = "Config::default_autoplay_on_start"
+    )]
+    pub autoplay_on_start: bool,
+
+    /// Cache streamed tracks locally so repeat plays and offline queue
+    /// playback do not re-fetch them. Off by default.
+    #[serde(
+        rename = "OfflineCacheEnabled",
+        default = "Config::default_offline_cache_enabled"
+    )]
+    pub offline_cache_enabled: bool,
+
+    /// Maximum size of the offline track cache in MiB; least-recently-used
+    /// tracks are evicted past it. Clamped 1..=102400.
+    #[serde(
+        rename = "OfflineCacheMaxMb",
+        default = "Config::default_offline_cache_max_mb"
+    )]
+    pub offline_cache_max_mb: u32,
 
     /// Queue repeat mode.
     #[serde(rename = "RepeatMode", default)]
@@ -261,6 +339,24 @@ struct ConfigOnDisk<'a> {
     daemon: bool,
     #[serde(rename = "AutoContinue")]
     auto_continue: bool,
+    #[serde(rename = "StreamOnStart")]
+    stream_on_start: bool,
+    #[serde(rename = "SearchDebounceMs")]
+    search_debounce_ms: u32,
+    #[serde(rename = "SearchArtistLimit")]
+    search_artist_limit: u32,
+    #[serde(rename = "SearchAlbumLimit")]
+    search_album_limit: u32,
+    #[serde(rename = "SearchSongLimit")]
+    search_song_limit: u32,
+    #[serde(rename = "ResumeOnStart")]
+    resume_on_start: bool,
+    #[serde(rename = "AutoplayOnStart")]
+    autoplay_on_start: bool,
+    #[serde(rename = "OfflineCacheEnabled")]
+    offline_cache_enabled: bool,
+    #[serde(rename = "OfflineCacheMaxMb")]
+    offline_cache_max_mb: u32,
     #[serde(rename = "RepeatMode")]
     repeat_mode: RepeatMode,
     #[serde(rename = "CoverArt")]
@@ -336,6 +432,15 @@ impl Config {
             cava_size: self.cava_size,
             daemon: self.daemon,
             auto_continue: self.auto_continue,
+            stream_on_start: self.stream_on_start,
+            search_debounce_ms: self.search_debounce_ms,
+            search_artist_limit: self.search_artist_limit,
+            search_album_limit: self.search_album_limit,
+            search_song_limit: self.search_song_limit,
+            resume_on_start: self.resume_on_start,
+            autoplay_on_start: self.autoplay_on_start,
+            offline_cache_enabled: self.offline_cache_enabled,
+            offline_cache_max_mb: self.offline_cache_max_mb,
             repeat_mode: self.repeat_mode,
             cover_art: self.cover_art,
             cover_art_size: self.cover_art_size,
@@ -550,6 +655,15 @@ impl Default for Config {
             cava_size: Self::default_cava_size(),
             daemon: Self::default_daemon(),
             auto_continue: false,
+            stream_on_start: Self::default_stream_on_start(),
+            search_debounce_ms: Self::default_search_debounce_ms(),
+            search_artist_limit: Self::default_search_artist_limit(),
+            search_album_limit: Self::default_search_album_limit(),
+            search_song_limit: Self::default_search_song_limit(),
+            resume_on_start: Self::default_resume_on_start(),
+            autoplay_on_start: Self::default_autoplay_on_start(),
+            offline_cache_enabled: Self::default_offline_cache_enabled(),
+            offline_cache_max_mb: Self::default_offline_cache_max_mb(),
             repeat_mode: RepeatMode::Off,
             cover_art: false,
             cover_art_size: Self::default_cover_art_size(),
@@ -589,6 +703,42 @@ impl Config {
 
     const fn default_notifications() -> bool {
         true
+    }
+
+    const fn default_stream_on_start() -> bool {
+        true
+    }
+
+    const fn default_search_debounce_ms() -> u32 {
+        200
+    }
+
+    const fn default_search_artist_limit() -> u32 {
+        100
+    }
+
+    const fn default_search_album_limit() -> u32 {
+        100
+    }
+
+    const fn default_search_song_limit() -> u32 {
+        200
+    }
+
+    const fn default_resume_on_start() -> bool {
+        true
+    }
+
+    const fn default_autoplay_on_start() -> bool {
+        false
+    }
+
+    const fn default_offline_cache_enabled() -> bool {
+        false
+    }
+
+    const fn default_offline_cache_max_mb() -> u32 {
+        2048
     }
 
     const fn default_rate_switch_delay_ms() -> u32 {
@@ -1220,6 +1370,15 @@ Password = "testpass"
         assert!(!c.cava);
         assert!(!c.cover_art);
         assert!(!c.auto_continue);
+        assert!(c.stream_on_start, "stream-on-start defaults on");
+        assert_eq!(c.search_debounce_ms, 200);
+        assert_eq!(c.search_artist_limit, 100);
+        assert_eq!(c.search_album_limit, 100);
+        assert_eq!(c.search_song_limit, 200);
+        assert!(c.resume_on_start, "resume-on-start defaults on");
+        assert!(!c.autoplay_on_start, "autoplay-on-start defaults off");
+        assert!(!c.offline_cache_enabled, "offline cache defaults off");
+        assert_eq!(c.offline_cache_max_mb, 2048);
         assert_eq!(c.repeat_mode, RepeatMode::Off);
         assert_eq!(c.replay_gain_mode, ReplayGainMode::Off);
         assert_eq!(c.replay_gain_preamp, 0.0);
@@ -1308,6 +1467,21 @@ Password = "testpass"
         );
         assert_eq!(c.replay_gain_preamp, 0.0, "ReplayGainPreamp falls back");
         assert!(!c.replay_gain_clip, "ReplayGainClip falls back");
+        assert!(
+            c.stream_on_start,
+            "StreamOnStart falls back to streaming when absent"
+        );
+        assert_eq!(c.search_debounce_ms, 200, "SearchDebounceMs falls back");
+        assert_eq!(c.search_artist_limit, 100, "SearchArtistLimit falls back");
+        assert_eq!(c.search_album_limit, 100, "SearchAlbumLimit falls back");
+        assert_eq!(c.search_song_limit, 200, "SearchSongLimit falls back");
+        assert!(c.resume_on_start, "ResumeOnStart falls back on");
+        assert!(!c.autoplay_on_start, "AutoplayOnStart falls back off");
+        assert!(
+            !c.offline_cache_enabled,
+            "OfflineCacheEnabled falls back off"
+        );
+        assert_eq!(c.offline_cache_max_mb, 2048, "OfflineCacheMaxMb falls back");
     }
 
     #[test]

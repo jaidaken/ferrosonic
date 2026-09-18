@@ -10,41 +10,15 @@ use mpris_server::{
 use tempfile::NamedTempFile;
 use tokio::sync::Mutex;
 use tracing::info;
-use url::Url;
 
 use crate::app::state::{SharedClientState, SharedDaemonState};
 use crate::config::{Config, RepeatMode};
 use crate::daemon::state::{NowPlaying, PlaybackState};
 use crate::ipc::{DaemonClient, DaemonRequest, DaemonResponse};
-use crate::subsonic::auth::generate_auth_params;
 use crate::subsonic::models::Child;
-
-const API_VERSION: &str = "1.16.1";
-const CLIENT_NAME: &str = "ferrosonic";
 
 /// Edge length, in pixels, of the cover art fetched for MPRIS metadata.
 const MPRIS_COVER_SIZE: u32 = 512;
-
-/// Authenticated getCoverArt URL for MPRIS metadata; None when unconfigured.
-#[must_use]
-pub fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String> {
-    if config.base_url.is_empty() || cover_art_id.is_empty() {
-        return None;
-    }
-
-    let (salt, token) = generate_auth_params(&config.password);
-    let mut url = Url::parse(&format!("{}/rest/getCoverArt", config.base_url)).ok()?;
-
-    url.query_pairs_mut()
-        .append_pair("id", cover_art_id)
-        .append_pair("u", &config.username)
-        .append_pair("t", &token)
-        .append_pair("s", &salt)
-        .append_pair("v", API_VERSION)
-        .append_pair("c", CLIENT_NAME);
-
-    Some(url.to_string())
-}
 
 const PLAYER_NAME: &str = "ferrosonic";
 
@@ -71,10 +45,6 @@ pub struct MprisPlayer {
     /// widget won't fetch the remote authenticated Subsonic URL, but it
     /// loads a `file://` reliably (same as our desktop notifications).
     cover_cache: Mutex<Option<CoverCache>>,
-    /// Last volume applied through MPRIS, in percent (0..=100). mpv owns the
-    /// authoritative value; caching it here keeps the `Volume` getter
-    /// consistent with `SetVolume` for the session instead of always 1.0.
-    volume: std::sync::atomic::AtomicI32,
 }
 
 impl MprisPlayer {
@@ -90,7 +60,6 @@ impl MprisPlayer {
             client,
             rt: tokio::runtime::Handle::current(),
             cover_cache: Mutex::new(None),
-            volume: std::sync::atomic::AtomicI32::new(100),
         }
     }
 
@@ -315,15 +284,11 @@ impl PlayerInterface for MprisPlayer {
     }
 
     async fn metadata(&self) -> fdo::Result<Metadata> {
-        let (_now_playing, current_song, config) = self.get_state().await;
+        let (_now_playing, current_song, _config) = self.get_state().await;
         let Some(song) = current_song else {
             return Ok(Metadata::new());
         };
-        // Build the shared fields, then replace the authenticated remote art
-        // URL with a locally mirrored `file://` one. The remote URL embeds a
-        // reusable `t`/`s` credential pair, which must never reach the bus.
-        let mut metadata = build_metadata_for(&song, &config);
-        metadata.set_art_url(None::<String>);
+        let mut metadata = build_metadata_for(&song);
         if let Some(cover_id) = song.cover_id() {
             if let Some(file_url) = self.cached_cover_uri(&cover_id) {
                 metadata.set_art_url(Some(file_url));
@@ -333,7 +298,8 @@ impl PlayerInterface for MprisPlayer {
     }
 
     async fn volume(&self) -> fdo::Result<Volume> {
-        Ok(f64::from(self.volume.load(std::sync::atomic::Ordering::Relaxed)) / 100.0)
+        let (now_playing, _, _) = self.get_state().await;
+        Ok(f64::from(now_playing.volume) / 100.0)
     }
 
     // f64->i32 `as` truncates; the value is clamped to 0.0..=1.0 first.
@@ -341,10 +307,16 @@ impl PlayerInterface for MprisPlayer {
     async fn set_volume(&self, volume: Volume) -> Result<()> {
         // Clamp a misbehaving client to MPRIS's 0.0..=1.0 range before
         // rounding to mpv's 0..=100 percent.
-        let clamped = volume.clamp(0.0, 1.0);
+        let clamped = if volume.is_nan() {
+            0.0
+        } else {
+            volume.clamp(0.0, 1.0)
+        };
         let volume_int = (clamped * 100.0).round() as i32;
-        self.volume
-            .store(volume_int, std::sync::atomic::Ordering::Relaxed);
+        // Optimistically mirror the requested authoritative daemon value so
+        // the D-Bus setter round-trips while the fire-and-forget IPC request is
+        // in flight. The daemon's NowPlayingChanged event then confirms it.
+        self.daemon_state.write().await.now_playing.volume = volume_int;
         self.fire(DaemonRequest::SetVolume(volume_int));
         Ok(())
     }
@@ -436,11 +408,13 @@ pub struct MprisPropertySnapshot {
     pub metadata: Option<Metadata>,
     /// Repeat mode mirrored to MPRIS `LoopStatus`.
     pub loop_status: LoopStatus,
+    /// Authoritative daemon volume in MPRIS's `0.0..=1.0` scale.
+    pub volume: Volume,
 }
 
 /// Pure: builds the property snapshot from daemon state.
 pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisPropertySnapshot {
-    let (playback, can_go_next, can_go_prev, can_play, current_song, config) = {
+    let (playback, can_go_next, can_go_prev, can_play, current_song, config, volume) = {
         let ds = daemon_state.read().await;
         let pb = match ds.now_playing.state {
             PlaybackState::Playing => PlaybackStatus::Playing,
@@ -457,11 +431,12 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
             cp,
             ds.current_song().cloned(),
             ds.config.clone(),
+            f64::from(ds.now_playing.volume) / 100.0,
         )
     };
 
     let cover_id = current_song.as_ref().and_then(Child::cover_id);
-    let metadata = current_song.map(|song| build_metadata_for(&song, &config));
+    let metadata = current_song.map(|song| build_metadata_for(&song));
     let loop_status = repeat_to_loop(config.repeat_mode);
 
     MprisPropertySnapshot {
@@ -472,6 +447,7 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
         cover_id,
         metadata,
         loop_status,
+        volume,
     }
 }
 
@@ -510,7 +486,7 @@ const fn loop_to_repeat(status: LoopStatus) -> RepeatMode {
     }
 }
 
-fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
+fn build_metadata_for(song: &Child) -> Metadata {
     let mut metadata = Metadata::new();
     metadata.set_trackid(
         TrackId::try_from(format!(
@@ -525,12 +501,6 @@ fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
 
     if let Some(duration) = song.duration {
         metadata.set_length(Some(Time::from_micros(i64::from(duration) * 1_000_000)));
-    }
-
-    if let Some(ref cover_art_id) = song.cover_art {
-        if let Some(cover_url) = build_cover_art_url(config, cover_art_id) {
-            metadata.set_art_url(Some(cover_url));
-        }
     }
 
     metadata.set_track_number(song.track);
@@ -562,6 +532,7 @@ pub async fn update_mpris_properties(
             Property::CanGoPrevious(snap.can_go_prev),
             Property::CanPlay(snap.can_play),
             Property::LoopStatus(snap.loop_status),
+            Property::Volume(snap.volume),
         ])
         .await?;
 
@@ -591,13 +562,15 @@ async fn build_rating_metadata(
     id: &str,
     rating: Option<u8>,
 ) -> Option<(Metadata, Option<String>)> {
-    let state = daemon_state.read().await;
-    let mut song = state.current_song()?.clone();
+    let mut song = {
+        let state = daemon_state.read().await;
+        state.current_song()?.clone()
+    };
     if song.id != id {
         return None;
     }
     song.user_rating = rating;
-    Some((build_metadata_for(&song, &state.config), song.cover_id()))
+    Some((build_metadata_for(&song), song.cover_id()))
 }
 
 async fn push_metadata(
@@ -666,7 +639,7 @@ mod rating_event_tests {
             title: "UUID track".into(),
             ..Default::default()
         };
-        let metadata = build_metadata_for(&song, &Config::new());
+        let metadata = build_metadata_for(&song);
         assert!(
             metadata.trackid().is_some(),
             "a hyphenated/UUID id must still yield a valid trackid"

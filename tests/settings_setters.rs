@@ -1,6 +1,7 @@
-//! Config setters: set_repeat_mode, set_auto_continue, set_daemon_enabled,
-//! set_cover_art_enabled, set_cover_art_size, set_cava_enabled, set_cava_size,
-//! set_volume. Verifies state mutation, persistence, and event emission.
+//! Config setters: set_repeat_mode, set_auto_continue, set_stream_on_start,
+//! set_daemon_enabled, set_cover_art_enabled, set_cover_art_size,
+//! set_cava_enabled, set_cava_size, set_volume. Verifies state mutation,
+//! persistence, and event emission.
 
 mod common;
 
@@ -35,6 +36,53 @@ async fn set_auto_continue_persists_to_state() {
 
     td.core.set_auto_continue(false).await.unwrap();
     assert!(!td.state.read().await.config.auto_continue);
+}
+
+#[tokio::test]
+#[serial]
+async fn set_stream_on_start_persists_to_state() {
+    let td = TestDaemon::new().await;
+    assert!(td.state.read().await.config.stream_on_start);
+
+    td.core.set_stream_on_start(false).await.unwrap();
+    assert!(!td.state.read().await.config.stream_on_start);
+
+    td.core.set_stream_on_start(true).await.unwrap();
+    assert!(td.state.read().await.config.stream_on_start);
+}
+
+#[tokio::test]
+#[serial]
+async fn set_resume_and_autoplay_on_start_persist_to_state() {
+    let td = TestDaemon::new().await;
+    assert!(td.state.read().await.config.resume_on_start);
+    assert!(!td.state.read().await.config.autoplay_on_start);
+
+    td.core.set_resume_on_start(false).await.unwrap();
+    assert!(!td.state.read().await.config.resume_on_start);
+
+    td.core.set_autoplay_on_start(true).await.unwrap();
+    assert!(td.state.read().await.config.autoplay_on_start);
+}
+
+#[tokio::test]
+#[serial]
+async fn set_offline_cache_persists_and_clamps_size() {
+    let td = TestDaemon::new().await;
+    assert!(!td.state.read().await.config.offline_cache_enabled);
+    assert_eq!(td.state.read().await.config.offline_cache_max_mb, 2048);
+
+    td.core.set_offline_cache_enabled(true).await.unwrap();
+    assert!(td.state.read().await.config.offline_cache_enabled);
+
+    td.core.set_offline_cache_max_mb(0).await.unwrap();
+    assert_eq!(
+        td.state.read().await.config.offline_cache_max_mb,
+        1,
+        "size clamps to at least 1 MiB"
+    );
+    td.core.set_offline_cache_max_mb(102_400).await.unwrap();
+    assert_eq!(td.state.read().await.config.offline_cache_max_mb, 102_400);
 }
 
 #[tokio::test]

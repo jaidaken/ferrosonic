@@ -48,6 +48,7 @@ pub fn draw(
     frame: &mut Frame<'_>,
     state: &mut AppState<'_>,
     cover_art_state: &Arc<Mutex<CoverArtState>>,
+    playlist_cover_art_state: &Arc<Mutex<CoverArtState>>,
 ) {
     let area = frame.area();
 
@@ -140,7 +141,9 @@ pub fn draw(
         Page::QuickPlay => pages::songs::render(frame, content_area, state),
         Page::Library => pages::library::render(frame, content_area, state),
         Page::Queue => pages::queue::render(frame, content_area, state),
-        Page::Playlists => pages::playlists::render(frame, content_area, state),
+        Page::Playlists => {
+            pages::playlists::render(frame, content_area, state, playlist_cover_art_state);
+        }
         Page::Server => pages::server::render(frame, content_area, state),
         Page::Settings => pages::settings::render(frame, content_area, state),
     }
@@ -187,5 +190,9 @@ pub fn draw(
 
     if state.client.lyrics.open {
         super::lyrics::render(frame, area, state, &colors);
+    }
+
+    if state.client.info.open {
+        super::info::render(frame, area, state, &colors);
     }
 }

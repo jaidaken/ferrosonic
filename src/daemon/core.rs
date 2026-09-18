@@ -1,6 +1,10 @@
-//! Daemon core: owns mpv, queue, library cache, event broadcast, config persistence. Lock order: state then subsonic then mpv then pipewire then `prebuffer_cancel` then `prebuffer_loading` then `prebuffer_files` then `last_loadfile` then `last_preload_attempt` then `cover_art_cache`. Authoritative table: docs/LOCK-ORDER.md.
+//! Daemon core.
+//!
+//! Owns mpv, queue, library cache, event broadcast, and config persistence.
+//! Transaction-prefix locks precede state; the remaining locks follow the
+//! authoritative order in `docs/LOCK-ORDER.md`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, Mutex, RwLock};
@@ -134,6 +138,12 @@ impl Drop for ClientGuard {
 
 /// Heart of the daemon: owns mpv, `PipeWire`, the Subsonic client, and state.
 pub struct DaemonCore {
+    /// Serializes complete configuration transactions from snapshot through
+    /// persistence and live commit. Always acquired before `state`.
+    pub(super) config_transactions: Mutex<()>,
+    /// Serializes queue-position-changing playback transitions. Always
+    /// acquired before `state`, `subsonic`, and `mpv`.
+    pub(super) playback_transitions: Mutex<()>,
     /// Serializes rating RPCs and their optimistic cache transactions.
     /// Acquired before state/subsonic; never used by playback operations.
     pub(super) rating_updates: Mutex<()>,
@@ -145,6 +155,15 @@ pub struct DaemonCore {
     pub pipewire: Mutex<PipeWireController>,
     /// Subsonic client; `None` until the server is configured.
     pub subsonic: RwLock<Option<SubsonicClient>>,
+    /// Offline track cache. Opened unconditionally but only read/written when
+    /// `OfflineCacheEnabled` is set, so a disabled cache is side-effect free.
+    pub(super) track_cache: Arc<std::sync::Mutex<crate::daemon::track_cache::TrackCache>>,
+    /// Cached `OfflineCacheEnabled`, mirrored so the playback dispatch path can
+    /// skip cache work without taking the state lock (which the transition
+    /// critical section must not block on).
+    pub(super) offline_cache_enabled: AtomicBool,
+    /// Cached `OfflineCacheMaxMb`, mirrored for the same reason.
+    pub(super) offline_cache_max_mb: std::sync::atomic::AtomicU32,
     /// Broadcast channel feeding `DaemonEvent`s to subscribers.
     pub event_tx: broadcast::Sender<DaemonEvent>,
     /// Trailing-edge debounce: `try_send(())` on every queue change;
@@ -160,6 +179,10 @@ pub struct DaemonCore {
     /// stays alive while mpv still has it open. Bounded so old files
     /// eventually get unlinked.
     prebuffer_files: Mutex<Vec<std::sync::Arc<tempfile::NamedTempFile>>>,
+    /// Deterministic pre-buffer fallback seam: 0=off, 1=network, 2=write.
+    prebuffer_failure_for_test: AtomicU8,
+    prebuffer_failure_entered: tokio::sync::Notify,
+    prebuffer_failure_release: tokio::sync::Notify,
     /// Per-Buffered-request flag, true between `mpv.stop()` and the
     /// task's `mpv.loadfile`. Suppresses idle-advance during the gap.
     /// Per-task Arc so a stale task's Drop clears only its own flag.
@@ -179,10 +202,17 @@ pub struct DaemonCore {
     /// from a continuation, so a repeat still reports `starting`/`NowPlaying` and
     /// can submit again.
     pub(super) play_instance: std::sync::atomic::AtomicU64,
+    /// True once any track has actually started this daemon session. Lets a
+    /// restored-but-never-played paused session exit when unattended instead of
+    /// holding the daemon open forever.
+    pub(super) played_this_session: AtomicBool,
     /// Bumped on every `update_server_config`; library refresh handlers
     /// capture the gen at start and discard their result if it changed,
     /// preventing stale results from one server polluting the next.
     pub(super) config_gen: std::sync::atomic::AtomicU64,
+    /// Per-category request identities for Quick Play refreshes. A response
+    /// commits only while it is still the newest request for its category.
+    pub(super) quick_play_request_gen: [std::sync::atomic::AtomicU64; 4],
     /// Flipped to true on shutdown so background spawn tasks (fast
     /// probe, cava watchers) can exit promptly instead of holding
     /// `Arc<Self>` alive until their own timers fire.
@@ -258,21 +288,36 @@ impl DaemonCore {
         let (queue_save_tx, queue_save_rx) = tokio::sync::mpsc::channel::<()>(1);
 
         let core = Arc::new(Self {
+            config_transactions: Mutex::new(()),
+            playback_transitions: Mutex::new(()),
             rating_updates: Mutex::new(()),
             state,
             mpv: Mutex::new(mpv),
             pipewire: Mutex::new(pipewire),
             subsonic: RwLock::new(subsonic),
+            track_cache: Arc::new(std::sync::Mutex::new(
+                crate::daemon::track_cache::TrackCache::open(
+                    crate::config::paths::tracks_dir()
+                        .unwrap_or_else(|| std::env::temp_dir().join("ferrosonic-tracks")),
+                ),
+            )),
+            offline_cache_enabled: AtomicBool::new(config.offline_cache_enabled),
+            offline_cache_max_mb: std::sync::atomic::AtomicU32::new(config.offline_cache_max_mb),
             event_tx,
             queue_save_tx,
             cover_art_cache: RwLock::new(crate::daemon::library::LruCache::new()),
             prebuffer_cancel: Arc::new(Mutex::new(None)),
             prebuffer_files: Mutex::new(Vec::new()),
+            prebuffer_failure_for_test: AtomicU8::new(0),
+            prebuffer_failure_entered: tokio::sync::Notify::new(),
+            prebuffer_failure_release: tokio::sync::Notify::new(),
             prebuffer_loading: Mutex::new(None),
             last_loadfile: std::sync::Mutex::new(None),
             loadfile_gen: std::sync::atomic::AtomicU64::new(0),
             play_instance: std::sync::atomic::AtomicU64::new(0),
+            played_this_session: AtomicBool::new(false),
             config_gen: std::sync::atomic::AtomicU64::new(0),
+            quick_play_request_gen: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
             shutdown: std::sync::atomic::AtomicBool::new(false),
             shutdown_notify: tokio::sync::Notify::new(),
             library_version: std::sync::atomic::AtomicU64::new(0),
@@ -319,6 +364,7 @@ impl DaemonCore {
     /// a pause/resume; the scrobble state machine keys off this so a repeated
     /// track is reported as a fresh play.
     pub(super) fn mark_play_instance(&self) -> u64 {
+        self.played_this_session.store(true, Ordering::Release);
         self.play_instance.fetch_add(1, Ordering::Release) + 1
     }
 
@@ -327,6 +373,33 @@ impl DaemonCore {
     #[doc(hidden)]
     pub fn mark_play_instance_for_test(&self) -> u64 {
         self.mark_play_instance()
+    }
+
+    /// Test seam: read the current play-instance generation.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn play_instance_for_test(&self) -> u64 {
+        self.play_instance.load(Ordering::Acquire)
+    }
+
+    /// Test seam: force a pre-buffer fallback at a deterministic gate
+    /// (`1`=network, `2`=disk write).
+    #[doc(hidden)]
+    pub fn force_prebuffer_failure_for_test(&self, kind: u8) {
+        self.prebuffer_failure_for_test
+            .store(kind, Ordering::Release);
+    }
+
+    /// Test seam: wait until a forced pre-buffer fallback is ready.
+    #[doc(hidden)]
+    pub async fn wait_prebuffer_failure_for_test(&self) {
+        self.prebuffer_failure_entered.notified().await;
+    }
+
+    /// Test seam: release a forced pre-buffer fallback.
+    #[doc(hidden)]
+    pub fn release_prebuffer_failure_for_test(&self) {
+        self.prebuffer_failure_release.notify_one();
     }
 
     /// Test seam: force the single-flight `advance_auto` guard.
@@ -614,9 +687,12 @@ impl DaemonCore {
         let Some((song, stream_url, idx)) = prepared else {
             return Ok(false);
         };
-        info!("Playing: {} (queue pos {}) mode=Buffered", song.title, idx);
-        self.dispatch_play(stream_url, idx, PlayMode::Buffered, 0.0)
-            .await?;
+        let mode = self.preferred_start_mode().await;
+        info!(
+            "Playing: {} (queue pos {}) mode={:?}",
+            song.title, idx, mode
+        );
+        self.dispatch_play(stream_url, idx, mode, 0.0).await?;
         self.emit_now_playing().await;
         self.emit_queue().await;
         Ok(true)
@@ -647,6 +723,13 @@ impl DaemonCore {
                 return Err(());
             }
         };
+        // Prefer a cached local copy when the offline cache is on.
+        let url = if state.config.offline_cache_enabled {
+            self.cached_track_path(&song.id)
+                .map_or(url, |path| path.to_string_lossy().into_owned())
+        } else {
+            url
+        };
         state.queue_position = Some(pos);
         state.now_playing.song = Some(song.clone());
         state.now_playing.state = PlaybackState::Playing;
@@ -664,6 +747,100 @@ impl DaemonCore {
         Ok((song, url))
     }
 
+    /// Audio-handoff strategy for a fresh, cold queue start (queue replacement,
+    /// shuffle, auto-continue), chosen from `StreamOnStart`. Streaming loads
+    /// the authenticated `rest/stream` URL so mpv starts as soon as it has
+    /// bytes; buffering downloads the whole track first for a guaranteed clean
+    /// start on slow or flaky networks.
+    pub(crate) async fn preferred_start_mode(&self) -> PlayMode {
+        if self.state.read().await.config.stream_on_start {
+            PlayMode::Direct
+        } else {
+            PlayMode::Buffered
+        }
+    }
+
+    /// Path of a cached copy of `song_id`, if the offline cache holds one.
+    /// Lock order: callers must not hold the cache lock before `state`; this
+    /// takes only the cache mutex.
+    pub(super) fn cached_track_path(&self, song_id: &str) -> Option<std::path::PathBuf> {
+        self.track_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .path_for(song_id)
+    }
+
+    /// Start background population of the offline cache for the track at
+    /// `pos` when the played URL was remote. No-op for a local (already
+    /// cached) path or when the cache is disabled.
+    async fn spawn_cache_population(self: &Arc<Self>, pos: usize, url: &str) {
+        // The disabled path must not take the state lock: this runs inside the
+        // playback-transition critical section, and a state read there starves
+        // concurrent pause/resume.
+        if url.starts_with('/') || !self.offline_cache_enabled.load(Ordering::Acquire) {
+            return;
+        }
+        let song_id = {
+            let s = self.state.read().await;
+            s.queue.get(pos).map(|song| song.id.clone())
+        };
+        let Some(song_id) = song_id else {
+            return;
+        };
+        let url = url.to_string();
+        let core = self.clone();
+        tokio::spawn(async move { core.populate_cache(song_id, url).await });
+    }
+
+    /// Download `url` into the cache, then evict down to the configured cap.
+    /// A partial download is deleted, never indexed.
+    async fn populate_cache(self: Arc<Self>, song_id: String, url: String) {
+        let reserved = {
+            let mut guard = self
+                .track_cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            guard.begin(&song_id)
+        };
+        let Some((part, final_path, file)) = reserved else {
+            return;
+        };
+        match crate::daemon::track_cache::download_to_path(&url, &part).await {
+            Ok(size) => {
+                if let Err(e) = std::fs::rename(&part, &final_path) {
+                    warn!("Offline cache rename failed for {}: {}", song_id, e);
+                    let _ = std::fs::remove_file(&part);
+                    self.track_cache
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .abandon(&song_id);
+                    return;
+                }
+                let cap = u64::from(
+                    self.offline_cache_max_mb
+                        .load(Ordering::Acquire)
+                        .clamp(1, 102_400),
+                ) * 1024
+                    * 1024;
+                let mut guard = self
+                    .track_cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                guard.commit(&song_id, file, size);
+                guard.evict_to(cap);
+                debug!("Offline cache stored {} ({} bytes)", song_id, size);
+            }
+            Err(e) => {
+                warn!("Offline cache download failed for {}: {}", song_id, e);
+                let _ = std::fs::remove_file(&part);
+                self.track_cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .abandon(&song_id);
+            }
+        }
+    }
+
     // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub(super) async fn dispatch_play(
@@ -673,6 +850,13 @@ impl DaemonCore {
         mode: PlayMode,
         start_at: f64,
     ) -> Result<(), Error> {
+        // A cached local file is always loaded directly; the buffered path
+        // would try to re-fetch it as a URL and fail.
+        let mode = if stream_url.starts_with('/') {
+            PlayMode::Direct
+        } else {
+            mode
+        };
         match mode {
             PlayMode::Direct => {
                 // A Direct load supersedes any in-flight Buffered download;
@@ -714,6 +898,7 @@ impl DaemonCore {
                 let core = self.clone();
                 tokio::spawn(async move { core.settle_rate_then_unpause(gen, seek_after).await });
                 self.preload_next_track(pos).await;
+                self.spawn_cache_population(pos, &stream_url).await;
             }
             PlayMode::Buffered => {
                 let loading = Arc::new(AtomicBool::new(true));
@@ -832,7 +1017,11 @@ impl DaemonCore {
         if self.active_clients.load(Ordering::Acquire) != 0 {
             return false;
         }
-        self.state.read().await.now_playing.state == PlaybackState::Stopped
+        let state = self.state.read().await.now_playing.state;
+        // A restored-paused session that has never actually played is idle too:
+        // no client ever connected to resume it, so it should not linger.
+        state == PlaybackState::Stopped
+            || (state == PlaybackState::Paused && !self.played_this_session.load(Ordering::Acquire))
     }
 
     /// Cancel any in-flight pre-buffer download because playback is being
@@ -852,6 +1041,22 @@ impl DaemonCore {
             token.store(true, Ordering::Relaxed);
         }
         let _ = self.prebuffer_loading.lock().await.take();
+    }
+
+    /// Fall back to direct streaming only while this pre-buffer request is
+    /// still current. The final checks happen with mpv locked so a newer
+    /// direct load, pause, or stop cannot complete and then be overwritten.
+    async fn fallback_direct_if_current(&self, url: &str, cancel: &AtomicBool) {
+        let mut mpv = self.mpv.lock().await;
+        if cancel.load(Ordering::Acquire) || self.shutdown.load(Ordering::Acquire) {
+            debug!("Discarding superseded pre-buffer direct fallback");
+            return;
+        }
+        if let Err(e) = mpv.loadfile(url).await {
+            error!("Pre-buffer direct fallback loadfile failed: {e}");
+        } else {
+            self.stamp_loadfile();
+        }
     }
 
     /// Download the new URL to a local temp file in full, then load it paused
@@ -882,9 +1087,7 @@ impl DaemonCore {
                     "Pre-buffer: temp file create failed ({}); falling back to direct loadfile",
                     e
                 );
-                let mut mpv = self.mpv.lock().await;
-                let _ = mpv.loadfile(&url).await;
-                self.stamp_loadfile();
+                self.fallback_direct_if_current(&url, &cancel).await;
                 loading.store(false, Ordering::Release);
                 return;
             }
@@ -927,12 +1130,21 @@ impl DaemonCore {
                 Ok(r) => r,
                 Err(e) => {
                     error!("Pre-buffer fetch failed: {}", e);
-                    let mut mpv = core.mpv.lock().await;
-                    let _ = mpv.loadfile(&url).await;
-                    core.stamp_loadfile();
+                    core.fallback_direct_if_current(&url, &cancel_task).await;
                     return;
                 }
             };
+            if core
+                .prebuffer_failure_for_test
+                .compare_exchange(1, 0, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                core.prebuffer_failure_entered.notify_one();
+                core.prebuffer_failure_release.notified().await;
+                error!("Pre-buffer fetch failed: injected test failure");
+                core.fallback_direct_if_current(&url, &cancel_task).await;
+                return;
+            }
 
             // Async file I/O keeps the disk write on the blocking pool instead
             // of stalling a tokio worker (and the playback tick) during the copy.
@@ -940,9 +1152,7 @@ impl DaemonCore {
                 Ok(f) => f,
                 Err(e) => {
                     error!("Pre-buffer file open failed: {}", e);
-                    let mut mpv = core.mpv.lock().await;
-                    let _ = mpv.loadfile(&url).await;
-                    core.stamp_loadfile();
+                    core.fallback_direct_if_current(&url, &cancel_task).await;
                     return;
                 }
             };
@@ -965,9 +1175,7 @@ impl DaemonCore {
                     tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await;
                 let Ok(chunk_opt) = next else {
                     error!("Pre-buffer stream timeout (15s); aborting");
-                    let mut mpv = core.mpv.lock().await;
-                    let _ = mpv.loadfile(&url).await;
-                    core.stamp_loadfile();
+                    core.fallback_direct_if_current(&url, &cancel_task).await;
                     return;
                 };
                 let Some(chunk) = chunk_opt else { break };
@@ -975,12 +1183,21 @@ impl DaemonCore {
                     Ok(c) => c,
                     Err(e) => {
                         error!("Pre-buffer stream error: {}", e);
-                        let mut mpv = core.mpv.lock().await;
-                        let _ = mpv.loadfile(&url).await;
-                        core.stamp_loadfile();
+                        core.fallback_direct_if_current(&url, &cancel_task).await;
                         return;
                     }
                 };
+                if core
+                    .prebuffer_failure_for_test
+                    .compare_exchange(2, 0, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+                {
+                    core.prebuffer_failure_entered.notify_one();
+                    core.prebuffer_failure_release.notified().await;
+                    error!("Pre-buffer write error: injected test failure");
+                    core.fallback_direct_if_current(&url, &cancel_task).await;
+                    return;
+                }
                 if let Err(e) = file.write_all(&chunk).await {
                     // Disk full / I/O error mid-download must not silently drop
                     // the track while state says Playing; fall back to a direct
@@ -990,9 +1207,7 @@ impl DaemonCore {
                         e
                     );
                     drop(file);
-                    let mut mpv = core.mpv.lock().await;
-                    let _ = mpv.loadfile(&url).await;
-                    core.stamp_loadfile();
+                    core.fallback_direct_if_current(&url, &cancel_task).await;
                     return;
                 }
                 bytes_written += chunk.len();

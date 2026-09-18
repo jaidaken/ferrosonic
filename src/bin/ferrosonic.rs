@@ -1,5 +1,5 @@
 use std::fs::{self, OpenOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use clap::Parser;
@@ -59,16 +59,8 @@ fn init_logging(
     };
     let log_file = log_dir.join(log_name);
     // The log can contain server URLs and, historically, error text; keep it
-    // owner-only. `OpenOptionsExt::mode` only applies on creation, so an
-    // existing file keeps whatever mode it already had (fixed at install).
-    let mut opts = OpenOptions::new();
-    opts.create(true).append(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
-    }
-    let file = match opts.open(&log_file) {
+    // owner-only whether it is newly created or already exists.
+    let file = match open_private_log(&log_file) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("Warning: Could not open log file: {}", e);
@@ -94,6 +86,23 @@ fn init_logging(
         eprintln!("Logging to: {}", log_file.display());
     }
     Some(guard)
+}
+
+fn open_private_log(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut opts = OpenOptions::new();
+    opts.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let file = opts.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(file)
 }
 
 /// Restore the terminal on panic so the user isn't left in raw mode
@@ -207,5 +216,23 @@ async fn connect_or_spawn(path: &std::path::Path) -> Option<std::sync::Arc<Socke
     match spawn_and_wait(path, DAEMON_SPAWN_TIMEOUT).await {
         Ok(()) => SocketClient::connect(path).await.ok(),
         Err(_) => None,
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn existing_permissive_log_is_corrected_to_owner_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ferrosonic.log");
+        fs::write(&path, b"old log\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o664)).unwrap();
+
+        let _file = open_private_log(&path).unwrap();
+        let mode = fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }

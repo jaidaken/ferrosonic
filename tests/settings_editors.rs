@@ -58,7 +58,7 @@ async fn app_on_settings() -> (App, tempfile::TempDir) {
 #[serial]
 async fn genre_editor_trims_deduplicates_and_persists_on_save() {
     let (mut app, _tempdir) = app_on_settings().await;
-    app.client_state.write().await.settings_state.selected_field = 18;
+    app.client_state.write().await.settings_state.selected_field = 19;
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
     app.handle_key(key(KeyCode::Char('a'))).await.unwrap();
     for character in "  Podcast  ".chars() {
@@ -100,7 +100,7 @@ async fn escape_cancels_filter_edits_without_mutating_active_filters() {
     let (mut app, _tempdir) = app_on_settings().await;
     {
         let mut cs = app.client_state.write().await;
-        cs.settings_state.selected_field = 19;
+        cs.settings_state.selected_field = 20;
         cs.settings_state.playback_filters.excluded_artists = vec!["Existing".into()];
     }
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
@@ -119,7 +119,7 @@ async fn escape_cancels_filter_edits_without_mutating_active_filters() {
 #[serial]
 async fn keybinding_editor_persists_and_applies_new_quit_key_immediately() {
     let (mut app, _tempdir) = app_on_settings().await;
-    app.client_state.write().await.settings_state.selected_field = 20;
+    app.client_state.write().await.settings_state.selected_field = 21;
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
     app.handle_key(key(KeyCode::Char('z'))).await.unwrap();
@@ -140,7 +140,7 @@ async fn keybinding_editor_persists_and_applies_new_quit_key_immediately() {
 #[serial]
 async fn keybinding_editor_rejects_a_collision_and_keeps_capturing() {
     let (mut app, _tempdir) = app_on_settings().await;
-    app.client_state.write().await.settings_state.selected_field = 20;
+    app.client_state.write().await.settings_state.selected_field = 21;
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
     app.handle_key(key(KeyCode::Char('l'))).await.unwrap();
@@ -158,7 +158,7 @@ async fn failed_keybinding_save_keeps_the_active_map_and_staged_editor() {
     {
         let mut cs = app.client_state.write().await;
         cs.page = ferrosonic::app::state::Page::Settings;
-        cs.settings_state.selected_field = 20;
+        cs.settings_state.selected_field = 21;
     }
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
@@ -181,7 +181,7 @@ async fn failed_keybinding_save_keeps_the_active_map_and_staged_editor() {
 #[serial]
 async fn capture_accepts_ctrl_s_before_ctrl_s_saves_the_editor() {
     let (mut app, _tempdir) = app_on_settings().await;
-    app.client_state.write().await.settings_state.selected_field = 20;
+    app.client_state.write().await.settings_state.selected_field = 21;
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
     app.handle_key(key(KeyCode::Enter)).await.unwrap();
     let ctrl_s = modified_key(KeyCode::Char('s'), KeyModifiers::CONTROL);

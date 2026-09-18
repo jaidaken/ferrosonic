@@ -1,6 +1,8 @@
 //! Wiremock wrapper for the Subsonic REST API.
 
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -477,6 +479,33 @@ impl FakeSubsonic {
         self.expect_get_album(id, name, songs).await;
     }
 
+    /// Two identical category requests where the older response completes
+    /// last. Used to prove same-category refresh ordering.
+    pub async fn expect_reversed_quick_play_albums(&self, sort_type: &str) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumList2"))
+            .and(wiremock::matchers::query_param("type", sort_type))
+            .respond_with(move |_: &wiremock::Request| {
+                let first = calls.fetch_add(1, Ordering::SeqCst) == 0;
+                let id = if first { "older" } else { "newer" };
+                let response = ok_body(json!({
+                    "albumList2": { "album": [{"id": id, "name": id}] }
+                }));
+                if first {
+                    response.set_delay(std::time::Duration::from_millis(150))
+                } else {
+                    response
+                }
+            })
+            .mount(&self.server)
+            .await;
+        self.expect_get_album("older", "Older", &["Older Track"])
+            .await;
+        self.expect_get_album("newer", "Newer", &["Newer Track"])
+            .await;
+    }
+
     /// Mocks an empty `getAlbumList2` category.
     pub async fn expect_no_quick_play_album(&self, sort_type: &str) {
         self.expect_no_quick_play_album_with_delay(sort_type, 0)
@@ -556,6 +585,24 @@ impl FakeSubsonic {
             .await;
     }
 
+    /// `getPlaylist` with an id-specific `coverArt`, for asserting the client
+    /// preserves playlist cover art through the detail endpoint.
+    pub async fn expect_get_playlist_with_cover(&self, id: &str, name: &str, cover: &str) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getPlaylist"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(ok_body(json!({
+                "playlist": {
+                    "id": id,
+                    "name": name,
+                    "coverArt": cover,
+                    "entry": []
+                }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
     pub async fn expect_get_playlists_with(&self, playlists: &[(&str, &str)]) {
         let pl_list: Vec<Value> = playlists
             .iter()
@@ -572,6 +619,30 @@ impl FakeSubsonic {
             .and(path("/rest/getPlaylists"))
             .respond_with(ok_body(json!({
                 "playlists": { "playlist": pl_list }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// `getArtistInfo2` with a biography, for the info overlay.
+    pub async fn expect_artist_info2(&self, id: &str, biography: &str) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getArtistInfo2"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(ok_body(json!({
+                "artistInfo2": { "biography": biography }
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// `getAlbumInfo2` with notes, for the info overlay.
+    pub async fn expect_album_info2(&self, id: &str, notes: &str) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumInfo2"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(ok_body(json!({
+                "albumInfo": { "notes": notes }
             })))
             .mount(&self.server)
             .await;

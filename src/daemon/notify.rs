@@ -1,6 +1,8 @@
-//! Desktop notifications on track change via the freedesktop.org D-Bus
-//! interface, which every Linux notification daemon implements, so this is
-//! daemon-agnostic.
+//! Desktop notifications on track change.
+//!
+//! Linux uses the freedesktop.org D-Bus interface, which every Linux
+//! notification daemon implements. macOS has no such interface, so it shells
+//! out to `osascript`'s `display notification`. Other platforms get a no-op.
 
 use crate::subsonic::models::Child;
 
@@ -16,7 +18,9 @@ pub fn track_body(song: &Child) -> String {
 
 #[cfg(target_os = "linux")]
 pub use linux::Notifier;
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+pub use macos::Notifier;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub use stub::Notifier;
 
 #[cfg(target_os = "linux")]
@@ -161,9 +165,98 @@ mod linux {
     }
 }
 
+/// Build the `osascript` invocation that displays `body` under `title`.
+///
+/// The text is passed as `argv` and read back inside `on run argv`, so no
+/// `AppleScript` string escaping is needed and a title/body containing quotes (or
+/// anything else) cannot alter the script.
+///
+/// Compiled under `test` as well so the argv construction is covered by a unit
+/// test on any host; only macOS actually runs it.
+#[cfg(any(target_os = "macos", test))]
+fn osascript_notification_command(title: &str, body: &str) -> tokio::process::Command {
+    const SCRIPT: &str = "on run argv\n\
+                          \tdisplay notification (item 2 of argv) with title (item 1 of argv)\n\
+                          \tend run";
+    let mut cmd = tokio::process::Command::new("osascript");
+    cmd.arg("-e").arg(SCRIPT).arg("--").arg(title).arg(body);
+    cmd
+}
+
+#[cfg(target_os = "macos")]
+mod macos {
+    use std::sync::Mutex as StdMutex;
+
+    use tracing::debug;
+
+    /// Track-change notifications on macOS via `osascript`.
+    ///
+    /// macOS ships no freedesktop notification daemon, so the Linux D-Bus path
+    /// does not apply. `AppleScript`'s `display notification` is the built-in
+    /// equivalent and needs no extra dependency. Cover art is not attached —
+    /// `display notification` has no image parameter — so only the title and
+    /// the artist/album body are shown.
+    pub struct Notifier {
+        last_song: StdMutex<Option<String>>,
+    }
+
+    impl Default for Notifier {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl Notifier {
+        /// Construct an idle notifier; nothing runs until the first change.
+        #[must_use]
+        pub fn new() -> Self {
+            Self {
+                last_song: StdMutex::new(None),
+            }
+        }
+
+        /// True when `song_id` differs from the last notified track, recording
+        /// it so the 500ms tick fires a notification once per track change.
+        pub fn mark_if_changed(&self, song_id: &str) -> bool {
+            let mut last = self
+                .last_song
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if last.as_deref() == Some(song_id) {
+                false
+            } else {
+                *last = Some(song_id.to_string());
+                true
+            }
+        }
+
+        /// Show a track-change notification. Text is passed as `argv` and read
+        /// back inside `on run argv`, so no `AppleScript` string escaping is
+        /// needed and an arbitrary title/body cannot alter the script. A failed
+        /// `osascript` (notifications disabled, no GUI session) is logged and
+        /// ignored, matching the Linux notifier's best-effort behaviour.
+        // `&self` is unused here but kept for API parity with the Linux notifier.
+        #[allow(clippy::unused_self)]
+        pub async fn show(&self, title: &str, body: &str, _cover: Option<&[u8]>) {
+            match super::osascript_notification_command(title, body)
+                .output()
+                .await
+            {
+                Ok(out) if out.status.success() => {}
+                Ok(out) => debug!(
+                    "desktop notify failed (osascript {}): {}",
+                    out.status,
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ),
+                Err(e) => debug!("desktop notify failed (osascript spawn): {e}"),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::track_body;
+    use super::{osascript_notification_command, track_body};
     use crate::subsonic::models::Child;
 
     fn song(artist: Option<&str>, album: Option<&str>) -> Child {
@@ -197,11 +290,34 @@ mod tests {
             "Unknown Artist\nGeogaddi"
         );
     }
+
+    #[test]
+    fn osascript_command_passes_text_as_argv_not_in_script() {
+        let cmd = osascript_notification_command("Title \"quoted\"", "Artist\nAlbum");
+        let args: Vec<String> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        // Layout: osascript -e <script> -- <title> <body>. Every fixed slot is
+        // checked so a reordering cannot silently break the argv passing.
+        assert_eq!(args.len(), 5);
+        assert_eq!(args[0], "-e");
+        assert_eq!(args[2], "--");
+        assert_eq!(args[3], "Title \"quoted\"");
+        assert_eq!(args[4], "Artist\nAlbum");
+        // Untrusted text is never interpolated into the AppleScript source.
+        assert!(args[1].contains("on run argv"));
+        assert!(
+            !args[1].contains("quoted"),
+            "title must not be embedded in the script"
+        );
+    }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 mod stub {
-    /// No-op notifier on non-Linux targets (no freedesktop notifications).
+    /// No-op notifier on platforms with no notification backend wired up.
     pub struct Notifier;
     impl Notifier {
         pub fn new() -> Self {

@@ -3,8 +3,8 @@
 use std::time::Instant;
 
 use crate::app::state::{
-    ArtistsState, CavaRow, LayoutAreas, LyricsState, Notification, Page, PlaylistPicker,
-    PlaylistsState, QueueState, ServerState, SettingsState, SongsState,
+    ArtistsState, CavaRow, InfoOverlayState, LayoutAreas, LyricsState, Notification, Page,
+    PlaylistPicker, PlaylistsState, QueueState, ServerState, SettingsState, SongsState,
 };
 
 /// All client-local UI state; never leaves the TUI process.
@@ -26,6 +26,8 @@ pub struct ClientState {
     pub playlist_picker: PlaylistPicker,
     /// Lyrics overlay and its client-local result cache.
     pub lyrics: LyricsState,
+    /// Artist/album info overlay.
+    pub info: InfoOverlayState,
     /// Server credentials page state.
     pub server_state: ServerState,
     /// Settings page state.
@@ -45,6 +47,9 @@ pub struct ClientState {
     pub cava_available: bool,
     /// Screen regions from the last layout pass.
     pub layout: LayoutAreas,
+    /// Recent search queries, most-recent first. TUI-local and persisted
+    /// separately from the daemon config.
+    pub search_history: Vec<String>,
 }
 
 impl ClientState {

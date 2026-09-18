@@ -15,6 +15,7 @@ pub mod run;
 pub mod scrobble;
 pub mod settings_ops;
 pub mod state;
+pub mod track_cache;
 
 pub use core::DaemonCore;
 pub use library::LibraryCache;

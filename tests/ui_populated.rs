@@ -114,7 +114,7 @@ fn settings_page_renders_all_sections() {
 fn settings_page_scrolls_to_filter_and_keybinding_editors() {
     let (daemon, mut client) = build_state();
     client.page = Page::Settings;
-    client.settings_state.selected_field = 20;
+    client.settings_state.selected_field = 21;
     let frame = render(100, 35, &daemon, &mut client);
     for expected in [
         "Excluded Genres",

@@ -169,14 +169,14 @@ fn new_settings_rows_scroll_into_view_in_small_terminal() {
     let (daemon, mut client) = base();
     client.page = Page::Settings;
     for (field, label) in [
-        (10, "Mode"),
-        (11, "Preamp"),
-        (12, "Prevent Clipping"),
-        (13, "Min Rating"),
-        (14, "Year Min"),
-        (15, "Year Max"),
-        (16, "Duration Min"),
-        (17, "Duration Max"),
+        (11, "Mode"),
+        (12, "Preamp"),
+        (13, "Prevent Clipping"),
+        (14, "Min Rating"),
+        (15, "Year Min"),
+        (16, "Year Max"),
+        (17, "Duration Min"),
+        (18, "Duration Max"),
     ] {
         client.settings_state.selected_field = field;
         let screen = render_styled(60, 12, &daemon, &mut client);

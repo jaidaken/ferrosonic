@@ -4,6 +4,7 @@ pub mod chafa_ext;
 pub mod cover_art;
 pub mod footer;
 pub mod header;
+pub mod info;
 pub mod layout;
 pub mod lyrics;
 pub mod pages;

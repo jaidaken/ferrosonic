@@ -120,6 +120,9 @@ impl DaemonCore {
         self: &Arc<Self>,
         kind: crate::ipc::protocol::QuickPlayAlbumKind,
     ) {
+        let request_gen = self.quick_play_request_gen[kind.index()]
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+            + 1;
         let Some(client) = self.subsonic.read().await.clone() else {
             return;
         };
@@ -135,8 +138,11 @@ impl DaemonCore {
                 return;
             }
         };
-        if self.config_gen_changed(gen_at_start) {
-            debug!("refresh_quick_play_album: config changed mid-request, discarding");
+        if self.config_gen_changed(gen_at_start)
+            || self.quick_play_request_gen[kind.index()].load(std::sync::atomic::Ordering::Acquire)
+                != request_gen
+        {
+            debug!("refresh_quick_play_album: superseded request, discarding");
             return;
         }
         let Some(album) = album else {
@@ -155,8 +161,12 @@ impl DaemonCore {
         };
         match client.get_album(&album.id).await {
             Ok((_album, songs)) => {
-                if self.config_gen_changed(gen_at_start) {
-                    debug!("refresh_quick_play_album: config changed mid-request, discarding");
+                if self.config_gen_changed(gen_at_start)
+                    || self.quick_play_request_gen[kind.index()]
+                        .load(std::sync::atomic::Ordering::Acquire)
+                        != request_gen
+                {
+                    debug!("refresh_quick_play_album: superseded request, discarding");
                     return;
                 }
                 self.state
@@ -290,13 +300,16 @@ impl DaemonCore {
         id: Option<i64>,
         user_chosen: bool,
     ) -> Result<(), Error> {
+        let transaction = self.config_transactions.lock().await;
+        self.persist_config_locked(|config| {
+            config.music_folder_id = id;
+            if user_chosen {
+                config.music_folder_chosen = true;
+            }
+        })
+        .await?;
         {
             let mut state = self.state.write().await;
-            state.config.music_folder_id = id;
-            if user_chosen {
-                state.config.music_folder_chosen = true;
-            }
-            state.config.save_default().map_err(Error::Config)?;
             state.library.all_albums.clear();
             state.library.random_album_songs.clear();
             state.library.quick_play_album_songs.clear();
@@ -311,6 +324,7 @@ impl DaemonCore {
                 client.set_music_folder(id);
             }
         }
+        drop(transaction);
         self.emit_config_changed().await;
         self.emit(DaemonEvent::RandomAlbumChanged(Vec::new()));
         for kind in [
@@ -390,6 +404,38 @@ impl DaemonCore {
             .get_lyrics(artist, title)
             .await
             .map_err(Error::Subsonic)
+    }
+
+    /// Fetch artist biography/links. Any failure, including the empty response
+    /// a server without an external integration returns, degrades to an empty
+    /// [`crate::subsonic::models::ArtistInfo2`] so the overlay shows a clean
+    /// empty state.
+    pub async fn fetch_artist_info(&self, id: &str) -> crate::subsonic::models::ArtistInfo2 {
+        let Ok(client) = self.subsonic_client().await else {
+            return crate::subsonic::models::ArtistInfo2::default();
+        };
+        match client.get_artist_info2(id).await {
+            Ok(info) => info,
+            Err(error) => {
+                debug!("getArtistInfo2 failed: {}", error);
+                crate::subsonic::models::ArtistInfo2::default()
+            }
+        }
+    }
+
+    /// Fetch album notes/links; degrades to an empty
+    /// [`crate::subsonic::models::AlbumInfo`] on any failure.
+    pub async fn fetch_album_info(&self, id: &str) -> crate::subsonic::models::AlbumInfo {
+        let Ok(client) = self.subsonic_client().await else {
+            return crate::subsonic::models::AlbumInfo::default();
+        };
+        match client.get_album_info2(id).await {
+            Ok(info) => info,
+            Err(error) => {
+                debug!("getAlbumInfo2 failed: {}", error);
+                crate::subsonic::models::AlbumInfo::default()
+            }
+        }
     }
 
     /// Rename playlist `id` to `name`, then refresh so `PlaylistsChanged` fires.

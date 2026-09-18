@@ -142,12 +142,12 @@ impl SocketClient {
 
         Ok(client)
     }
-}
 
-#[async_trait]
-impl DaemonClient for SocketClient {
-    #[allow(clippy::option_if_let_else)] // recv result -> Disconnected; explicit arms clearer.
-    async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError> {
+    async fn request_with_timeout(
+        &self,
+        req: DaemonRequest,
+        timeout: std::time::Duration,
+    ) -> Result<DaemonResponse, IpcError> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         {
@@ -164,7 +164,7 @@ impl DaemonClient for SocketClient {
 
             return Err(IpcError::Disconnected);
         }
-        match tokio::time::timeout(REQUEST_TIMEOUT, rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(IpcError::Disconnected),
             Err(_) => {
@@ -175,8 +175,79 @@ impl DaemonClient for SocketClient {
             }
         }
     }
+}
+
+#[async_trait]
+impl DaemonClient for SocketClient {
+    #[allow(clippy::option_if_let_else)] // recv result -> Disconnected; explicit arms clearer.
+    async fn request(&self, req: DaemonRequest) -> Result<DaemonResponse, IpcError> {
+        self.request_with_timeout(req, REQUEST_TIMEOUT).await
+    }
 
     fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
         self.event_tx.subscribe()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::UnixListener;
+
+    #[tokio::test(start_paused = true)]
+    async fn late_response_is_discarded_and_pending_returns_to_baseline() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("late-response.sock");
+        let listener = UnixListener::bind(&path).expect("bind test listener");
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept client");
+            let first_id = match read_frame_lenient(&mut stream)
+                .await
+                .expect("read first request")
+            {
+                FrameRead::Ok(Frame::Request { id, .. }) => id,
+                other => panic!("expected first request, got {other:?}"),
+            };
+
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            write_frame(
+                &mut stream,
+                &Frame::Response {
+                    id: first_id,
+                    payload: Ok(DaemonResponse::Pong),
+                },
+            )
+            .await
+            .expect("write deliberately late response");
+
+            let second_id = match read_frame_lenient(&mut stream)
+                .await
+                .expect("read second request")
+            {
+                FrameRead::Ok(Frame::Request { id, .. }) => id,
+                other => panic!("expected second request, got {other:?}"),
+            };
+            write_frame(
+                &mut stream,
+                &Frame::Response {
+                    id: second_id,
+                    payload: Ok(DaemonResponse::Pong),
+                },
+            )
+            .await
+            .expect("write current response");
+        });
+
+        let client = SocketClient::connect(&path).await.expect("connect client");
+        let first = client
+            .request_with_timeout(DaemonRequest::Ping, std::time::Duration::from_secs(1))
+            .await;
+        assert!(matches!(first, Err(IpcError::Timeout)));
+        assert_eq!(client.pending.lock().await.len(), 0);
+
+        let second = client.request(DaemonRequest::Ping).await;
+        assert!(matches!(second, Ok(DaemonResponse::Pong)));
+        assert_eq!(client.pending.lock().await.len(), 0);
     }
 }

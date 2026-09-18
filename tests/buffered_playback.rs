@@ -1,10 +1,16 @@
-//! Buffered playback path: stream bytes to local temp, then loadfile.
-//! 0.4.0 album-switch fix relies on this; cancel-flag race covered here.
+//! Playback handoff strategy: streaming vs buffered.
+//!
+//! `StreamOnStart` (default on) makes a cold queue start load the authenticated
+//! `rest/stream` URL so mpv begins as soon as it has bytes; with it off, the
+//! whole track is buffered to a local temp file first. The 0.4.0 album-switch
+//! fix relies on the buffered path; the cancel-flag race is covered here too.
 
 mod common;
 
 use common::{song, TestDaemon};
 use ferrosonic::daemon::core::PlayMode;
+use ferrosonic::ipc::client::{DaemonClient, InProcessClient};
+use ferrosonic::ipc::protocol::{DaemonRequest, EnqueueMode};
 use serde_json::Value;
 use serial_test::serial;
 
@@ -243,4 +249,174 @@ async fn direct_play_cancels_an_inflight_prebuffer() {
         "the Directly-loaded track remains current"
     );
     assert_eq!(s.queue_position, Some(1));
+}
+
+#[derive(Clone, Copy)]
+enum SupersedingAction {
+    Direct,
+    Pause,
+    Stop,
+    Halt,
+    QueueEnd,
+}
+
+async fn assert_forced_fallback_is_cancelled(kind: u8, action: SupersedingAction) {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_stream_for("a", payload(64 * 1024))
+        .await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("a", "A"), song("b", "B")];
+    }
+    td.core.force_prebuffer_failure_for_test(kind);
+    td.core
+        .play_queue_position(0, PlayMode::Buffered)
+        .await
+        .unwrap();
+    td.core.wait_prebuffer_failure_for_test().await;
+
+    match action {
+        SupersedingAction::Direct => td
+            .core
+            .play_queue_position(1, PlayMode::Direct)
+            .await
+            .unwrap(),
+        SupersedingAction::Pause => td.core.pause_playback().await.unwrap(),
+        SupersedingAction::Stop => td.core.stop_playback().await.unwrap(),
+        SupersedingAction::Halt => td.core.halt_keep_queue().await,
+        SupersedingAction::QueueEnd => {
+            td.state.write().await.queue.truncate(1);
+            td.core.next_track().await.unwrap();
+        }
+    }
+    td.core.release_prebuffer_failure_for_test();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let stream_a = format!("{}/rest/stream", td.fake_subsonic.url());
+    let loads = td
+        .fake_mpv
+        .commands()
+        .await
+        .into_iter()
+        .filter(|c| c.first().and_then(Value::as_str) == Some("loadfile"))
+        .filter_map(|c| c.get(1).and_then(Value::as_str).map(str::to_owned))
+        .collect::<Vec<_>>();
+    assert!(
+        !loads
+            .iter()
+            .any(|url| url.starts_with(&stream_a) && url.contains("id=a")),
+        "a cancelled fallback loaded obsolete track A: {loads:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn cancelled_network_fallback_cannot_override_direct_play() {
+    assert_forced_fallback_is_cancelled(1, SupersedingAction::Direct).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn cancelled_disk_fallback_cannot_override_pause_stop_halt_or_queue_end() {
+    for action in [
+        SupersedingAction::Pause,
+        SupersedingAction::Stop,
+        SupersedingAction::Halt,
+        SupersedingAction::QueueEnd,
+    ] {
+        assert_forced_fallback_is_cancelled(2, action).await;
+    }
+}
+
+/// `StreamOnStart` defaults on: a cold queue replacement must hand mpv the
+/// authenticated stream URL instead of downloading the whole track to a temp
+/// file first, so playback can begin as soon as mpv has bytes.
+#[tokio::test]
+#[serial]
+async fn enqueue_replace_streams_when_stream_on_start_defaults_on() {
+    let td = TestDaemon::new().await;
+    assert!(
+        td.state.read().await.config.stream_on_start,
+        "StreamOnStart must default on"
+    );
+    td.fake_subsonic.expect_ping().await;
+    let client = InProcessClient::new(td.core.clone());
+
+    client
+        .request(DaemonRequest::EnqueueSongs {
+            songs: vec![song("abc", "Track A")],
+            mode: EnqueueMode::Replace { play_from: Some(0) },
+        })
+        .await
+        .unwrap();
+
+    let stream_prefix = format!("{}/rest/stream", td.fake_subsonic.url());
+    let loaded = td
+        .fake_mpv
+        .wait_for(5000, |cmds| {
+            cmds.iter().any(|c| {
+                c.first().and_then(Value::as_str) == Some("loadfile")
+                    && c.get(1)
+                        .and_then(Value::as_str)
+                        .is_some_and(|p| p.starts_with(&stream_prefix) && p.contains("id=abc"))
+            })
+        })
+        .await;
+    assert!(
+        loaded,
+        "stream-on-start must loadfile the authenticated stream URL; commands: {:?}",
+        td.fake_mpv.commands().await
+    );
+
+    let loads: Vec<String> = td
+        .fake_mpv
+        .commands()
+        .await
+        .iter()
+        .filter(|c| c.first().and_then(Value::as_str) == Some("loadfile"))
+        .filter_map(|c| c.get(1).and_then(Value::as_str).map(String::from))
+        .collect();
+    assert!(
+        !loads.iter().any(|p| p.contains("ferrosonic-prebuf-")),
+        "stream-on-start must not pre-buffer to a temp file: {loads:?}"
+    );
+}
+
+/// With `StreamOnStart` off, the same queue replacement keeps the pre-0.4.x
+/// behavior: download the whole track to a local temp file, then load it.
+#[tokio::test]
+#[serial]
+async fn enqueue_replace_buffers_when_stream_on_start_disabled() {
+    let td = TestDaemon::new().await;
+    td.state.write().await.config.stream_on_start = false;
+    td.fake_subsonic
+        .expect_stream_for("abc", payload(700 * 1024))
+        .await;
+    let client = InProcessClient::new(td.core.clone());
+
+    client
+        .request(DaemonRequest::EnqueueSongs {
+            songs: vec![song("abc", "Track A")],
+            mode: EnqueueMode::Replace { play_from: Some(0) },
+        })
+        .await
+        .unwrap();
+
+    let loaded = td
+        .fake_mpv
+        .wait_for(5000, |cmds| {
+            cmds.iter().any(|c| {
+                c.first().and_then(Value::as_str) == Some("loadfile")
+                    && c.get(1)
+                        .and_then(Value::as_str)
+                        .is_some_and(|p| p.contains("ferrosonic-prebuf-"))
+            })
+        })
+        .await;
+    assert!(
+        loaded,
+        "stream-on-start off must pre-buffer to a temp file; commands: {:?}",
+        td.fake_mpv.commands().await
+    );
 }

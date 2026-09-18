@@ -32,6 +32,8 @@ fn snapshot() -> QueueSnapshot {
             user_rating: None,
         }],
         position: Some(0),
+        position_secs: Some(0.0),
+        paused: true,
     }
 }
 

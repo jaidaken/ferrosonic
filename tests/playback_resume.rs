@@ -91,3 +91,29 @@ async fn play_at_zero_offset_uses_plain_loadfile_without_start() {
         "a zero-offset play must use a plain loadfile, not start=0; options were {opts:?}"
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn resume_at_exactly_zero_is_not_a_new_play_instance() {
+    let td = TestDaemon::new().await;
+    {
+        let mut s = td.state.write().await;
+        s.queue = vec![song("s1", "Track One")];
+        s.queue_position = Some(0);
+    }
+    td.core
+        .play_queue_position(0, PlayMode::Direct)
+        .await
+        .unwrap();
+    let started = td.core.play_instance_for_test();
+    td.core.pause_playback().await.unwrap();
+    assert_eq!(td.state.read().await.now_playing.position, 0.0);
+    td.core.resume_playback().await.unwrap();
+    assert_eq!(td.core.play_instance_for_test(), started);
+
+    td.core
+        .play_queue_position_at(0, PlayMode::Direct, 0.0)
+        .await
+        .unwrap();
+    assert_eq!(td.core.play_instance_for_test(), started + 1);
+}

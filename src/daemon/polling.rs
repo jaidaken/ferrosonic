@@ -36,18 +36,22 @@ impl DaemonCore {
                 if self.shutdown.load(std::sync::atomic::Ordering::Acquire) {
                     return;
                 }
-                let snap = {
-                    let s = self.state.read().await;
-                    QueueSnapshot {
-                        queue: s.queue.clone(),
-                        position: s.queue_position,
-                    }
-                };
+                let snap = snapshot_from_state(&*self.state.read().await);
                 if let Err(e) = save_snapshot_off_thread(snap).await {
                     warn!("Queue persistence write failed: {}", e);
                 }
             }
         })
+    }
+
+    /// Build and persist the current queue snapshot including the playhead.
+    /// Called on graceful shutdown so a resume-enabled daemon can restore the
+    /// queue, track, and offset on the next start.
+    pub async fn save_queue_snapshot_now(&self) {
+        let snap = snapshot_from_state(&*self.state.read().await);
+        if let Err(e) = save_snapshot_off_thread(snap).await {
+            warn!("Queue persistence write failed: {}", e);
+        }
     }
 
     /// Spawn the 500ms tick task: position ticks, idle-advance, watchdog.
@@ -77,5 +81,21 @@ impl DaemonCore {
                 }
             }
         })
+    }
+}
+
+/// Project the queue plus the current playhead into a saveable snapshot.
+fn snapshot_from_state(s: &crate::daemon::state::DaemonState) -> QueueSnapshot {
+    use crate::daemon::state::PlaybackState;
+    let (position_secs, paused) = match s.now_playing.state {
+        PlaybackState::Playing => (Some(s.now_playing.position), false),
+        PlaybackState::Paused => (Some(s.now_playing.position), true),
+        PlaybackState::Stopped => (None, true),
+    };
+    QueueSnapshot {
+        queue: s.queue.clone(),
+        position: s.queue_position,
+        position_secs,
+        paused,
     }
 }
