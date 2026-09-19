@@ -1,9 +1,13 @@
 name: macos-release
 
 # Builds a downloadable macOS binary without tying up the local Mac.
-# Trigger manually from the Actions tab ("Run workflow"); the heavy Linux
-# test suite lives in test.yml and is not run here.
+# Runs automatically on every push to macos-port and can also be triggered
+# manually once this file reaches the default branch (the Actions UI only
+# lists workflows from the default branch). The heavy Linux test suite lives
+# in test.yml and is not run here.
 on:
+  push:
+    branches: [macos-port]
   workflow_dispatch:
     inputs:
       profile:
