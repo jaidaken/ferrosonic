@@ -39,18 +39,65 @@ contains a paste-ready prompt for an OpenCode session running on a Mac.
 | MPRIS | Compiles and runs against a D-Bus session bus, but macOS has no native MPRIS consumer, so it does **not** provide media-key / Control Center integration by itself. |
 | systemd unit / installer | N/A. |
 
-## Mac-side checklist
+## Fast-build workflow (recommended)
+
+Do not run full `cargo build --release` or `--all-targets` checks on the Mac:
+the release profile uses whole-program LTO (`lto = true`, `codegen-units = 1`)
+and `--all-targets` compiles ~151 integration-test binaries. That combination
+is what made the first port attempt unbearably slow. Two faster paths:
+
+### A. Download a prebuilt artifact (no local build)
+
+1. Fork the repo to your GitHub account and push `macos-port`.
+2. Actions tab → **macos-release** → **Run workflow** (profile `release-fast`).
+3. Download `ferrosonic-macos-x86_64` from the finished run, then:
+   ```bash
+   shasum -a 256 -c ferrosonic-macos-x86_64.sha256
+   chmod +x ferrosonic-macos-x86_64
+   ./ferrosonic-macos-x86_64 --standalone
+   ```
+   The first CI run compiles all dependencies cold (~20–40 min on the 3-core
+   Intel runner); later runs reuse the cache and are much quicker. The Mac
+   itself never compiles anything.
+
+### B. Local fast iteration on the Mac
+
+For fixing the macOS-only compile errors (the `#[cfg(target_os = "macos")]`
+code is not type-checked by the Linux build):
 
 1. Toolchain and runtime:
    ```bash
    xcode-select --install
-   rustup toolchain install stable
+   brew install llvm mpv cava chafa dbus   # dbus only for MPRIS
+   ```
+2. Faster linker (`~/.cargo/config.toml`, user-level, not committed; Homebrew
+   prefix is `/usr/local` on Intel):
+   ```toml
+   [target.x86_64-apple-darwin]
+   linker = "clang"
+   rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/opt/llvm/bin/ld64.lld"]
+   ```
+3. Compile-error loop (metadata only, no codegen or link):
+   `cargo check --bin ferrosonic`
+4. Run/debug build (dev profile, no LTO, incremental):
+   `cargo build --bin ferrosonic && ./target/debug/ferrosonic --standalone`
+5. Optimized-but-quick local build:
+   `cargo build --profile release-fast --bin ferrosonic`
+6. Never run `cargo clippy --all-targets` or `cargo nextest` on the Mac; run
+   those on the Linux host or let CI do it.
+
+Smoke test with whichever binary you have, then report back: exact commands,
+observed output, code fixes (file:line), and any remaining failures.
+
+## Mac-side checklist (full verification, once the binary runs)
+
+1. Toolchain and runtime (only needed for path B):
+   ```bash
+   xcode-select --install
    brew install mpv cava chafa dbus   # dbus only for MPRIS
    ```
-2. Build: `cd upstream && cargo build --release`
-3. Lint: `cargo clippy --all-targets --all-features`
-4. Smoke test: see the prompt below.
-5. Report back: exact commands, observed output, code fixes (file:line), and any
+2. Smoke test: see the prompt below.
+3. Report back: exact commands, observed output, code fixes (file:line), and any
    remaining failures.
 
 ## Decision points to settle on the Mac
@@ -68,9 +115,16 @@ contains a paste-ready prompt for an OpenCode session running on a Mac.
 
 ## Transfer
 
-The changes are uncommitted in the `upstream/` working tree on the Linux host.
-Move them to the Mac by committing/pushing a branch, or by producing a patch
-(`git diff > macos-port.patch`), then apply it before starting the Mac session.
+The branch is `macos-port`, pushed to the fork at
+`https://github.com/lilithmoder/ferrosonic`. On the Mac:
+
+```bash
+git remote add fork https://github.com/lilithmoder/ferrosonic.git
+git fetch fork macos-port && git checkout macos-port && git pull fork macos-port
+```
+
+(The changes were previously moved as `ferrosonic-macos-port.bundle`; the fork
+replaces that.)
 
 ---
 

@@ -120,6 +120,16 @@ lto = true
 codegen-units = 1
 strip = true
 
+# Optimized but fast-to-compile: thin LTO and 16 codegen units instead of
+# whole-program LTO in a single unit. Intended for local macOS builds and the
+# macos-release CI artifact, where full-LTO link time dominates. Runtime
+# performance is within noise for this workload; the canonical release
+# profile above is unchanged.
+[profile.release-fast]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+
 # Test/dev builds statically link the full lib + 385 deps into each of
 # 151 integration-test binaries. Full DWARF (cargo default debug=2) made
 # each ~185MB / target ~30G. line-tables keeps file:line in panics and

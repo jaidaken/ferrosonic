@@ -1,0 +1,65 @@
+name: macos-release
+
+# Builds a downloadable macOS binary without tying up the local Mac.
+# Trigger manually from the Actions tab ("Run workflow"); the heavy Linux
+# test suite lives in test.yml and is not run here.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Build profile (release-fast is much quicker, release is full LTO)
+        required: false
+        default: release-fast
+        type: choice
+        options:
+          - release-fast
+          - release
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Cancel a superseded dispatch on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: artifact (x86_64-apple-darwin, ${{ inputs.profile || 'release-fast' }})
+    # macos-15-intel is GitHub's last Intel image (supported until Fall 2027)
+    # and matches the user's Intel Mac. First cold run is slow; later runs
+    # reuse the rust-cache entry.
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-apple-darwin
+          # Release-profile artifacts are large; keep the cache under the
+          # 10 GB GitHub limit by dropping debug info from cached builds.
+          env-vars: CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_PROFILE_RELEASE_FAST_DEBUG=0
+      # Only the app binary is needed; test/dev-dependencies stay out of the
+      # build, which is what makes this job tractable on the 3-core runner.
+      - name: Build
+        run: |
+          cargo build --locked --target x86_64-apple-darwin \
+            --profile "${{ inputs.profile || 'release-fast' }}" \
+            --bin ferrosonic
+      - name: Stage artifact
+        run: |
+          prof="${{ inputs.profile || 'release-fast' }}"
+          mkdir -p stage
+          cp "target/x86_64-apple-darwin/${prof}/ferrosonic" "stage/ferrosonic-macos-x86_64"
+          shasum -a 256 "stage/ferrosonic-macos-x86_64" > "stage/ferrosonic-macos-x86_64.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ferrosonic-macos-x86_64
+          path: stage/
+          if-no-files-found: error
