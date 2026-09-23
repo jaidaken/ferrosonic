@@ -336,7 +336,7 @@ impl PlayerInterface for MprisPlayer {
     }
 
     async fn volume(&self) -> fdo::Result<Volume> {
-        Ok(1.0)
+        Ok(f64::from(self.daemon_state.read().await.config.volume) / 100.0)
     }
 
     // f64->i32 `as` saturates; volume is the 0.0..=1.0 MPRIS range, so 0..=100.
