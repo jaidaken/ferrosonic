@@ -65,6 +65,7 @@ impl<'a> Footer<'a> {
             ("h".into(), "Prev".into()),
             ("l".into(), "Next".into()),
             ("r".into(), repeat_label),
+            ("-/+".into(), "Volume".into()),
             ("Shift+T".into(), "Shuffle library".into()),
         ];
         if matches!(self.page, Page::Server | Page::Settings) {

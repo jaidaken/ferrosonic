@@ -200,6 +200,29 @@ impl App {
                     .map(|_| ())
                     .map_err(Error::from);
             }
+            // Volume: `-`/`+` step 1 % (numpad sends the same characters;
+            // `=` is the unshifted `+`), `[`/`]` step 5 %. The top-row `+`
+            // may arrive with SHIFT set, so only CONTROL is excluded.
+            (KeyCode::Char(c @ ('-' | '+' | '=' | '[' | ']')), m)
+                if !m.contains(KeyModifiers::CONTROL) =>
+            {
+                let step: i32 = match c {
+                    '-' => -1,
+                    '+' | '=' => 1,
+                    '[' => -5,
+                    _ => 5,
+                };
+                let target = (i32::from(state.daemon.config.volume) + step).clamp(0, 100);
+                let _ = state;
+                drop(cs);
+                drop(ds);
+                return self
+                    .client
+                    .request(DaemonRequest::SetVolume(target))
+                    .await
+                    .map(|_| ())
+                    .map_err(Error::from);
+            }
             (KeyCode::Char('l'), KeyModifiers::NONE) => {
                 let _ = state;
                 drop(cs);

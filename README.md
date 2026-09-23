@@ -192,6 +192,8 @@ It is resolved at startup. Because the background daemon has no terminal, **the 
 | `h` | Previous track |
 | `n` | Star/unstar currently-playing song |
 | `r` | Cycle repeat mode (Off → One → All) |
+| `-` / `+` | Volume −1 % / +1 % (numpad works too; `=` is `+` without Shift) |
+| `[` / `]` | Volume −5 % / +5 % |
 | `Shift+T` | Shuffle the entire library and play |
 | `Ctrl+R` | Refresh data from server |
 | `F1` / `1` | Library page |

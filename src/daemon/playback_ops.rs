@@ -6,6 +6,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::daemon::core::{DaemonCore, PlayMode};
 use crate::error::Error;
+use crate::ipc::protocol::DaemonEvent;
 use crate::subsonic::models::Child;
 
 impl DaemonCore {
@@ -487,15 +488,30 @@ impl DaemonCore {
         Ok(())
     }
 
-    /// Set mpv volume as a percentage.
+    /// Set the playback volume as a percentage, clamped to 0-100: applied
+    /// to mpv, persisted as `Volume` in the config and broadcast as
+    /// `VolumeChanged`.
     ///
     /// # Errors
-    /// Returns an `Error` if mpv control or a server request fails.
-    // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
-    #[allow(clippy::significant_drop_tightening)]
+    /// Returns an `Error` if persisting the config fails.
     pub async fn set_volume(self: &Arc<Self>, vol: i32) -> Result<(), Error> {
-        let mut mpv = self.mpv.lock().await;
-        let _ = mpv.set_volume(vol).await;
+        // i32 -> u8 after clamp(0, 100) always fits.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let vol = vol.clamp(0, 100) as u8;
+        let _ = self.mpv.lock().await.set_volume(i32::from(vol)).await;
+        {
+            let mut state = self.state.write().await;
+            state.config.volume = vol;
+            state.config.save_default().map_err(Error::Config)?;
+        }
+        self.emit(DaemonEvent::VolumeChanged(vol));
         Ok(())
+    }
+
+    /// Push the configured `Volume` into a freshly started mpv, which
+    /// otherwise comes up at 100 %.
+    pub async fn restore_volume(self: &Arc<Self>) {
+        let vol = self.state.read().await.config.volume;
+        let _ = self.mpv.lock().await.set_volume(i32::from(vol)).await;
     }
 }

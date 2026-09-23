@@ -17,6 +17,15 @@
 
 ### Added
 
+- **In-app volume.** `-`/`+` step the volume by 1 % (the numpad sends the
+  same characters; `=` is `+` without Shift), `[`/`]` by 5 %. The quality
+  row always shows `♪ NN%`, and for two seconds after a change the progress
+  bar gives way to a full-width slider drawn with eighth-block cells, so
+  single-percent steps are visible even on a narrow terminal. The value is
+  persisted as `Volume` in `config.toml` and re-applied to mpv when the
+  daemon starts; it travels over a new lightweight `VolumeChanged` event so a
+  held key never spams MPRIS. Note this is mpv's software volume: 100 % is
+  unity gain (bit-perfect), anything lower is digital attenuation.
 - **Quality + traffic in the now-playing bar for songs.** The quality row now
   leads with the actual codec (`FLAC`, `MP3`, ... from mpv, falling back to
   the file suffix) instead of mpv's decoded sample format, drops the

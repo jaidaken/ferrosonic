@@ -43,9 +43,22 @@ pub struct ClientState {
     pub cava_available: bool,
     /// Screen regions from the last layout pass.
     pub layout: LayoutAreas,
+    /// When the volume last changed; the now-playing strip shows the
+    /// volume slider instead of the progress bar for a short while after.
+    pub volume_adjusted_at: Option<Instant>,
 }
 
+/// How long the volume slider stays up after the last change.
+pub const VOLUME_SLIDER_HOLD: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl ClientState {
+    /// True while the transient volume slider should replace the progress bar.
+    #[must_use]
+    pub fn volume_slider_visible(&self) -> bool {
+        self.volume_adjusted_at
+            .is_some_and(|t| t.elapsed() < VOLUME_SLIDER_HOLD)
+    }
+
     /// Show an informational footer notification.
     pub fn notify(&mut self, message: impl Into<String>) {
         self.notification = Some(Notification {

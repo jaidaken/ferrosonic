@@ -285,6 +285,9 @@ pub enum DaemonEvent {
         /// Network read speed in bytes/s.
         download_bps: Option<u64>,
     },
+    /// Playback volume changed (percent, 0-100). Separate from
+    /// `NowPlayingChanged` so a held volume key never fans out to MPRIS.
+    VolumeChanged(u8),
     /// New starred-songs list.
     StarredChanged(Vec<Child>),
     /// Star state of one song changed.

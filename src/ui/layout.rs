@@ -125,8 +125,10 @@ pub fn draw(
         0
     };
 
-    let now_playing =
-        NowPlayingWidget::new(&state.daemon.now_playing, colors).art_reserved_cols(art_cols);
+    let now_playing = NowPlayingWidget::new(&state.daemon.now_playing, colors)
+        .art_reserved_cols(art_cols)
+        .volume(state.daemon.config.volume)
+        .show_volume_slider(state.client.volume_slider_visible());
     frame.render_widget(now_playing, now_playing_area);
 
     if art_visible {

@@ -23,6 +23,10 @@ pub struct NowPlayingWidget<'a> {
     /// caller can render cover art there. Progress bar still spans
     /// the full inner width below the reserved region.
     art_reserved_cols: u16,
+    /// Playback volume in percent, shown at the end of the quality row.
+    volume: u8,
+    /// Replace the progress bar with the volume slider (while adjusting).
+    show_volume_slider: bool,
 }
 
 impl<'a> NowPlayingWidget<'a> {
@@ -34,7 +38,23 @@ impl<'a> NowPlayingWidget<'a> {
             focused: false,
             colors,
             art_reserved_cols: 0,
+            volume: 100,
+            show_volume_slider: false,
         }
+    }
+
+    /// Builder: playback volume in percent for the quality row and slider.
+    #[must_use]
+    pub const fn volume(mut self, percent: u8) -> Self {
+        self.volume = percent;
+        self
+    }
+
+    /// Builder: show the volume slider in place of the progress bar.
+    #[must_use]
+    pub const fn show_volume_slider(mut self, show: bool) -> Self {
+        self.show_volume_slider = show;
+        self
     }
 
     /// Builder: mark the pane focused for border styling.
@@ -126,7 +146,7 @@ impl Widget for NowPlayingWidget<'_> {
         let album = song.album.clone().unwrap_or_default();
         let title = song.title.clone();
         let quality = fit_segments(
-            &build_quality_string(self.now_playing),
+            &quality_row_with_volume(&build_quality_string(self.now_playing), self.volume),
             usize::from(info_area.width),
         );
 
@@ -140,7 +160,9 @@ impl Widget for NowPlayingWidget<'_> {
             &self.colors,
         );
 
-        if song.is_radio() {
+        if self.show_volume_slider {
+            render_volume_row(progress_area, buf, self.volume, &self.colors);
+        } else if song.is_radio() {
             render_live_row(progress_area, buf, self.now_playing, &self.colors);
         } else {
             render_progress_bar(
@@ -196,6 +218,91 @@ fn render_live_row(area: Rect, buf: &mut Buffer, np: &NowPlaying, colors: &Theme
     );
     // The live dot in the playing colour so the row reads as "on air".
     buf[(start_x, area.y)].set_style(Style::default().fg(colors.playing));
+}
+
+/// Append the volume readout to the quality row: `… │ ♪  72%`, or just
+/// `♪  72%` before mpv has probed any format. Right-aligned to 3 digits so
+/// 99 → 100 does not shift the centred row.
+///
+/// ```
+/// use ferrosonic::ui::widget_now_playing::quality_row_with_volume;
+/// assert_eq!(quality_row_with_volume("FLAC │ 16-bit", 72), "FLAC │ 16-bit │ ♪  72%");
+/// assert_eq!(quality_row_with_volume("", 100), "♪ 100%");
+/// ```
+#[must_use]
+pub fn quality_row_with_volume(quality: &str, percent: u8) -> String {
+    if quality.is_empty() {
+        format!("♪ {percent:>3}%")
+    } else {
+        format!("{quality} │ ♪ {percent:>3}%")
+    }
+}
+
+/// Volume slider `width` cells wide, filled proportionally to `percent`
+/// with eighth-block cells so single-percent steps stay visible even on a
+/// narrow bar.
+///
+/// ```
+/// use ferrosonic::ui::widget_now_playing::volume_bar;
+/// assert_eq!(volume_bar(100, 4), "████");
+/// assert_eq!(volume_bar(50, 4), "██  ");
+/// assert_eq!(volume_bar(0, 4), "    ");
+/// ```
+#[must_use]
+pub fn volume_bar(percent: u8, width: u16) -> String {
+    const EIGHTHS: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+    let width = usize::from(width);
+    let percent = usize::from(percent.min(100));
+    // Total fill in eighths of a cell, rounded to nearest; integer math.
+    let eighths = (width * 8 * percent + 50) / 100;
+    let full = eighths / 8;
+    let rem = eighths % 8;
+    let mut s = String::with_capacity(width * 3);
+    for _ in 0..full.min(width) {
+        s.push('█');
+    }
+    if full < width {
+        s.push(EIGHTHS[rem]);
+        for _ in (full + 1)..width {
+            s.push(' ');
+        }
+    }
+    s
+}
+
+/// Transient volume row: `Vol ▕██████▎    ▏ 72%`, replacing the progress
+/// bar while the volume is being adjusted.
+fn render_volume_row(area: Rect, buf: &mut Buffer, percent: u8, colors: &ThemeColors) {
+    if area.width < 15 {
+        return;
+    }
+    let label = "Vol ";
+    let pct = format!(" {percent:>3}%");
+    // label + '▕' + bar + '▏' + pct, centred, bar at most 40 cells.
+    let fixed = crate::num::u16_sat(label.len() + 2 + pct.len());
+    let bar_w = area.width.saturating_sub(fixed + 2).min(40);
+    let total = fixed + bar_w;
+    let mut x = area.x + area.width.saturating_sub(total) / 2;
+    let fg = Style::default().fg(colors.highlight_fg);
+    buf.set_string(x, area.y, label, fg);
+    x += crate::num::u16_sat(label.len());
+    buf.set_string(x, area.y, "▕", Style::default().fg(colors.muted));
+    x += 1;
+    let bar = volume_bar(percent, bar_w);
+    for (i, ch) in bar.chars().enumerate() {
+        let style = if ch == ' ' {
+            Style::default().fg(colors.muted)
+        } else {
+            Style::default().fg(colors.success)
+        };
+        buf[(x + crate::num::u16_sat(i), area.y)]
+            .set_char(ch)
+            .set_style(style);
+    }
+    x += bar_w;
+    buf.set_string(x, area.y, "▏", Style::default().fg(colors.muted));
+    x += 1;
+    buf.set_string(x, area.y, &pct, fg);
 }
 
 /// Quality row under the title: `CODEC │ depth │ rate │ channels [│ kbps │ ↓ KB/s]`.

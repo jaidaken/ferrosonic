@@ -74,6 +74,14 @@ pub async fn apply_event(
             ds.now_playing.bitrate_kbps = bitrate_kbps;
             ds.now_playing.download_bps = download_bps;
         }
+        DaemonEvent::VolumeChanged(vol) => {
+            {
+                let mut ds = daemon_state.write().await;
+                ds.config.volume = vol;
+            }
+            let mut cs = client_state.write().await;
+            cs.volume_adjusted_at = Some(std::time::Instant::now());
+        }
         DaemonEvent::SongStarChanged { id, starred } => {
             apply_song_star_changed(daemon_state, client_state, id, starred).await;
         }

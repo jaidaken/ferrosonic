@@ -32,6 +32,7 @@ pub const KNOWN_CONFIG_KEYS: &[&str] = &[
     "Scrobble",
     "Notifications",
     "RateSwitchDelayMs",
+    "Volume",
     "MusicFolderId",
     "MusicFolderChosen",
 ];
@@ -139,6 +140,12 @@ pub struct Config {
     )]
     pub rate_switch_delay_ms: u32,
 
+    /// Playback volume in percent (0-100), applied to mpv's software volume
+    /// at daemon start and on every change from the TUI. 100 = unity gain
+    /// (bit-perfect); anything lower is digital attenuation.
+    #[serde(rename = "Volume", default = "Config::default_volume")]
+    pub volume: u8,
+
     /// Library to browse and play from (`musicFolderId`); `None` = all.
     #[serde(rename = "MusicFolderId", default)]
     pub music_folder_id: Option<i64>,
@@ -187,6 +194,8 @@ struct ConfigOnDisk<'a> {
     notifications: bool,
     #[serde(rename = "RateSwitchDelayMs")]
     rate_switch_delay_ms: u32,
+    #[serde(rename = "Volume")]
+    volume: u8,
     #[serde(rename = "MusicFolderId", skip_serializing_if = "Option::is_none")]
     music_folder_id: Option<i64>,
     #[serde(
@@ -234,6 +243,7 @@ impl Config {
             scrobble: self.scrobble,
             notifications: self.notifications,
             rate_switch_delay_ms: self.rate_switch_delay_ms,
+            volume: self.volume,
             music_folder_id: self.music_folder_id,
             music_folder_chosen: self.music_folder_chosen,
         }
@@ -365,6 +375,7 @@ impl Default for Config {
             scrobble: Self::default_scrobble(),
             notifications: Self::default_notifications(),
             rate_switch_delay_ms: Self::default_rate_switch_delay_ms(),
+            volume: Self::default_volume(),
             music_folder_id: None,
             music_folder_chosen: false,
             password_eval: None,
@@ -396,6 +407,10 @@ impl Config {
 
     const fn default_rate_switch_delay_ms() -> u32 {
         500
+    }
+
+    const fn default_volume() -> u8 {
+        100
     }
 
     /// Alias for [`Config::default`].
