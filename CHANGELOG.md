@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-23
+
+### Security
+
+- **rustls 0.23.45.** Bumped from 0.23.36 for RUSTSEC-2026-0285 (TLS 1.3
+  handshake messages accepted across an encryption-level boundary).
+
 ### Fixed
 
 - **No more content jump from the traffic field.** The now-playing info rows
