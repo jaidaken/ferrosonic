@@ -34,6 +34,11 @@ fn radio_child_carries_stream_url_and_prefixed_id() {
         "id is namespaced so it can never collide with a song id"
     );
     assert_eq!(c.title, "Jazz FM");
+    assert_eq!(
+        c.artist.as_deref(),
+        Some("Internet Radio"),
+        "the artist row labels a station instead of showing blank"
+    );
     assert_eq!(c.radio_stream_url.as_deref(), Some("http://r.example/jazz"));
     assert!(c.cover_art.is_none(), "stations have no cover art id");
     assert!(c.duration.is_none(), "live streams have no duration");

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **No clipped track start on a sample-rate switch.** A track loads paused
+  and waits `RateSwitchDelayMs` when the device must re-clock. The wait
+  decision read the live pin, which the 50 ms fast probe or the 500 ms tick
+  could already have moved to the new rate, so the wait was skipped and the
+  first ~0.5 s played into the re-clock. The decision now uses the rate
+  pinned when the load was issued.
+- **Pre-buffer failures load paused too.** When the album pre-buffer failed
+  (temp file, fetch, file open, 15 s stall, stream error) the fallback
+  streamed the track unpaused with no rate settle. All five fallbacks now use
+  the same paused load and settle as a normal play.
+- **No gapless hand-off across sample rates.** mpv keeps the first track's
+  output format for a gapless next track, then the rate pin re-clocked the
+  device mid-music. The server's `samplingRate` (OpenSubsonic) now marks a
+  cross-rate next track: it is not preloaded, the current track plays to its
+  end, and the next loads paused behind the settle. Same-rate tracks, and
+  servers that do not report `samplingRate`, stay gapless.
+
 ## [0.7.0] - 2026-09-23
 
 ### Security

@@ -90,6 +90,7 @@ async fn n_with_current_song_stars_it() {
             path: None,
             disc_number: None,
             starred: None,
+            sampling_rate: None,
             radio_stream_url: None,
         });
     }

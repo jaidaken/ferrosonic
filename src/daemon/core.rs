@@ -606,42 +606,8 @@ impl DaemonCore {
     ) -> Result<(), Error> {
         match mode {
             PlayMode::Direct => {
-                // Reject non-finite/negative offsets so they can never reach
-                // `start=` formatting (start=NaN/inf = mpv invalid parameter).
-                let start_at = if start_at.is_finite() && start_at > 0.0 {
-                    start_at
-                } else {
-                    0.0
-                };
-                let (gen, seek_after) = {
-                    let mut mpv = self.mpv.lock().await;
-                    // mpv 0.38+ decodes from the offset via 5-arg loadfile start=;
-                    // older mpv lacks it, so load plain and seek post-probe.
-                    let (load, seek_after) = if start_at > 0.0 {
-                        if mpv.supports_loadfile_index() {
-                            (mpv.loadfile_at_paused(&stream_url, start_at).await, None)
-                        } else {
-                            (mpv.loadfile_paused(&stream_url).await, Some(start_at))
-                        }
-                    } else {
-                        (mpv.loadfile_paused(&stream_url).await, None)
-                    };
-                    if let Err(e) = load {
-                        error!("Failed to play: {}", e);
-                        drop(mpv);
-                        self.emit(DaemonEvent::Notification {
-                            message: format!("MPV error: {e}"),
-                            is_error: true,
-                        });
-                        return Ok(());
-                    }
-                    (self.stamp_loadfile(), seek_after)
-                };
-                // Spawn the probe/re-clock/unpause so the IPC caller is not
-                // blocked by the settle; the gen guard drops it if superseded.
-                let core = self.clone();
-                tokio::spawn(async move { core.settle_rate_then_unpause(gen, seek_after).await });
-                self.preload_next_track(pos).await;
+                self.load_paused_and_settle(&stream_url, pos, start_at)
+                    .await;
             }
             PlayMode::Buffered => {
                 let loading = Arc::new(AtomicBool::new(true));
@@ -670,6 +636,59 @@ impl DaemonCore {
             }
         }
         Ok(())
+    }
+
+    /// Load `url` paused, then spawn the rate settle that unpauses it, then
+    /// preload the next track. Every replacing load of a stream goes through
+    /// here, so no path can start audio before the device re-clocks.
+    async fn load_paused_and_settle(self: &Arc<Self>, url: &str, pos: usize, start_at: f64) {
+        // Reject non-finite/negative offsets so they can never reach
+        // `start=` formatting (start=NaN/inf = mpv invalid parameter).
+        let start_at = if start_at.is_finite() && start_at > 0.0 {
+            start_at
+        } else {
+            0.0
+        };
+        let (gen, seek_after, pinned_before) = {
+            let mut mpv = self.mpv.lock().await;
+            let pinned_before = self.pipewire.lock().await.get_current_rate();
+            // mpv 0.38+ decodes from the offset via 5-arg loadfile start=;
+            // older mpv lacks it, so load plain and seek post-probe.
+            let (load, seek_after) = if start_at > 0.0 {
+                if mpv.supports_loadfile_index() {
+                    (mpv.loadfile_at_paused(url, start_at).await, None)
+                } else {
+                    (mpv.loadfile_paused(url).await, Some(start_at))
+                }
+            } else {
+                (mpv.loadfile_paused(url).await, None)
+            };
+            match load {
+                // Stamp under the mpv lock so the generation matches this load.
+                Ok(()) => {
+                    let gen = self.stamp_loadfile();
+                    drop(mpv);
+                    (gen, seek_after, pinned_before)
+                }
+                Err(e) => {
+                    drop(mpv);
+                    error!("Failed to play: {}", e);
+                    self.emit(DaemonEvent::Notification {
+                        message: format!("MPV error: {e}"),
+                        is_error: true,
+                    });
+                    return;
+                }
+            }
+        };
+        // Spawn the probe/re-clock/unpause so the IPC caller is not
+        // blocked by the settle; the gen guard drops it if superseded.
+        let core = self.clone();
+        tokio::spawn(async move {
+            core.settle_rate_then_unpause(gen, seek_after, pinned_before)
+                .await;
+        });
+        self.preload_next_track(pos).await;
     }
 
     pub(super) fn spawn_fast_probe(self: &Arc<Self>) {
@@ -791,9 +810,7 @@ impl DaemonCore {
                     "Pre-buffer: temp file create failed ({}); falling back to direct loadfile",
                     e
                 );
-                let mut mpv = self.mpv.lock().await;
-                let _ = mpv.loadfile(&url).await;
-                self.stamp_loadfile();
+                self.load_paused_and_settle(&url, preload_pos, 0.0).await;
                 loading.store(false, Ordering::Release);
                 return;
             }
@@ -836,9 +853,7 @@ impl DaemonCore {
                 Ok(r) => r,
                 Err(e) => {
                     error!("Pre-buffer fetch failed: {}", e);
-                    let mut mpv = core.mpv.lock().await;
-                    let _ = mpv.loadfile(&url).await;
-                    core.stamp_loadfile();
+                    core.load_paused_and_settle(&url, preload_pos, 0.0).await;
                     return;
                 }
             };
@@ -847,9 +862,7 @@ impl DaemonCore {
                 Ok(f) => f,
                 Err(e) => {
                     error!("Pre-buffer file open failed: {}", e);
-                    let mut mpv = core.mpv.lock().await;
-                    let _ = mpv.loadfile(&url).await;
-                    core.stamp_loadfile();
+                    core.load_paused_and_settle(&url, preload_pos, 0.0).await;
                     return;
                 }
             };
@@ -872,9 +885,7 @@ impl DaemonCore {
                     tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await;
                 let Ok(chunk_opt) = next else {
                     error!("Pre-buffer stream timeout (15s); aborting");
-                    let mut mpv = core.mpv.lock().await;
-                    let _ = mpv.loadfile(&url).await;
-                    core.stamp_loadfile();
+                    core.load_paused_and_settle(&url, preload_pos, 0.0).await;
                     return;
                 };
                 let Some(chunk) = chunk_opt else { break };
@@ -882,9 +893,7 @@ impl DaemonCore {
                     Ok(c) => c,
                     Err(e) => {
                         error!("Pre-buffer stream error: {}", e);
-                        let mut mpv = core.mpv.lock().await;
-                        let _ = mpv.loadfile(&url).await;
-                        core.stamp_loadfile();
+                        core.load_paused_and_settle(&url, preload_pos, 0.0).await;
                         return;
                     }
                 };
@@ -901,7 +910,7 @@ impl DaemonCore {
                 bytes_written / 1024,
                 start.elapsed()
             );
-            let gen = {
+            let (gen, pinned_before) = {
                 let mut mpv = core.mpv.lock().await;
                 if cancel_task.load(Ordering::Relaxed) {
                     debug!("Pre-buffer cancelled before loadfile");
@@ -909,18 +918,20 @@ impl DaemonCore {
                     slot_cleaner.disarm();
                     return;
                 }
+                let pinned_before = core.pipewire.lock().await.get_current_rate();
                 if let Err(e) = mpv.loadfile_paused(&path_str).await {
                     error!("Pre-buffer loadfile failed: {}", e);
                     return;
                 }
-                core.stamp_loadfile()
+                (core.stamp_loadfile(), pinned_before)
             };
             if cancel_task.load(Ordering::Relaxed) {
                 gate.disarm();
                 slot_cleaner.disarm();
                 return;
             }
-            core.settle_rate_then_unpause(gen, None).await;
+            core.settle_rate_then_unpause(gen, None, pinned_before)
+                .await;
             core.preload_next_track(preload_pos).await;
             let _ = &slot_cleaner;
         });
@@ -971,6 +982,10 @@ impl DaemonCore {
     /// gap and not in the first frames of music; same-rate tracks unpause
     /// immediately. Writes the audio props and emits `NowPlayingChanged`.
     /// `gen` is the loadfile generation from the paused load this settles.
+    /// `pinned_before` is the rate this daemon had pinned when that load was
+    /// issued. The settle decision compares against it, not the live pin: the
+    /// fast probe and the tick also pin the new rate once mpv reports it, and
+    /// whichever wins would otherwise make a real switch look like no change.
     /// Invariant: the caller loaded the track paused; this fn starts it. Bails
     /// at each step if a newer load has superseded `gen`, so it never unpauses
     /// or re-clocks for a track that is no longer current.
@@ -980,6 +995,7 @@ impl DaemonCore {
         self: &Arc<Self>,
         gen: u64,
         seek_after: Option<f64>,
+        pinned_before: Option<u32>,
     ) {
         if self.settle_superseded(gen) {
             return;
@@ -995,7 +1011,7 @@ impl DaemonCore {
                 if self.settle_superseded(gen) {
                     return;
                 }
-                let changed = pw.get_current_rate() != Some(rate);
+                let changed = pinned_before != Some(rate);
                 // Always re-issue (staleness defense vs external pw-metadata);
                 // only the settle delay is gated on an actual rate change.
                 if let Err(e) = pw.set_rate(rate).await {

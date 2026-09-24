@@ -32,6 +32,7 @@ fn song(id: &str) -> Child {
         suffix: None,
         duration: Some(180),
         bit_rate: None,
+        sampling_rate: None,
         path: None,
         disc_number: None,
         starred: None,

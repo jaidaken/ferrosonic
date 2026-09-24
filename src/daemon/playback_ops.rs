@@ -290,12 +290,21 @@ impl DaemonCore {
             // A live radio stream never EOFs, so there is no gapless boundary
             // to prepare: prefetching would only hold an idle second
             // connection open (an endless download if the next is a station).
-            if state.queue.get(current_pos).is_some_and(Child::is_radio) {
+            let Some(current) = state.queue.get(current_pos) else {
+                return;
+            };
+            if current.is_radio() {
                 return;
             }
             let queue_len = state.queue.len();
             let target = state.config.repeat_mode.next_auto(current_pos, queue_len);
             match target.and_then(|p| state.queue.get(p)) {
+                // Gapless keeps the old output format, so the re-pin would
+                // re-clock mid-music; let it load paused behind the settle.
+                Some(s) if current.needs_rate_switch_to(s) => {
+                    debug!("preload skip: next track needs a sample-rate switch");
+                    return;
+                }
                 Some(s) if !s.is_radio() => s.clone(),
                 _ => return,
             }

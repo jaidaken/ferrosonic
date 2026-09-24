@@ -30,6 +30,7 @@ fn song_with_cover(id: &str, cover_id: &str) -> Child {
         path: None,
         disc_number: None,
         starred: None,
+        sampling_rate: None,
         radio_stream_url: None,
     }
 }
@@ -184,6 +185,7 @@ async fn apply_event_now_playing_clears_cover_when_no_cover_id() {
             path: None,
             disc_number: None,
             starred: None,
+            sampling_rate: None,
             radio_stream_url: None,
         }),
         state: ferrosonic::daemon::state::PlaybackState::Playing,

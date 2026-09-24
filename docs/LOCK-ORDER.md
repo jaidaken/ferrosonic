@@ -30,6 +30,10 @@ call site.
   taken without overlap.
 - `stamp_loadfile()` may be called while holding `mpv` (last_loadfile
   is lock 8, mpv is lock 3).
+- `load_paused_and_settle` and the pre-buffer load read
+  `pipewire.get_current_rate()` while holding `mpv` (pipewire is lock 4).
+  The snapshot precedes the load under the same `mpv` hold, so a poller
+  can only read the new track's rate, and pin it, after the snapshot.
 - `commit_play_state_in_lock` runs under an already-held `state`
   write lock; the caller must have taken `state` first (and is
   expected to have cloned `subsonic` already so the `SubsonicClient`

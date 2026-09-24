@@ -309,6 +309,15 @@ pub struct Child {
     /// Bit rate in kbit/s.
     #[serde(default, rename = "bitRate")]
     pub bit_rate: Option<i32>,
+    /// Source sample rate in Hz (`OpenSubsonic` extension). With `format=raw`
+    /// streams this is the rate mpv decodes, so it predicts a device re-clock
+    /// between two tracks before either one loads.
+    #[serde(
+        default,
+        rename = "samplingRate",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub sampling_rate: Option<i32>,
     /// Server-side file path.
     #[serde(default)]
     pub path: Option<String>,
@@ -365,6 +374,28 @@ impl Child {
     #[must_use]
     pub const fn is_radio(&self) -> bool {
         self.radio_stream_url.is_some()
+    }
+
+    /// Whether moving from this track to `next` re-clocks the audio device:
+    /// both source rates are known and they differ. An unknown or
+    /// non-positive rate on either side reads as "no switch known".
+    ///
+    /// ```
+    /// use ferrosonic::subsonic::models::Child;
+    /// let at = |r| Child { sampling_rate: r, ..Default::default() };
+    /// assert!(at(Some(44_100)).needs_rate_switch_to(&at(Some(96_000))));
+    /// assert!(!at(Some(96_000)).needs_rate_switch_to(&at(Some(96_000))));
+    /// assert!(!at(Some(44_100)).needs_rate_switch_to(&at(None)));
+    /// assert!(!at(None).needs_rate_switch_to(&at(Some(96_000))));
+    /// assert!(!at(Some(0)).needs_rate_switch_to(&at(Some(96_000))));
+    /// ```
+    #[must_use]
+    pub fn needs_rate_switch_to(&self, next: &Self) -> bool {
+        let known = |r: Option<i32>| r.filter(|&hz| hz > 0);
+        match (known(self.sampling_rate), known(next.sampling_rate)) {
+            (Some(from_hz), Some(to_hz)) => from_hz != to_hz,
+            _ => false,
+        }
     }
 
     /// Whether a server-supplied station URL is safe to hand to the player.

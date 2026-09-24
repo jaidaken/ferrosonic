@@ -38,6 +38,7 @@ fn song_with_cover(id: &str, cover: &str) -> Child {
         path: None,
         disc_number: None,
         starred: None,
+        sampling_rate: None,
         radio_stream_url: None,
     }
 }

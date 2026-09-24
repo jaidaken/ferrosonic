@@ -28,6 +28,22 @@ fn preload_due(last: Option<Instant>, now: Instant) -> bool {
     last.is_none_or(|t| now.duration_since(t) >= PRELOAD_BACKOFF)
 }
 
+/// Whether the current queue entry hands off to its auto-advance target at a
+/// different sample rate: the same pair `preload_next_track` compares.
+fn next_needs_rate_switch(state: &crate::daemon::state::DaemonState) -> bool {
+    let Some(pos) = state.queue_position else {
+        return false;
+    };
+    let next_pos = state.config.repeat_mode.next_auto(pos, state.queue.len());
+    match (
+        state.queue.get(pos),
+        next_pos.and_then(|n| state.queue.get(n)),
+    ) {
+        (Some(current), Some(following)) => current.needs_rate_switch_to(following),
+        _ => false,
+    }
+}
+
 /// Owned snapshot of every read the playback tick needs to decide an action.
 #[derive(Debug, Clone, Copy, PartialEq)]
 // Snapshot of distinct simultaneous runtime conditions; orthogonal, not a state machine.
@@ -46,6 +62,9 @@ struct PlaybackTickInputs {
     prebuffer_loading: bool,
     just_loaded: bool,
     current_is_radio: bool,
+    /// The next track decodes at a different sample rate than this one, so a
+    /// gapless hand-off would play through the device re-clock.
+    next_needs_rate_switch: bool,
 }
 
 /// Outcome of one playback tick. Branch priority: `AdvanceEarly` > Preload > `GaplessAdvance` > `AdvanceOnIdle`.
@@ -109,11 +128,20 @@ impl DaemonCore {
                 prebuffer_loading: false,
                 just_loaded: false,
                 current_is_radio: false,
+                next_needs_rate_switch: false,
             };
         }
 
-        let (time_remaining, has_next, position, queue_position, current_is_radio) = {
+        let (
+            time_remaining,
+            has_next,
+            position,
+            queue_position,
+            current_is_radio,
+            next_needs_rate_switch,
+        ) = {
             let state = self.state.read().await;
+            let rate_switch = next_needs_rate_switch(&state);
             let tr = state.now_playing.duration - state.now_playing.position;
             let hn = state
                 .queue_position
@@ -129,6 +157,7 @@ impl DaemonCore {
                 state.now_playing.position,
                 state.queue_position,
                 radio,
+                rate_switch,
             )
         };
 
@@ -170,6 +199,7 @@ impl DaemonCore {
             prebuffer_loading,
             just_loaded,
             current_is_radio,
+            next_needs_rate_switch,
         }
     }
 
@@ -182,7 +212,10 @@ impl DaemonCore {
             return PlaybackTickAction::Continue;
         }
 
+        // A cross-rate next is never preloaded: let the track end naturally so
+        // AdvanceOnIdle loads the next one paused behind the rate settle.
         if inputs.has_next
+            && !inputs.next_needs_rate_switch
             && inputs.position > 0.5
             && inputs.time_remaining > 0.0
             && inputs.time_remaining < 2.0
@@ -195,7 +228,11 @@ impl DaemonCore {
         }
 
         // A station never preloads, so playlist_count stays 1 and this branch would mask AdvanceOnIdle forever.
-        if matches!(inputs.playlist_count, Some(1)) && !inputs.current_is_radio {
+        // Same for a cross-rate next, which preload_next_track declines to append.
+        if matches!(inputs.playlist_count, Some(1))
+            && !inputs.current_is_radio
+            && !inputs.next_needs_rate_switch
+        {
             if let Some(from_pos) = inputs.queue_position {
                 return PlaybackTickAction::Preload { from_pos };
             }
@@ -527,6 +564,7 @@ mod playback_tick_tests {
             prebuffer_loading: false,
             just_loaded: false,
             current_is_radio: false,
+            next_needs_rate_switch: false,
         }
     }
 
@@ -771,6 +809,37 @@ mod playback_tick_tests {
     }
 
     #[test]
+    fn cross_rate_next_lets_the_track_play_to_its_end() {
+        // Advancing early would cut the last ~1.5s and still start the next
+        // track mid re-clock; the track must run out and end on idle instead.
+        let i = PlaybackTickInputs {
+            has_next: true,
+            position: 1.0,
+            time_remaining: 1.0,
+            playlist_count: Some(1),
+            queue_position: Some(0),
+            next_needs_rate_switch: true,
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::Continue);
+    }
+
+    #[test]
+    fn cross_rate_next_ends_on_idle_instead_of_looping_on_preload() {
+        // Preload skips a cross-rate next, so a Preload action here would
+        // repeat every tick and mask the idle advance forever.
+        let i = PlaybackTickInputs {
+            playlist_count: Some(1),
+            playlist_pos: Some(0),
+            mpv_idle: Some(true),
+            queue_position: Some(4),
+            next_needs_rate_switch: true,
+            ..baseline()
+        };
+        assert_eq!(decide(&i), PlaybackTickAction::AdvanceOnIdle);
+    }
+
+    #[test]
     fn enum_must_use_attrs_present() {
         assert_eq!(TickContinuation::Stop, TickContinuation::Stop);
         assert_ne!(TickContinuation::Stop, TickContinuation::Continue);
@@ -844,6 +913,7 @@ mod prop {
             prebuffer_loading in any::<bool>(),
             just_loaded in any::<bool>(),
             current_is_radio in any::<bool>(),
+            next_needs_rate_switch in any::<bool>(),
         ) -> PlaybackTickInputs {
             PlaybackTickInputs {
                 is_active,
@@ -859,6 +929,7 @@ mod prop {
                 prebuffer_loading,
                 just_loaded,
                 current_is_radio,
+                next_needs_rate_switch,
             }
         }
     }
@@ -907,11 +978,13 @@ mod prop {
                     prop_assert!(inputs.position > 0.5);
                     prop_assert!(inputs.time_remaining > 0.0 && inputs.time_remaining < 2.0);
                     prop_assert!(matches!(inputs.playlist_count, Some(c) if c < 2));
+                    prop_assert!(!inputs.next_needs_rate_switch);
                 }
                 PlaybackTickAction::Preload { .. } => {
                     prop_assert!(inputs.is_active && inputs.mpv_running && inputs.is_playing);
                     prop_assert_eq!(inputs.playlist_count, Some(1));
                     prop_assert!(inputs.queue_position.is_some());
+                    prop_assert!(!inputs.next_needs_rate_switch);
                 }
                 PlaybackTickAction::GaplessAdvance => {
                     prop_assert!(inputs.is_active && inputs.mpv_running && inputs.is_playing);
@@ -946,6 +1019,7 @@ mod prop {
                 prebuffer_loading: false,
                 just_loaded: false,
                 current_is_radio: false,
+                next_needs_rate_switch: false,
             };
             let action = DaemonCore::decide_playback_tick_action(&inputs);
             prop_assert_eq!(action, PlaybackTickAction::AdvanceEarly);
@@ -970,6 +1044,7 @@ mod prop {
                 prebuffer_loading: false,
                 just_loaded: false,
                 current_is_radio: false,
+                next_needs_rate_switch: false,
             };
             let action = DaemonCore::decide_playback_tick_action(&inputs);
             prop_assert_eq!(action, PlaybackTickAction::Preload { from_pos });
