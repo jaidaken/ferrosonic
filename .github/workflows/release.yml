@@ -54,17 +54,7 @@ jobs:
 
       - name: Extract release notes for this tag
         id: notes
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          awk -v ver="$VERSION" '
-            $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
-            capture && /^## \[/ { exit }
-            capture { print }
-          ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "No release notes for $VERSION found in CHANGELOG.md"
-            exit 1
-          fi
+        run: scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > release-notes.md
 
       - name: Create GitHub release
         env:
