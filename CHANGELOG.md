@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-24
+
 ### Fixed
 
 - **No clipped track start on a sample-rate switch.** A track loads paused

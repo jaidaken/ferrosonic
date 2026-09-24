@@ -41,7 +41,7 @@
         rustc = rustToolchain;
       }).buildPackage {
         pname = "ferrosonic";
-        version = "0.7.0";
+        version = "0.7.1";
         src = ./.;
       };
   };
