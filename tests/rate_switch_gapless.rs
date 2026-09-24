@@ -99,8 +99,8 @@ async fn zero_rate_from_the_server_counts_as_unknown_and_still_preloads() {
 #[tokio::test]
 #[serial]
 async fn cross_rate_near_end_tick_lets_the_track_finish() {
-    // 1.5s left and no preload in mpv: without the rate guard the tick
-    // advances early, cuts the tail and starts the next track mid re-clock.
+    // 1.5 s left and no preload in mpv: the tick must neither advance nor
+    // preload the cross-rate next, so the track plays out in full.
     let td = TestDaemon::new().await;
     two_track_queue(&td, Some(44_100), Some(96_000)).await;
     {
@@ -132,8 +132,7 @@ async fn cross_rate_track_end_advances_on_idle() {
         let mut s = td.state.write().await;
         s.now_playing.song = Some(s.queue[0].clone());
         s.now_playing.state = PlaybackState::Playing;
-        // Outside the 2s early-advance window, so only the Preload-vs-idle
-        // choice decides this tick.
+        // Only the Preload-vs-idle choice decides this tick.
         s.now_playing.duration = 180.0;
         s.now_playing.position = 170.0;
     }

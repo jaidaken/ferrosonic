@@ -1,8 +1,6 @@
-//! update_playback_info integration: distinguishes AdvanceEarly (replace,
-//! queue advances) from Preload (append, queue holds), pins has_next at the
-//! last track, and confirms the Continue tail fetches audio properties.
-//! Kills gather_playback_tick_inputs + tick_fetch survivors that the existing
-//! poll tests leave alive (loadfile t-1 appears in both advance and preload).
+//! update_playback_info integration: a track with no preload plays to its end
+//! (the queue holds until mpv goes idle), the last track stays Playing, and
+//! the Continue tail fetches audio properties.
 
 mod common;
 
@@ -14,9 +12,9 @@ use serial_test::serial;
 
 #[tokio::test]
 #[serial]
-async fn advance_early_advances_the_queue_not_just_preloads() {
-    // time_remaining = 2.5 - 1.0 = 1.5 (in the 0..2 window). The tr `-`->`+`/`/`
-    // and has_next `<`->`==`/`>` mutants fall to Preload, which holds queue_position at 0.
+async fn near_end_without_a_preload_holds_the_queue_on_the_playing_track() {
+    // 1.5 s remain and mpv still plays. Advancing here would cut the tail;
+    // the end-of-file listener or the idle tick advances at the true end.
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
     {
@@ -35,17 +33,15 @@ async fn advance_early_advances_the_queue_not_just_preloads() {
 
     assert_eq!(
         td.state.read().await.queue_position,
-        Some(1),
-        "AdvanceEarly must advance the queue to 1, not merely preload (which holds 0)"
+        Some(0),
+        "the playing track keeps its last 1.5 s; the queue holds at 0"
     );
 }
 
 #[tokio::test]
 #[serial]
 async fn no_early_advance_at_the_last_track() {
-    // At the last position has_next is false (pos+1 == len), so no AdvanceEarly:
-    // the tick stays Playing. has_next `<`->`<=` or `+`->`*` would read has_next
-    // true at the last track and advance off the end into Stopped.
+    // The last track near its end must stay Playing until mpv goes idle.
     let td = TestDaemon::new().await;
     {
         let mut s = td.state.write().await;
@@ -65,7 +61,7 @@ async fn no_early_advance_at_the_last_track() {
     assert_eq!(
         td.state.read().await.now_playing.state,
         PlaybackState::Playing,
-        "no next track means no early advance; state must stay Playing"
+        "a playing last track is not stopped early; state must stay Playing"
     );
 }
 

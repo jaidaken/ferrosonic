@@ -328,7 +328,8 @@ impl DaemonCore {
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                         warn!("mpv event listener lagged; probing idle state");
                         if matches!(core.mpv.lock().await.is_idle().await, Ok(true)) {
-                            let _ = core.advance_auto().await;
+                            let ended = core.state.read().await.queue_position;
+                            let _ = core.advance_auto_after(ended).await;
                         }
                         continue;
                     }
@@ -341,19 +342,24 @@ impl DaemonCore {
                     if core.shutdown.load(std::sync::atomic::Ordering::Acquire) {
                         return;
                     }
-                    let count = core
-                        .mpv
-                        .lock()
-                        .await
-                        .get_playlist_count()
-                        .await
-                        .unwrap_or(0);
+                    let (count, idle) = {
+                        let mut mpv = core.mpv.lock().await;
+                        let count = mpv.get_playlist_count().await.unwrap_or(0);
+                        (count, mpv.is_idle().await.unwrap_or(false))
+                    };
                     if count >= 2 {
                         debug!("end-file eof during gapless preload; poll owns advance");
                         continue;
                     }
+                    // A loaded track means the idle tick already advanced past
+                    // the file that ended; advancing again would skip one.
+                    if !idle {
+                        debug!("end-file eof but a track is loaded; already advanced");
+                        continue;
+                    }
                     debug!("mpv end-file (eof) with no preload; advancing");
-                    let _ = core.advance_auto().await;
+                    let ended = core.state.read().await.queue_position;
+                    let _ = core.advance_auto_after(ended).await;
                 }
             }
         })
@@ -844,6 +850,21 @@ impl DaemonCore {
             let path_str = path.to_string_lossy().to_string();
             let start = std::time::Instant::now();
 
+            // Every download failure streams the track instead, unless a newer
+            // play cancelled this one: its fallback would load over that play.
+            macro_rules! stream_instead {
+                () => {{
+                    if cancel_task.load(Ordering::Relaxed) {
+                        debug!("Pre-buffer failed after cancel; skipping fallback");
+                        gate.disarm();
+                        slot_cleaner.disarm();
+                        return;
+                    }
+                    core.load_paused_and_settle(&url, preload_pos, 0.0).await;
+                    return;
+                }};
+            }
+
             let client = reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_mins(1))
@@ -853,8 +874,7 @@ impl DaemonCore {
                 Ok(r) => r,
                 Err(e) => {
                     error!("Pre-buffer fetch failed: {}", e);
-                    core.load_paused_and_settle(&url, preload_pos, 0.0).await;
-                    return;
+                    stream_instead!();
                 }
             };
 
@@ -862,8 +882,7 @@ impl DaemonCore {
                 Ok(f) => f,
                 Err(e) => {
                     error!("Pre-buffer file open failed: {}", e);
-                    core.load_paused_and_settle(&url, preload_pos, 0.0).await;
-                    return;
+                    stream_instead!();
                 }
             };
 
@@ -885,21 +904,19 @@ impl DaemonCore {
                     tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await;
                 let Ok(chunk_opt) = next else {
                     error!("Pre-buffer stream timeout (15s); aborting");
-                    core.load_paused_and_settle(&url, preload_pos, 0.0).await;
-                    return;
+                    stream_instead!();
                 };
                 let Some(chunk) = chunk_opt else { break };
                 let chunk = match chunk {
                     Ok(c) => c,
                     Err(e) => {
                         error!("Pre-buffer stream error: {}", e);
-                        core.load_paused_and_settle(&url, preload_pos, 0.0).await;
-                        return;
+                        stream_instead!();
                     }
                 };
                 if let Err(e) = file.write_all(&chunk) {
                     error!("Pre-buffer write error: {}", e);
-                    return;
+                    stream_instead!();
                 }
                 bytes_written += chunk.len();
             }

@@ -182,6 +182,23 @@ impl DaemonCore {
         Ok(())
     }
 
+    /// Auto-advance for the end of the track at `ended_pos`. The end-of-file
+    /// listener and the idle tick can both report one track end; whichever
+    /// runs second finds the queue already moved and does nothing.
+    ///
+    /// # Errors
+    /// Returns an `Error` if mpv control or a server request fails.
+    pub async fn advance_auto_after(
+        self: &Arc<Self>,
+        ended_pos: Option<usize>,
+    ) -> Result<(), Error> {
+        if self.state.read().await.queue_position != ended_pos {
+            debug!("auto-advance for {ended_pos:?} already handled");
+            return Ok(());
+        }
+        self.advance_auto().await
+    }
+
     /// Restarts current track if more than 3s in, else goes back one.
     ///
     /// # Errors
@@ -361,13 +378,27 @@ impl DaemonCore {
                 None => return,
             }
         };
+        self.replace_preload(pos).await;
+    }
+
+    /// Drop mpv's preloaded next and preload the auto-advance target of `pos`.
+    /// Once mpv plays entry 1 the gapless boundary is already crossed: entry 1
+    /// is the playing track, and the tick's gapless advance re-preloads.
+    pub(super) async fn replace_preload(self: &Arc<Self>, pos: usize) {
         {
             let mut mpv = self.mpv.lock().await;
+            if let Ok(Some(playing)) = mpv.get_playlist_pos().await {
+                if playing != 0 {
+                    debug!("preload resync skipped: mpv already plays entry {playing}");
+                    return;
+                }
+            }
             if let Ok(count) = mpv.get_playlist_count().await {
                 if count > 1 {
                     let _ = mpv.playlist_remove(1).await;
                 }
             }
+            drop(mpv);
         }
         self.preload_next_track(pos).await;
     }

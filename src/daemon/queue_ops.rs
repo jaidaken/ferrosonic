@@ -5,8 +5,17 @@ use std::sync::Arc;
 use tracing::{error, info};
 
 use crate::daemon::core::{DaemonCore, PlayMode};
+use crate::daemon::state::DaemonState;
 use crate::error::Error;
 use crate::ipc::protocol::DaemonEvent;
+
+/// ID of the song the current track auto-advances to (repeat-aware): the
+/// song mpv must hold as its gapless preload.
+fn auto_next_id(state: &DaemonState) -> Option<String> {
+    let pos = state.queue_position?;
+    let next = state.config.repeat_mode.next_auto(pos, state.queue.len())?;
+    state.queue.get(next).map(|s| s.id.clone())
+}
 
 impl DaemonCore {
     /// Replace queue + play target under a single state write lock so the queue cannot be mutated between the swap and the play setup. If `play_from` is None, only the queue is replaced.
@@ -69,11 +78,10 @@ impl DaemonCore {
         if from >= len || to >= len || from == to {
             return;
         }
+        let next_before = auto_next_id(&state);
         let song = state.queue.remove(from);
         state.queue.insert(to, song);
-        // The Some branch mutates queue_position; if-let is clearer than a mutating map_or_else closure.
-        #[allow(clippy::option_if_let_else)]
-        let next_maybe_changed = if let Some(cur) = state.queue_position {
+        if let Some(cur) = state.queue_position {
             let new_cur = if cur == from {
                 to
             } else if from < cur && to >= cur {
@@ -84,15 +92,11 @@ impl DaemonCore {
                 cur
             };
             state.queue_position = Some(new_cur);
-            // The preloaded next (queue[cur + 1]) only changes when the moved
-            // range touches the current track or the slot right after it.
-            !(from.max(to) < cur || from.min(to) > cur + 1)
-        } else {
-            false
-        };
+        }
+        let next_changed = auto_next_id(&state) != next_before;
         drop(state);
         self.emit_queue().await;
-        if next_maybe_changed {
+        if next_changed {
             self.resync_gapless_preload().await;
         }
     }
@@ -107,10 +111,16 @@ impl DaemonCore {
             return 0;
         }
         let removed = pos;
+        let next_before = auto_next_id(&state);
         state.queue.drain(0..pos);
         state.queue_position = Some(0);
+        let next_changed = auto_next_id(&state) != next_before;
         drop(state);
         self.emit_queue().await;
+        // Repeat All on the last track wraps to queue[0], which this drained.
+        if next_changed {
+            self.resync_gapless_preload().await;
+        }
         removed
     }
 

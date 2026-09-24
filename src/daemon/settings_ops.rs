@@ -214,14 +214,7 @@ impl DaemonCore {
         self.emit(DaemonEvent::RepeatModeChanged(mode));
         self.emit_config_changed().await;
         if let Some(pos) = cur_pos {
-            let mut mpv = self.mpv.lock().await;
-            if let Ok(count) = mpv.get_playlist_count().await {
-                if count > 1 {
-                    let _ = mpv.playlist_remove(1).await;
-                }
-            }
-            drop(mpv);
-            self.preload_next_track(pos).await;
+            self.replace_preload(pos).await;
         }
         Ok(())
     }

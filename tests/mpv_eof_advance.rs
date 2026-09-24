@@ -47,6 +47,8 @@ async fn eof_with_no_preload_advances_to_next_track() {
     td.fake_mpv.set_playlist(vec!["local.mp3".into()]).await;
 
     let _listener = td.core.spawn_mpv_event_listener().await;
+    // The lone entry played out: mpv goes idle, then reports the eof.
+    td.fake_mpv.set_idle().await;
     td.fake_mpv.emit_end_file("eof").await;
 
     assert!(
@@ -105,6 +107,7 @@ async fn non_eof_endfile_is_ignored_but_eof_still_advances() {
 
     // The same listener still advances on a real eof, proving it was live
     // and that the stop above was skipped by the `reason != \"eof\"` gate.
+    td.fake_mpv.set_idle().await;
     td.fake_mpv.emit_end_file("eof").await;
     assert!(
         td.fake_mpv

@@ -1,5 +1,5 @@
 //! `update_playback_info` polling cycle: position tick, idle-end advance,
-//! near-end early advance, gapless advance via playlist-pos.
+//! no early advance near the end, gapless advance via playlist-pos.
 
 mod common;
 
@@ -76,7 +76,7 @@ async fn idle_state_triggers_advance_auto() {
 
 #[tokio::test]
 #[serial]
-async fn near_end_of_track_with_no_preload_calls_next_track() {
+async fn near_end_of_track_with_no_preload_keeps_playing_it() {
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
     {
@@ -94,11 +94,15 @@ async fn near_end_of_track_with_no_preload_calls_next_track() {
     td.core.update_playback_info().await;
 
     let loads = loadfile_paths(&td).await;
+    let replaced = td.fake_mpv.commands().await.iter().any(|c| {
+        c.first().and_then(Value::as_str) == Some("loadfile")
+            && c.get(2).and_then(Value::as_str) != Some("append")
+    });
     assert!(
-        loads.iter().any(|p| p.contains("id=t-1")),
-        "near-end with playlist-count=1 should call next_track; loads: {:?}",
-        loads
+        !replaced,
+        "the last second of t-0 must play; no replacing load. loads: {loads:?}"
     );
+    assert_eq!(td.state.read().await.queue_position, Some(0));
 }
 
 #[tokio::test]

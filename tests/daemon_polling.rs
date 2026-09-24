@@ -39,7 +39,7 @@ async fn update_playback_info_when_playing_with_position_tick() {
 
 #[tokio::test]
 #[serial]
-async fn update_playback_info_near_end_with_has_next_advances_early() {
+async fn update_playback_info_near_end_with_a_next_track_does_not_advance() {
     let td = TestDaemon::new().await;
     {
         let mut s = td.state.write().await;
@@ -49,7 +49,13 @@ async fn update_playback_info_near_end_with_has_next_advances_early() {
         s.queue = vec![song("a", "A"), song("b", "B")];
         s.queue_position = Some(0);
     }
+    td.fake_mpv.set_loaded_file("a.flac").await;
     td.core.update_playback_info().await;
+    assert_eq!(
+        td.state.read().await.queue_position,
+        Some(0),
+        "half a second of A remains; the tick must not jump to B"
+    );
 }
 
 #[tokio::test]

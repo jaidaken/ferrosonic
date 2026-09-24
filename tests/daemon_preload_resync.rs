@@ -1,7 +1,6 @@
-//! move_queue_item resyncs the gapless preload only when the moved range touches
-//! the current track or the slot right after it. Kills the next_maybe_changed
-//! comparison mutants (`!(from.max(to) < cur || from.min(to) > cur+1)`): a resync
-//! issues an mpv preload (loadfile), so a wrong decision is observable.
+//! move_queue_item resyncs the gapless preload only when the move changes the
+//! song that follows the current track. A resync issues an mpv preload
+//! (loadfile), so a wrong decision is observable.
 
 mod common;
 
@@ -32,15 +31,30 @@ fn loadfiles_since(cmds: &[Vec<serde_json::Value>], from: usize) -> usize {
 
 #[tokio::test]
 #[serial]
-async fn move_touching_the_current_slot_resyncs_the_preload() {
+async fn move_that_changes_the_next_song_resyncs_the_preload() {
     let td = playing_td(5, 2).await;
     let before = td.fake_mpv.commands().await.len();
-    // cur=2, cur+1=3: moving into index 3 touches the preload slot.
-    td.core.move_queue_item(1, 3).await;
+    // [q0 q1 q2* q3 q4] -> move 3 to 1 -> [q0 q3 q1 q2* q4]: next q3 -> q4.
+    td.core.move_queue_item(3, 1).await;
     let cmds = td.fake_mpv.commands().await;
     assert!(
         loadfiles_since(&cmds, before) > 0,
-        "a move touching the current track or its successor resyncs the gapless preload"
+        "the song after the current track changed, so the preload is redone"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn move_that_keeps_the_next_song_does_not_resync() {
+    let td = playing_td(5, 2).await;
+    let before = td.fake_mpv.commands().await.len();
+    // [q0 q1 q2* q3 q4] -> move 1 to 3 -> [q0 q2* q3 q1 q4]: next stays q3.
+    td.core.move_queue_item(1, 3).await;
+    let cmds = td.fake_mpv.commands().await;
+    assert_eq!(
+        loadfiles_since(&cmds, before),
+        0,
+        "the next song is still q3, so the preload stays"
     );
 }
 

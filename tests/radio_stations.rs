@@ -184,8 +184,8 @@ async fn seed_playing_radio(td: &TestDaemon, queue: Vec<Child>, pos: f64) {
 #[serial]
 async fn tick_never_backfills_a_duration_for_a_live_station() {
     // mpv reports `duration` for a live stream as the buffered window (a few
-    // seconds); adopting it would draw a progress bar that "ends" and would
-    // arm the near-end AdvanceEarly path. Stay at 0 = unknown/live.
+    // seconds); adopting it would draw a progress bar that "ends". Stay at
+    // 0 = unknown/live.
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
     let c = radio_child("1", "Jazz FM", "http://r.example/jazz");

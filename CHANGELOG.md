@@ -20,6 +20,26 @@
   cross-rate next track: it is not preloaded, the current track plays to its
   end, and the next loads paused behind the settle. Same-rate tracks, and
   servers that do not report `samplingRate`, stay gapless.
+- **Songs play to their last second.** With no gapless preload (the next
+  entry is a radio station, or the preload failed), the tick jumped to the
+  next track with up to 2 s of music left. The track now plays out and the
+  end-of-file handler advances at the real end.
+- **A cancelled album download no longer plays over the new album.** When
+  the first album's download failed or stalled after a second album was
+  picked, its fallback loaded the first album on top. Every download failure
+  now checks for cancellation first, and a disk write failure streams the
+  track instead of skipping it.
+- **Gapless preload follows queue edits.** On the last track with repeat All,
+  moving the first queue item or clearing history left mpv holding a song
+  that was no longer next (or no longer queued). Queue edits now compare the
+  real next song before and after and re-preload when it changes.
+- **Queue edits at a track change no longer cut the new track.** A move,
+  shuffle or repeat change in the half second after a gapless change removed
+  the entry mpv had just started. The resync now leaves a playing entry alone.
+- **One track end advances one track.** The end-of-file handler and the idle
+  tick could both advance for the same track end and skip a song.
+- The quality row no longer shows the previous track's sample format and
+  channel layout for a moment after a gapless change.
 
 ## [0.7.0] - 2026-09-23
 

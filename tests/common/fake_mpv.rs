@@ -154,6 +154,16 @@ impl FakeMpv {
         self.changed.notify_one();
     }
 
+    /// Drop the loaded file (`idle-active` true) but keep the playlist, as
+    /// mpv does after the last entry plays out.
+    pub async fn set_idle(&self) {
+        {
+            let mut s = self.state.lock().await;
+            s.loaded_file = None;
+        }
+        self.changed.notify_one();
+    }
+
     pub async fn set_position(&self, secs: f64) {
         {
             let mut s = self.state.lock().await;
