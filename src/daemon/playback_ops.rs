@@ -8,6 +8,7 @@ use crate::daemon::core::{DaemonCore, PlayMode};
 use crate::error::Error;
 use crate::ipc::protocol::DaemonEvent;
 use crate::subsonic::models::Child;
+use crate::subsonic::stream_check::{self, StreamProblem};
 
 impl DaemonCore {
     /// Toggle pause by current state: `Playing` pauses, `Paused` resumes, `Stopped` with a queued position starts playback. Delegates so the `PipeWire` pin release/re-apply lives in one place per direction.
@@ -472,6 +473,61 @@ impl DaemonCore {
         self.emit_now_playing().await;
         self.release_pipewire_rate().await;
         Ok(())
+    }
+
+    /// Tell the user why `song` cannot play. A problem that blocks every song
+    /// (credentials, permission, rate limit, no connection) also stops
+    /// playback with the queue kept: moving on would send the server one
+    /// refused request per queued song. A station's refusal never stops
+    /// playback, because it says nothing about the Subsonic account.
+    pub(super) async fn report_stream_problem(
+        self: &Arc<Self>,
+        song: &Child,
+        problem: &StreamProblem,
+    ) {
+        let stop = problem.every_song && !song.is_radio();
+        warn!("Cannot play {}: {}", song.title, problem.summary);
+        let mut message = format!("Cannot play \"{}\": {}.", song.title, problem.summary);
+        // Stop before the message, so a client that reacts to it reads the stopped state.
+        if stop {
+            if let Err(e) = self.stop_keep_queue().await {
+                error!("Failed to stop after a refused stream: {}", e);
+            }
+            message.push_str(" Playback stopped.");
+        }
+        self.emit(DaemonEvent::Notification {
+            message,
+            is_error: true,
+        });
+    }
+
+    /// mpv could not open `song`: ask the server for the same stream once and
+    /// report a refusal or no answer. Audio in the reply means the fault is not
+    /// on the server side, so no refusal is reported.
+    pub(super) async fn explain_failed_load(
+        self: &Arc<Self>,
+        song: Child,
+        file_error: Option<String>,
+    ) {
+        let Some(client) = self.subsonic.read().await.clone() else {
+            return;
+        };
+        let url = match client.stream_url_for(&song) {
+            Ok(u) => u,
+            Err(e) => {
+                warn!("Cannot rebuild the stream URL of {}: {}", song.title, e);
+                return;
+            }
+        };
+        if let Err(problem) = stream_check::probe_stream(&url).await {
+            self.report_stream_problem(&song, &problem).await;
+        } else {
+            warn!(
+                "mpv could not play {} ({}); the server sends audio for it",
+                song.title,
+                file_error.as_deref().unwrap_or("no detail")
+            );
+        }
     }
 
     /// Stop mpv without touching the queue.

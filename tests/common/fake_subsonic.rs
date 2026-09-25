@@ -447,6 +447,40 @@ impl FakeSubsonic {
             .await;
     }
 
+    /// Answer `rest/stream` for `song_id` with `reply`, e.g. a refusal.
+    pub async fn expect_stream_reply(&self, song_id: &str, reply: ResponseTemplate) {
+        Mock::given(method("GET"))
+            .and(path("/rest/stream"))
+            .and(wiremock::matchers::query_param("id", song_id))
+            .respond_with(reply)
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Answer any GET on `path_str` with `reply`; returns the absolute URL.
+    pub async fn expect_raw_reply(&self, path_str: &str, reply: ResponseTemplate) -> String {
+        Mock::given(method("GET"))
+            .and(path(path_str))
+            .respond_with(reply)
+            .mount(&self.server)
+            .await;
+        format!("{}{}", self.server.uri(), path_str)
+    }
+
+    /// How many `rest/stream` requests for `song_id` the server received.
+    pub async fn stream_requests(&self, song_id: &str) -> usize {
+        self.server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .iter()
+            .filter(|r| {
+                r.url.path() == "/rest/stream"
+                    && r.url.query_pairs().any(|(k, v)| k == "id" && v == song_id)
+            })
+            .count()
+    }
+
     pub async fn expect_get_album_with_delay(
         &self,
         id: &str,

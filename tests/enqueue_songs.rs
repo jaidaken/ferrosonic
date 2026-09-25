@@ -13,6 +13,10 @@ use serial_test::serial;
 async fn replace_overwrites_queue_and_starts_playback_when_play_from_set() {
     let td = TestDaemon::new().await;
     td.fake_subsonic.expect_ping().await;
+    // A refused stream never reaches mpv, so the song must be playable.
+    td.fake_subsonic
+        .expect_stream_for("seed-0", vec![0u8; 4096])
+        .await;
     let client = InProcessClient::new(td.core.clone());
 
     let resp = client

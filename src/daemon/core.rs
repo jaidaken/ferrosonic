@@ -343,7 +343,19 @@ impl DaemonCore {
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                 };
-                if let MpvEventKind::EndFile { reason } = ev {
+                if let MpvEventKind::EndFile { reason, file_error } = ev {
+                    // A failed load (direct or gapless preload) ends like a
+                    // track, so the idle tick moves on; say why it failed.
+                    if reason == "error" {
+                        let song = core.state.read().await.now_playing.song.clone();
+                        if let Some(song) = song {
+                            let c = core.clone();
+                            tokio::spawn(async move {
+                                c.explain_failed_load(song, file_error).await;
+                            });
+                        }
+                        continue;
+                    }
                     if reason != "eof" {
                         continue;
                     }
@@ -900,8 +912,28 @@ impl DaemonCore {
             let resp = match client.get(&url).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    error!("Pre-buffer fetch failed: {}", e);
+                    error!("Pre-buffer fetch failed: {}", e.without_url());
                     stream_instead!();
+                }
+            };
+            // A refusal is never saved as the song: mpv would fail on the
+            // error document and the queue would move on without a word.
+            let resp = match crate::subsonic::stream_check::check_stream_response(resp).await {
+                Ok(r) => r,
+                Err(problem) => {
+                    if cancel_task.load(Ordering::Relaxed) {
+                        debug!("Pre-buffer refused after cancel; a newer play owns the report");
+                        gate.disarm();
+                        slot_cleaner.disarm();
+                        return;
+                    }
+                    let song = core.state.read().await.now_playing.song.clone();
+                    if let Some(song) = song {
+                        core.report_stream_problem(&song, &problem).await;
+                    } else {
+                        warn!("Pre-buffer refused: {}", problem.summary);
+                    }
+                    return;
                 }
             };
 
@@ -937,7 +969,7 @@ impl DaemonCore {
                 let chunk = match chunk {
                     Ok(c) => c,
                     Err(e) => {
-                        error!("Pre-buffer stream error: {}", e);
+                        error!("Pre-buffer stream error: {}", e.without_url());
                         stream_instead!();
                     }
                 };

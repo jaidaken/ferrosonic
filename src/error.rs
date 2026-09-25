@@ -70,9 +70,10 @@ pub enum ConfigError {
 /// Errors from talking to the Subsonic server.
 #[derive(Error, Debug)]
 pub enum SubsonicError {
-    /// Transport-level HTTP failure.
+    /// Transport-level HTTP failure, stored without the request URL (see the
+    /// `From` impl).
     #[error("HTTP request failed: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(reqwest::Error),
 
     /// Server answered with a Subsonic error object.
     #[error("API error {code}: {message}")]
@@ -98,6 +99,14 @@ pub enum SubsonicError {
     /// Base URL or request URL failed to parse.
     #[error("URL parse error: {0}")]
     UrlParse(#[from] url::ParseError),
+}
+
+/// Drops the request URL: a Subsonic URL carries the username, auth token and
+/// salt, and this error's text reaches the log and the user's notifications.
+impl From<reqwest::Error> for SubsonicError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::Http(err.without_url())
+    }
 }
 
 /// Errors from mpv and `PipeWire` control.

@@ -49,6 +49,8 @@ struct MpvEvent {
     event: String,
     #[serde(default)]
     reason: Option<String>,
+    #[serde(default)]
+    file_error: Option<String>,
 }
 
 /// Typed mpv event surface for daemon consumers; raw event fields stay private.
@@ -56,8 +58,10 @@ struct MpvEvent {
 pub enum MpvEventKind {
     /// Playback of the current file ended.
     EndFile {
-        /// mpv's end reason, e.g. `"eof"` or `"stop"`.
+        /// mpv's end reason, e.g. `"eof"`, `"stop"` or `"error"`.
         reason: String,
+        /// mpv's error text when `reason` is `"error"`, e.g. `"loading failed"`.
+        file_error: Option<String>,
     },
     /// mpv started loading a new file.
     StartFile,
@@ -838,6 +842,7 @@ fn classify_event(ev: &MpvEvent) -> MpvEventKind {
     match ev.event.as_str() {
         "end-file" => MpvEventKind::EndFile {
             reason: ev.reason.clone().unwrap_or_else(|| "unknown".into()),
+            file_error: ev.file_error.clone(),
         },
         "start-file" => MpvEventKind::StartFile,
         "file-loaded" => MpvEventKind::FileLoaded,

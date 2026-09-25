@@ -20,6 +20,17 @@
   reset no longer refills the cache with the old result. A refresh that
   fails is retried on the next poll, and a scan already running when the
   daemon starts refreshes the library when it finishes.
+- **A song the server refuses now shows why.** A refused stream used to skip
+  with no message: the pre-buffer saved the server's error document as the
+  song, and a failed mpv load (skip, auto-advance, gapless preload) was
+  ignored. Now the TUI shows `Cannot play "<title>": <reason>`, with the
+  server's own message or the HTTP status. A refusal that blocks every song
+  (wrong credentials, no permission, rate limit, server unreachable) also
+  stops playback with the queue kept, so the queue does not run through one
+  refused request per song.
+- **Server errors no longer print the auth token.** An HTTP error from the
+  Subsonic client included the full request URL, with the username, token
+  and salt, in the log and in notifications. The URL is now left out.
 
 ## [0.7.1] - 2026-09-24
 

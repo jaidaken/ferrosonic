@@ -46,8 +46,7 @@ impl SubsonicClient {
             // stall library, star, or scrobble requests indefinitely.
             .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(SubsonicError::Http)?;
+            .build()?;
 
         Ok(Self {
             base_url,
