@@ -126,7 +126,7 @@ async fn metadata_includes_length_in_microseconds() {
 
 #[tokio::test]
 #[serial]
-async fn metadata_includes_art_url_when_cover_art_present() {
+async fn metadata_never_carries_a_signed_server_url() {
     let mut cfg = Config::new();
     cfg.base_url = "https://example.com".into();
     cfg.username = "u".into();
@@ -142,14 +142,12 @@ async fn metadata_includes_art_url_when_cover_art_present() {
     }
     let snap = build_property_snapshot(&ds).await;
     let md = snap.metadata.unwrap();
-    let art = md.art_url();
-    assert!(
-        art.is_some(),
-        "art_url should be set when cover_art id present"
+    assert_eq!(
+        md.art_url().map(String::from),
+        None,
+        "the art URL is the local file the update path attaches, never a server URL"
     );
-    let art = art.unwrap();
-    assert!(art.contains("id=art-99"));
-    assert!(art.contains("/rest/getCoverArt"));
+    assert_eq!(snap.cover_id.as_deref(), Some("art-99"));
 }
 
 #[tokio::test]

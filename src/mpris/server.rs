@@ -10,41 +10,14 @@ use mpris_server::{
 use tempfile::NamedTempFile;
 use tokio::sync::Mutex;
 use tracing::info;
-use url::Url;
 
 use crate::app::state::{SharedClientState, SharedDaemonState};
-use crate::config::Config;
 use crate::daemon::state::{NowPlaying, PlaybackState};
 use crate::ipc::{DaemonClient, DaemonRequest, DaemonResponse};
-use crate::subsonic::auth::generate_auth_params;
 use crate::subsonic::models::Child;
-
-const API_VERSION: &str = "1.16.1";
-const CLIENT_NAME: &str = "ferrosonic";
 
 /// Edge length, in pixels, of the cover art fetched for MPRIS metadata.
 const MPRIS_COVER_SIZE: u32 = 512;
-
-/// Authenticated getCoverArt URL for MPRIS metadata; None when unconfigured.
-#[must_use]
-pub fn build_cover_art_url(config: &Config, cover_art_id: &str) -> Option<String> {
-    if config.base_url.is_empty() || cover_art_id.is_empty() {
-        return None;
-    }
-
-    let (salt, token) = generate_auth_params(&config.password);
-    let mut url = Url::parse(&format!("{}/rest/getCoverArt", config.base_url)).ok()?;
-
-    url.query_pairs_mut()
-        .append_pair("id", cover_art_id)
-        .append_pair("u", &config.username)
-        .append_pair("t", &token)
-        .append_pair("s", &salt)
-        .append_pair("v", API_VERSION)
-        .append_pair("c", CLIENT_NAME);
-
-    Some(url.to_string())
-}
 
 const PLAYER_NAME: &str = "ferrosonic";
 
@@ -67,9 +40,9 @@ pub struct MprisPlayer {
     /// panics with "no reactor"; spawning through this handle runs the
     /// daemon request (which needs tokio I/O) on a real tokio worker.
     rt: tokio::runtime::Handle,
-    /// Cover art mirrored to a local file. GNOME Shell's media-controls
-    /// widget won't fetch the remote authenticated Subsonic URL, but it
-    /// loads a `file://` reliably (same as our desktop notifications).
+    /// Cover art mirrored to a local file, the only art URL MPRIS publishes:
+    /// the TUI holds no password to sign a server URL, and a signed URL would
+    /// hand a login token to every D-Bus reader.
     cover_cache: Mutex<Option<CoverCache>>,
 }
 
@@ -89,15 +62,25 @@ impl MprisPlayer {
         }
     }
 
-    /// Mirror the cover for `cover_id` to a local file and return its
-    /// `file://` URL, reusing the cached file when the id is unchanged.
-    /// Returns `None` if the fetch yields no bytes or the write fails;
-    /// callers then fall back to the remote art URL.
+    /// `file://` URL of the mirrored cover when it holds `cover_id`; never fetches.
+    async fn cached_cover_uri(&self, cover_id: &str) -> Option<String> {
+        self.cover_cache
+            .lock()
+            .await
+            .as_ref()
+            .filter(|cache| cache.cover_id == cover_id)
+            .map(|cache| format!("file://{}", cache.file.path().display()))
+    }
+
+    /// Mirror the cover for `cover_id` to a local file, fetched through the
+    /// daemon, and return its `file://` URL; reuses the file when the id is
+    /// unchanged. Returns `None` if the fetch yields no bytes or the write
+    /// fails, and the metadata then carries no art URL.
     ///
     /// The lock spans the fetch+write so concurrent metadata pushes for the
     /// same track don't double-fetch or race on the shared tempfile.
     #[allow(clippy::significant_drop_tightening)]
-    async fn cover_file_uri(&self, cover_id: &str) -> Option<String> {
+    pub async fn cover_file_uri(&self, cover_id: &str) -> Option<String> {
         let mut guard = self.cover_cache.lock().await;
         if let Some(cache) = guard.as_ref() {
             if cache.cover_id == cover_id {
@@ -142,13 +125,12 @@ impl MprisPlayer {
         });
     }
 
-    async fn get_state(&self) -> (NowPlaying, Option<Child>, Config) {
+    async fn get_state(&self) -> (NowPlaying, Option<Child>) {
         let ds = self.daemon_state.read().await;
         let now_playing = ds.now_playing.clone();
         let current_song = ds.current_song().cloned();
-        let config = ds.config.clone();
         drop(ds);
-        (now_playing, current_song, config)
+        (now_playing, current_song)
     }
 }
 
@@ -263,7 +245,7 @@ impl PlayerInterface for MprisPlayer {
     }
 
     async fn playback_status(&self) -> fdo::Result<PlaybackStatus> {
-        let (now_playing, _, _) = self.get_state().await;
+        let (now_playing, _) = self.get_state().await;
         Ok(match now_playing.state {
             PlaybackState::Playing => PlaybackStatus::Playing,
             PlaybackState::Paused => PlaybackStatus::Paused,
@@ -296,11 +278,12 @@ impl PlayerInterface for MprisPlayer {
     }
 
     async fn metadata(&self) -> fdo::Result<Metadata> {
-        let (_now_playing, current_song, config) = self.get_state().await;
+        let (_now_playing, current_song) = self.get_state().await;
 
         let mut metadata = Metadata::new();
 
         if let Some(song) = current_song {
+            let cover_id = song.cover_id();
             metadata.set_trackid(
                 Some(TrackId::try_from(format!("/org/mpris/MediaPlayer2/Track/{}", song.id)).ok())
                     .flatten(),
@@ -321,13 +304,11 @@ impl PlayerInterface for MprisPlayer {
                 metadata.set_disc_number(Some(disc));
             }
 
-            // Remote (authenticated) URL only. The local file:// swap happens in
-            // `update_mpris_properties`, which runs on the tokio runtime; doing
-            // the fetch here would run on zbus's executor where daemon I/O has
-            // no reactor (the same reason `fire` exists).
-            if let Some(ref cover_art_id) = song.cover_art {
-                if let Some(cover_url) = build_cover_art_url(&config, cover_art_id) {
-                    metadata.set_art_url(Some(cover_url));
+            // Cache read only: the fetch runs in `update_mpris_properties` on the
+            // tokio runtime, since zbus's executor has no reactor for daemon I/O.
+            if let Some(cover_id) = cover_id {
+                if let Some(file_url) = self.cached_cover_uri(&cover_id).await {
+                    metadata.set_art_url(Some(file_url));
                 }
             }
         }
@@ -350,7 +331,7 @@ impl PlayerInterface for MprisPlayer {
     // f64->i64 `as` saturates; position*1e6 micros is bounded by track length.
     #[allow(clippy::cast_possible_truncation)]
     async fn position(&self) -> fdo::Result<Time> {
-        let (now_playing, _, _) = self.get_state().await;
+        let (now_playing, _) = self.get_state().await;
         Ok(Time::from_micros(
             (now_playing.position * 1_000_000.0) as i64,
         ))
@@ -436,7 +417,7 @@ pub struct MprisPropertySnapshot {
 
 /// Pure: builds the property snapshot from daemon state.
 pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisPropertySnapshot {
-    let (playback, can_go_next, can_go_prev, can_play, current_song, config) = {
+    let (playback, can_go_next, can_go_prev, can_play, current_song) = {
         let ds = daemon_state.read().await;
         let pb = match ds.now_playing.state {
             PlaybackState::Playing => PlaybackStatus::Playing,
@@ -446,18 +427,11 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
         let cgn = ds.queue_position.is_some_and(|p| p + 1 < ds.queue.len());
         let cgp = ds.queue_position.is_some_and(|p| p > 0);
         let cp = !ds.queue.is_empty();
-        (
-            pb,
-            cgn,
-            cgp,
-            cp,
-            ds.current_song().cloned(),
-            ds.config.clone(),
-        )
+        (pb, cgn, cgp, cp, ds.current_song().cloned())
     };
 
     let cover_id = current_song.as_ref().and_then(Child::cover_id);
-    let metadata = current_song.map(|song| build_metadata_for(&song, &config));
+    let metadata = current_song.map(|song| build_metadata_for(&song));
 
     MprisPropertySnapshot {
         playback,
@@ -469,7 +443,8 @@ pub async fn build_property_snapshot(daemon_state: &SharedDaemonState) -> MprisP
     }
 }
 
-fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
+/// Track metadata without an art URL; `update_mpris_properties` attaches the local cover file.
+fn build_metadata_for(song: &Child) -> Metadata {
     let mut metadata = Metadata::new();
     metadata.set_trackid(
         Some(TrackId::try_from(format!("/org/mpris/MediaPlayer2/Track/{}", song.id)).ok())
@@ -481,12 +456,6 @@ fn build_metadata_for(song: &Child, config: &Config) -> Metadata {
 
     if let Some(duration) = song.duration {
         metadata.set_length(Some(Time::from_micros(i64::from(duration) * 1_000_000)));
-    }
-
-    if let Some(ref cover_art_id) = song.cover_art {
-        if let Some(cover_url) = build_cover_art_url(config, cover_art_id) {
-            metadata.set_art_url(Some(cover_url));
-        }
     }
 
     metadata
@@ -513,7 +482,7 @@ pub async fn update_mpris_properties(
         .await?;
 
     if let Some(mut metadata) = snap.metadata {
-        // Swap the remote art URL for a local file:// the widget can load.
+        // The only art URL MPRIS publishes: a local file fetched through the daemon.
         if let Some(cid) = &snap.cover_id {
             if let Some(file_url) = server.imp().cover_file_uri(cid).await {
                 metadata.set_art_url(Some(file_url));

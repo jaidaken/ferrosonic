@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tracks no longer skip after a server login lockout.** In daemon mode the
+  MPRIS cover-art URL was signed in the TUI, which holds no password, so every
+  desktop widget fetch was a failed login. Navidrome then locked the account
+  for a short window and refused streams, and each refused track played 0 KB
+  and skipped. MPRIS now publishes only the local cover file fetched through
+  the daemon, and never a signed server URL.
+
 ## [0.7.1] - 2026-09-24
 
 ### Fixed
