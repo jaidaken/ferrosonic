@@ -478,19 +478,14 @@ impl DaemonCore {
         }
     }
 
-    /// Fetch the full album library for the flat album-list view and cache it.
-    /// Returns the albums so the IPC caller can reply directly.
+    /// Fetch the full album library for the flat album-list view. The IPC
+    /// caller gets the list in its reply; the daemon keeps no copy.
     pub async fn load_all_albums(self: &Arc<Self>) -> Vec<crate::subsonic::models::Album> {
-        let Some((client, gen)) = self.client_and_generation().await else {
+        let Some(client) = self.subsonic.read().await.clone() else {
             return Vec::new();
         };
         match client.get_all_albums().await {
             Ok(albums) => {
-                let mut state = self.state.write().await;
-                if self.cache_generation() == gen {
-                    state.library.all_albums.clone_from(&albums);
-                }
-                drop(state);
                 info!("Loaded {} albums (flat list)", albums.len());
                 albums
             }

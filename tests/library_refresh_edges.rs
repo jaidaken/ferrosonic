@@ -174,6 +174,63 @@ async fn sort_changed_during_an_album_list_reload_is_applied_to_the_new_list() {
 
 #[tokio::test]
 #[serial]
+async fn playlist_loaded_between_resets_is_cached() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_get_playlist("pl-1", "Road Trip", &["One", "Two"])
+        .await;
+
+    let songs = td.core.load_playlist_songs("pl-1").await;
+
+    assert_eq!(songs.len(), 2);
+    let cached: Vec<String> = td
+        .state
+        .read()
+        .await
+        .library
+        .playlist_songs_cache
+        .get("pl-1")
+        .map(|s| s.iter().map(|c| c.title.clone()).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        cached,
+        ["One", "Two"],
+        "a load with no reset in between is kept"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn album_list_with_no_selection_selects_the_first_album_after_a_reload() {
+    let td = TestDaemon::new().await;
+    td.fake_subsonic
+        .expect_album_list2(&[("a1", "Alpha"), ("a2", "Beta")])
+        .await;
+    let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(td.core.clone()));
+    let cfg = td.state.read().await.config.clone();
+    let app = App::with_remote_client(client.clone(), cfg);
+    {
+        let mut cs = app.client_state.write().await;
+        cs.artists.view = LibraryView::AlbumList;
+        cs.artists.album_selected = None;
+    }
+
+    apply_event(
+        &app.daemon_state,
+        &app.client_state,
+        &client,
+        &empty_cover_art_state(),
+        DaemonEvent::LibraryInvalidated,
+    )
+    .await;
+
+    let cs = app.client_state.read().await;
+    assert_eq!(cs.artists.albums.len(), 2);
+    assert_eq!(cs.artists.album_selected, Some(0));
+}
+
+#[tokio::test]
+#[serial]
 async fn cover_fetched_across_a_reset_is_not_served_from_the_cache() {
     let td = TestDaemon::new().await;
     td.fake_subsonic

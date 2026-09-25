@@ -221,7 +221,6 @@ pub(crate) async fn apply_library_invalidated(
         lib.album_songs_cache_order.clear();
         lib.playlist_songs_cache.clear();
         lib.playlist_songs_cache_order.clear();
-        lib.all_albums.clear();
         drop(ds);
     }
     let (expanded, reload_album_list) = {

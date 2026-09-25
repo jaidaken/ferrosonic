@@ -51,6 +51,29 @@ async fn metadata_getter_never_carries_a_signed_server_url() {
 
 #[tokio::test]
 #[serial]
+async fn cover_the_server_cannot_supply_publishes_no_art_url() {
+    let td = TestDaemon::new().await;
+    // No getCoverArt mock: the fake server answers 404 and the daemon replies with no bytes.
+    let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(td.core.clone()));
+    let ds = tui_mirror(&td.fake_subsonic.url());
+    play_song_with_cover(&ds, "al-gone").await;
+    let player = MprisPlayer::new(ds, new_shared_client_state(&Config::new()), client);
+
+    assert_eq!(player.cover_file_uri("al-gone").await, None);
+    assert_eq!(
+        player
+            .metadata()
+            .await
+            .expect("metadata")
+            .art_url()
+            .map(String::from),
+        None,
+        "an empty reply must not become an empty cover file"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn cover_reaches_mpris_as_a_local_file_fetched_by_the_daemon() {
     let td = TestDaemon::new().await;
     let png = vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4];

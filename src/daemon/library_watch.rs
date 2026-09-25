@@ -77,7 +77,6 @@ impl DaemonCore {
             lib.album_songs_cache_order.clear();
             lib.playlist_songs_cache.clear();
             lib.playlist_songs_cache_order.clear();
-            lib.all_albums.clear();
             // Under the state lock: loaders compare it under the same lock before caching.
             self.library_gen.fetch_add(1, Ordering::Release);
             drop(state);
