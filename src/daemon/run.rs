@@ -48,6 +48,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let _poll = core.spawn_polling_task();
     let _mpv_events = core.spawn_mpv_event_listener().await;
     let _idle_exit = core.spawn_idle_exit_monitor();
+    let _library_watch = core.spawn_library_watch();
 
     if config.is_configured() {
         let bg = Arc::clone(&core);

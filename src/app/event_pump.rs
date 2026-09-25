@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
+use crate::app::input_library::sort_albums;
+use crate::app::page_state::LibraryView;
 use crate::app::state::{SharedClientState, SharedDaemonState};
 use crate::ipc::{DaemonClient, DaemonEvent, DaemonRequest, DaemonResponse};
 use crate::ui::cover_art::CoverArtState;
@@ -28,6 +30,8 @@ pub(crate) async fn run_event_pump(
                     let mut ds = daemon_state.write().await;
                     *ds = *snap;
                 }
+                // A missed LibraryInvalidated leaves expanded artists without albums.
+                apply_library_invalidated(&daemon_state, &client_state, &client).await;
                 rx = new_rx;
             }
             Err(broadcast::error::RecvError::Closed) => {
@@ -95,6 +99,9 @@ pub async fn apply_event(
         }
         DaemonEvent::ConfigChanged(cfg) => {
             apply_config_changed(daemon_state, client_state, client, cover_art, cfg).await;
+        }
+        DaemonEvent::LibraryInvalidated => {
+            apply_library_invalidated(daemon_state, client_state, client).await;
         }
         DaemonEvent::RepeatModeChanged(mode) => {
             {
@@ -191,6 +198,85 @@ async fn apply_library_event(
         other => return Some(other),
     }
     None
+}
+
+/// Apply `LibraryInvalidated`: drop the mirrored album and track caches, then
+/// reload the albums of expanded artists and an open flat album list.
+/// Takes the daemon and client locks one after the other, never together.
+pub(crate) async fn apply_library_invalidated(
+    daemon_state: &SharedDaemonState,
+    client_state: &SharedClientState,
+    client: &Arc<dyn DaemonClient>,
+) {
+    {
+        let mut ds = daemon_state.write().await;
+        let lib = &mut ds.library;
+        lib.albums_cache.clear();
+        lib.albums_cache_order.clear();
+        lib.album_songs_cache.clear();
+        lib.album_songs_cache_order.clear();
+        lib.playlist_songs_cache.clear();
+        lib.playlist_songs_cache_order.clear();
+        lib.all_albums.clear();
+        drop(ds);
+    }
+    let (expanded, reload_album_list, sort) = {
+        let mut cs = client_state.write().await;
+        let reload = cs.artists.view == LibraryView::AlbumList;
+        if !reload {
+            // Refetched on the next switch to the album view.
+            cs.artists.albums.clear();
+        }
+        let expanded: Vec<String> = cs.artists.expanded.iter().cloned().collect();
+        (expanded, reload, cs.artists.album_sort)
+    };
+    for artist_id in expanded {
+        match client
+            .request(DaemonRequest::LoadArtist(artist_id.clone()))
+            .await
+        {
+            Ok(DaemonResponse::ArtistAlbums(albums)) => {
+                let mut ds = daemon_state.write().await;
+                let lib = &mut ds.library;
+                crate::daemon::library::cache_insert(
+                    &mut lib.albums_cache,
+                    &mut lib.albums_cache_order,
+                    artist_id,
+                    albums,
+                    crate::daemon::library::ALBUMS_CACHE_CAP,
+                );
+                drop(ds);
+            }
+            Ok(other) => warn!("LoadArtist after a library reset: unexpected {:?}", other),
+            Err(e) => warn!("LoadArtist after a library reset failed: {}", e),
+        }
+    }
+    if reload_album_list {
+        match client.request(DaemonRequest::LoadAllAlbums).await {
+            Ok(DaemonResponse::AllAlbums(mut albums)) => {
+                sort_albums(&mut albums, sort);
+                let mut cs = client_state.write().await;
+                let selected_id = cs
+                    .artists
+                    .album_selected
+                    .and_then(|i| cs.artists.albums.get(i))
+                    .map(|a| a.id.clone());
+                cs.artists.album_selected = selected_id
+                    .and_then(|id| albums.iter().position(|a| a.id == id))
+                    .or_else(|| (!albums.is_empty()).then_some(0));
+                cs.artists.album_scroll_offset = cs
+                    .artists
+                    .album_scroll_offset
+                    .min(albums.len().saturating_sub(1));
+                cs.artists.albums = albums;
+            }
+            Ok(other) => warn!(
+                "LoadAllAlbums after a library reset: unexpected {:?}",
+                other
+            ),
+            Err(e) => warn!("LoadAllAlbums after a library reset failed: {}", e),
+        }
+    }
 }
 
 /// Apply `NowPlayingChanged`: store the new now-playing and refresh cover art.

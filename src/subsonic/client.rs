@@ -11,8 +11,8 @@ use super::auth::generate_auth_params;
 use super::models::{
     Album, AlbumData, AlbumList2Data, Artist, ArtistData, ArtistsData, Child, InternetRadioStation,
     InternetRadioStationsData, MusicFolder, MusicFoldersData, OpenSubsonicExtensionsData, PingData,
-    Playlist, PlaylistData, PlaylistsData, RandomSongsData, Search3Data, SearchResult3,
-    StarredSongsData, SubsonicResponse,
+    Playlist, PlaylistData, PlaylistsData, RandomSongsData, ScanStatus, ScanStatusData,
+    Search3Data, SearchResult3, StarredSongsData, SubsonicResponse,
 };
 use crate::error::SubsonicError;
 use crate::secret::Secret;
@@ -365,6 +365,15 @@ impl SubsonicClient {
     pub async fn get_music_folders(&self) -> Result<Vec<MusicFolder>, SubsonicError> {
         let data: MusicFoldersData = self.request("getMusicFolders").await?;
         Ok(data.music_folders.music_folder)
+    }
+
+    /// Report whether the server scans its library, and what its last scan found.
+    ///
+    /// # Errors
+    /// Returns a `SubsonicError` if the request fails or the response cannot be parsed.
+    pub async fn get_scan_status(&self) -> Result<ScanStatus, SubsonicError> {
+        let data: ScanStatusData = self.request("getScanStatus").await?;
+        Ok(data.scan_status)
     }
 
     /// Fetch a batch of 500 random songs.

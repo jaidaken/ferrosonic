@@ -10,6 +10,14 @@
   for a short window and refused streams, and each refused track played 0 KB
   and skipped. MPRIS now publishes only the local cover file fetched through
   the daemon, and never a signed server URL.
+- **New music shows up without a daemon restart.** The daemon kept every
+  artist's album list and every album's track list for its whole life, and
+  the TUI copied them on each start, so music added to an existing artist or
+  album never appeared. Ctrl+R, a server switch and a library switch now drop
+  those caches, and the daemon polls `getScanStatus` every 30 s and refreshes
+  the library when a finished server scan changed it. Expanded artists and an
+  open album list reload on their own, and a fetch that started before a
+  reset no longer refills the cache with the old result.
 
 ## [0.7.1] - 2026-09-24
 

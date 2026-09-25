@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::daemon::core::DaemonCore;
 use crate::ipc::protocol::DaemonEvent;
@@ -30,23 +30,32 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Vec::new();
         };
+        let gen = self.cache_generation();
         match client.get_album(album_id).await {
             Ok((_album, songs)) => {
-                {
+                let cached = {
                     let mut state = self.state.write().await;
-                    let lib = &mut state.library;
-                    crate::daemon::library::cache_insert(
-                        &mut lib.album_songs_cache,
-                        &mut lib.album_songs_cache_order,
-                        album_id.to_string(),
-                        songs.clone(),
-                        crate::daemon::library::ALBUM_SONGS_CACHE_CAP,
-                    );
+                    let current = self.cache_generation() == gen;
+                    if current {
+                        let lib = &mut state.library;
+                        crate::daemon::library::cache_insert(
+                            &mut lib.album_songs_cache,
+                            &mut lib.album_songs_cache_order,
+                            album_id.to_string(),
+                            songs.clone(),
+                            crate::daemon::library::ALBUM_SONGS_CACHE_CAP,
+                        );
+                    }
+                    current
+                };
+                if cached {
+                    self.emit(DaemonEvent::AlbumSongsChanged {
+                        album_id: album_id.to_string(),
+                        songs: songs.clone(),
+                    });
+                } else {
+                    debug!("album {album_id} fetched across a library reset; not cached");
                 }
-                self.emit(DaemonEvent::AlbumSongsChanged {
-                    album_id: album_id.to_string(),
-                    songs: songs.clone(),
-                });
                 songs
             }
             Err(e) => {
@@ -93,23 +102,32 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Vec::new();
         };
+        let gen = self.cache_generation();
         match client.get_playlist(playlist_id).await {
             Ok((_pl, songs)) => {
-                {
+                let cached = {
                     let mut state = self.state.write().await;
-                    let lib = &mut state.library;
-                    crate::daemon::library::cache_insert(
-                        &mut lib.playlist_songs_cache,
-                        &mut lib.playlist_songs_cache_order,
-                        playlist_id.to_string(),
-                        songs.clone(),
-                        crate::daemon::library::PLAYLIST_SONGS_CACHE_CAP,
-                    );
+                    let current = self.cache_generation() == gen;
+                    if current {
+                        let lib = &mut state.library;
+                        crate::daemon::library::cache_insert(
+                            &mut lib.playlist_songs_cache,
+                            &mut lib.playlist_songs_cache_order,
+                            playlist_id.to_string(),
+                            songs.clone(),
+                            crate::daemon::library::PLAYLIST_SONGS_CACHE_CAP,
+                        );
+                    }
+                    current
+                };
+                if cached {
+                    self.emit(DaemonEvent::PlaylistSongsChanged {
+                        playlist_id: playlist_id.to_string(),
+                        songs: songs.clone(),
+                    });
+                } else {
+                    debug!("playlist {playlist_id} fetched across a library reset; not cached");
                 }
-                self.emit(DaemonEvent::PlaylistSongsChanged {
-                    playlist_id: playlist_id.to_string(),
-                    songs: songs.clone(),
-                });
                 songs
             }
             Err(e) => {

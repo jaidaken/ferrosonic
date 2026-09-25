@@ -81,6 +81,7 @@ impl DaemonClient for InProcessClient {
                 Ok(DaemonResponse::Ok)
             }
             DaemonRequest::RefreshArtists => {
+                core.invalidate_library_caches().await;
                 core.refresh_artists().await;
                 core.refresh_music_folders().await;
                 Ok(DaemonResponse::Ok)
@@ -320,17 +321,9 @@ impl InProcessClient {
     }
 
     async fn handle_load_artist(&self, id: &str) -> Result<DaemonResponse, IpcError> {
-        self.core.load_artist(id).await;
-        let albums = {
-            let state = self.core.state.read().await;
-            state
-                .library
-                .albums_cache
-                .get(id)
-                .cloned()
-                .unwrap_or_default()
-        };
-        Ok(DaemonResponse::ArtistAlbums(albums))
+        Ok(DaemonResponse::ArtistAlbums(
+            self.core.load_artist(id).await,
+        ))
     }
 
     async fn handle_fetch_cover_art(

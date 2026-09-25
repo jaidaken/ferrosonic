@@ -328,6 +328,9 @@ pub enum DaemonEvent {
         /// New song list.
         songs: Vec<Child>,
     },
+    /// The server library changed: every album, album-track and playlist-track
+    /// cache is void. Drop mirrors of them and reload what is on screen.
+    LibraryInvalidated,
     /// User-facing notification for the TUI footer.
     Notification {
         /// Notification text.

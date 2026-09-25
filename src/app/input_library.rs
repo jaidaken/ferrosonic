@@ -949,7 +949,7 @@ impl App {
 }
 
 /// Sort the flat album list in place by the chosen order.
-fn sort_albums(albums: &mut [crate::subsonic::models::Album], sort: AlbumSort) {
+pub(super) fn sort_albums(albums: &mut [crate::subsonic::models::Album], sort: AlbumSort) {
     match sort {
         AlbumSort::Name => {
             albums.sort_by_key(|a| album_sort_key(&a.name));

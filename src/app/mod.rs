@@ -195,6 +195,13 @@ impl App {
             .core
             .as_ref()
             .map(super::daemon::core::DaemonCore::spawn_polling_task);
+        let _library_watch = self
+            .core
+            .as_ref()
+            .map(super::daemon::core::DaemonCore::spawn_library_watch);
+        if self.core.is_some() {
+            self.spawn_library_reset_listener();
+        }
 
         self.start_mpv_with_notification().await;
 
@@ -438,6 +445,34 @@ impl App {
                     Ok(_) => {}
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+    }
+
+    /// In-process mode has no event pump: reload expanded artists and the album
+    /// list on a library reset (or a lagged receiver, which may have missed one).
+    fn spawn_library_reset_listener(&self) {
+        use crate::ipc::DaemonEvent;
+        let mut rx = self.client.subscribe();
+        let daemon_state = self.daemon_state.clone();
+        let client_state = self.client_state.clone();
+        let client = self.client.clone();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(DaemonEvent::LibraryInvalidated)
+                    | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        event_pump::apply_library_invalidated(
+                            &daemon_state,
+                            &client_state,
+                            &client,
+                        )
+                        .await;
+                    }
+                    Ok(DaemonEvent::Shutdown)
+                    | Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Ok(_) => {}
                 }
             }
         });

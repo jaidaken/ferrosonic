@@ -475,6 +475,30 @@ pub struct MusicFolder {
     pub name: String,
 }
 
+/// Payload of `getScanStatus`.
+#[derive(Debug, Deserialize)]
+pub struct ScanStatusData {
+    /// The scan-status object.
+    #[serde(rename = "scanStatus")]
+    pub scan_status: ScanStatus,
+}
+
+/// Media-library scan state; `lastScan` and `folderCount` are Navidrome extensions.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ScanStatus {
+    /// True while the server scans its library.
+    pub scanning: bool,
+    /// Files scanned; the library song count once a scan ends.
+    #[serde(default)]
+    pub count: Option<i64>,
+    /// Folders scanned (Navidrome).
+    #[serde(default, rename = "folderCount")]
+    pub folder_count: Option<i64>,
+    /// Finish time of the last scan (Navidrome), as the server formats it.
+    #[serde(default, rename = "lastScan")]
+    pub last_scan: Option<String>,
+}
+
 /// Payload of `getInternetRadioStations`.
 #[derive(Debug, Deserialize)]
 pub struct InternetRadioStationsData {

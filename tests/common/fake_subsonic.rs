@@ -447,8 +447,77 @@ impl FakeSubsonic {
             .await;
     }
 
+    pub async fn expect_get_album_with_delay(
+        &self,
+        id: &str,
+        name: &str,
+        songs: &[&str],
+        delay_ms: u64,
+    ) {
+        let song_list: Vec<Value> = songs
+            .iter()
+            .enumerate()
+            .map(|(i, title)| json!({"id": format!("song-{}", i), "title": title, "album": name}))
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbum"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(
+                ok_body(json!({"album": {"id": id, "name": name, "song": song_list}}))
+                    .set_delay(std::time::Duration::from_millis(delay_ms)),
+            )
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Navidrome-shaped `getScanStatus`; `last_scan` = None models a plain Subsonic server.
+    pub async fn expect_scan_status(
+        &self,
+        scanning: bool,
+        count: i64,
+        folder_count: i64,
+        last_scan: Option<&str>,
+    ) {
+        let mut status = json!({"scanning": scanning, "count": count, "folderCount": folder_count});
+        if let (Some(ts), Value::Object(obj)) = (last_scan, &mut status) {
+            obj.insert("lastScan".into(), Value::String(ts.into()));
+        }
+        Mock::given(method("GET"))
+            .and(path("/rest/getScanStatus"))
+            .respond_with(ok_body(json!({ "scanStatus": status })))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Flat album list (`getAlbumList2`), one page for every offset.
+    pub async fn expect_album_list2(&self, albums: &[(&str, &str)]) {
+        let list: Vec<Value> = albums
+            .iter()
+            .map(|(id, name)| json!({"id": id, "name": name}))
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumList2"))
+            .respond_with(ok_body(json!({ "albumList2": { "album": list } })))
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Drop every mounted mock and the request log, so a test can change what the server holds.
+    pub async fn reset(&self) {
+        self.server.reset().await;
+    }
+
     pub async fn received_requests(&self) -> Vec<wiremock::Request> {
         self.server.received_requests().await.unwrap_or_default()
+    }
+
+    pub async fn request_count(&self, endpoint: &str) -> usize {
+        let wanted = format!("/rest/{endpoint}");
+        self.received_requests()
+            .await
+            .iter()
+            .filter(|r| r.url.path() == wanted)
+            .count()
     }
 }
 

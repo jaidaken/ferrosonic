@@ -87,10 +87,8 @@ impl DaemonCore {
             slot.replace(new_client);
         }
 
-        self.refresh_starred().await;
-        self.refresh_artists().await;
-        self.refresh_playlists().await;
-        self.refresh_music_folders().await;
+        // The album and track caches hold the previous server's library.
+        self.refresh_library().await;
         self.spawn_refresh_scrobble_capability();
 
         self.emit_config_changed().await;

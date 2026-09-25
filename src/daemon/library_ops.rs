@@ -218,8 +218,9 @@ impl DaemonCore {
                 state.config.music_folder_chosen = true;
             }
             state.config.save_default().map_err(Error::Config)?;
-            state.library.all_albums.clear();
         }
+        // The flat album list and expanded artists belong to the previous library.
+        self.invalidate_library_caches().await;
         {
             // Bump gen under the subsonic lock so any refresh in flight with the
             // previous folder is discarded by its config_gen_changed guard.
@@ -420,31 +421,45 @@ impl DaemonCore {
         Ok(new_starred)
     }
 
-    /// Fetch one artist's albums into the cache and broadcast them.
-    pub async fn load_artist(self: &Arc<Self>, artist_id: &str) {
+    /// Fetch one artist's albums, cache and broadcast them, and return them; empty on failure.
+    pub async fn load_artist(
+        self: &Arc<Self>,
+        artist_id: &str,
+    ) -> Vec<crate::subsonic::models::Album> {
         let Some(client) = self.subsonic.read().await.clone() else {
-            return;
+            return Vec::new();
         };
+        let gen = self.cache_generation();
         match client.get_artist(artist_id).await {
             Ok((_artist, mut albums)) => {
                 // Discography order: oldest original-release year first, undated last.
                 albums.sort_by_key(|a| a.sort_year().unwrap_or(i32::MAX));
-                let mut state = self.state.write().await;
-                let count = albums.len();
-                let lib = &mut state.library;
-                crate::daemon::library::cache_insert(
-                    &mut lib.albums_cache,
-                    &mut lib.albums_cache_order,
-                    artist_id.to_string(),
-                    albums.clone(),
-                    crate::daemon::library::ALBUMS_CACHE_CAP,
-                );
-                drop(state);
-                info!("Loaded {} albums for {}", count, artist_id);
-                self.emit(DaemonEvent::AlbumsChanged {
-                    artist_id: artist_id.to_string(),
-                    albums,
-                });
+                let cached = {
+                    let mut state = self.state.write().await;
+                    let current = self.cache_generation() == gen;
+                    if current {
+                        let lib = &mut state.library;
+                        crate::daemon::library::cache_insert(
+                            &mut lib.albums_cache,
+                            &mut lib.albums_cache_order,
+                            artist_id.to_string(),
+                            albums.clone(),
+                            crate::daemon::library::ALBUMS_CACHE_CAP,
+                        );
+                    }
+                    drop(state);
+                    current
+                };
+                info!("Loaded {} albums for {}", albums.len(), artist_id);
+                if cached {
+                    self.emit(DaemonEvent::AlbumsChanged {
+                        artist_id: artist_id.to_string(),
+                        albums: albums.clone(),
+                    });
+                } else {
+                    debug!("artist {artist_id} fetched across a library reset; not cached");
+                }
+                albums
             }
             Err(e) => {
                 error!("Failed to load albums: {}", e);
@@ -452,6 +467,7 @@ impl DaemonCore {
                     message: format!("Failed to load albums: {e}"),
                     is_error: true,
                 });
+                Vec::new()
             }
         }
     }
@@ -462,10 +478,13 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Vec::new();
         };
+        let gen = self.cache_generation();
         match client.get_all_albums().await {
             Ok(albums) => {
                 let mut state = self.state.write().await;
-                state.library.all_albums.clone_from(&albums);
+                if self.cache_generation() == gen {
+                    state.library.all_albums.clone_from(&albums);
+                }
                 drop(state);
                 info!("Loaded {} albums (flat list)", albums.len());
                 albums

@@ -196,6 +196,9 @@ pub struct DaemonCore {
     shutdown_notify: tokio::sync::Notify,
     /// Bumped on each library refresh; `LibraryVersionChanged` carries it for pull-style clients.
     library_version: std::sync::atomic::AtomicU64,
+    /// Bumped under the state write lock when the album/track caches are voided;
+    /// a loader caches its fetch only if this and `config_gen` are unchanged.
+    pub(super) library_gen: std::sync::atomic::AtomicU64,
     /// Throttles repeat preload attempts when network keeps failing; 5s backoff.
     pub(super) last_preload_attempt: std::sync::Mutex<Option<std::time::Instant>>,
     /// Count of connected IPC clients; the idle-exit monitor shuts the daemon
@@ -267,6 +270,7 @@ impl DaemonCore {
             shutdown: std::sync::atomic::AtomicBool::new(false),
             shutdown_notify: tokio::sync::Notify::new(),
             library_version: std::sync::atomic::AtomicU64::new(0),
+            library_gen: std::sync::atomic::AtomicU64::new(0),
             last_preload_attempt: std::sync::Mutex::new(None),
             active_clients: std::sync::atomic::AtomicUsize::new(0),
             scrobble_state: Mutex::new(crate::daemon::scrobble::ScrobbleState::default()),
@@ -451,6 +455,14 @@ impl DaemonCore {
     pub fn bump_config_gen_for_test(&self) {
         self.config_gen
             .fetch_add(1, std::sync::atomic::Ordering::Release);
+    }
+
+    /// `(config_gen, library_gen)`; a loader caches its fetch only if this is unchanged.
+    pub(super) fn cache_generation(&self) -> (u64, u64) {
+        (
+            self.config_gen.load(std::sync::atomic::Ordering::Acquire),
+            self.library_gen.load(std::sync::atomic::Ordering::Acquire),
+        )
     }
 
     pub(super) fn bump_library_version(&self) {

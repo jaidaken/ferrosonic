@@ -3,6 +3,7 @@
 pub mod core;
 pub mod library;
 pub mod library_ops;
+pub mod library_watch;
 pub mod loaders;
 pub mod notify;
 pub mod persistence;
