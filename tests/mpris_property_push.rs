@@ -10,14 +10,25 @@ use ferrosonic::app::state::{new_shared_client_state, new_shared_daemon_state, S
 use ferrosonic::config::Config;
 use ferrosonic::daemon::state::PlaybackState;
 use ferrosonic::ipc::client::DaemonClient;
-use ferrosonic::ipc::InProcessClient;
-use ferrosonic::mpris::server::{update_mpris_properties, MprisPlayer, PropertySink};
+use ferrosonic::ipc::{DaemonEvent, InProcessClient};
+use ferrosonic::mpris::server::{
+    spawn_mpris_pump, update_mpris_properties, MprisPlayer, PropertySink,
+};
 use mpris_server::{PlaybackStatus, Property};
 use serial_test::serial;
 
 struct Recorder {
     player: MprisPlayer,
-    pushed: Mutex<Vec<Vec<Property>>>,
+    pushed: Arc<Mutex<Vec<Vec<Property>>>>,
+}
+
+impl Recorder {
+    fn new(player: MprisPlayer) -> Self {
+        Self {
+            player,
+            pushed: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
 }
 
 impl PropertySink for Recorder {
@@ -57,10 +68,11 @@ async fn playing_track_pushes_state_then_metadata_with_the_local_cover() {
         s.now_playing.song = Some(first);
         s.now_playing.state = PlaybackState::Playing;
     }
-    let recorder = Recorder {
-        player: MprisPlayer::new(ds.clone(), new_shared_client_state(&Config::new()), client),
-        pushed: Mutex::new(Vec::new()),
-    };
+    let recorder = Recorder::new(MprisPlayer::new(
+        ds.clone(),
+        new_shared_client_state(&Config::new()),
+        client,
+    ));
 
     update_mpris_properties(&recorder, &ds)
         .await
@@ -90,14 +102,11 @@ async fn playing_track_pushes_state_then_metadata_with_the_local_cover() {
 #[serial]
 async fn empty_queue_pushes_stopped_state_and_no_metadata() {
     let ds = tui_mirror("https://example.com");
-    let recorder = Recorder {
-        player: MprisPlayer::new(
-            ds.clone(),
-            new_shared_client_state(&Config::new()),
-            common::RecordingClient::new(),
-        ),
-        pushed: Mutex::new(Vec::new()),
-    };
+    let recorder = Recorder::new(MprisPlayer::new(
+        ds.clone(),
+        new_shared_client_state(&Config::new()),
+        common::RecordingClient::new(),
+    ));
 
     update_mpris_properties(&recorder, &ds)
         .await
@@ -113,4 +122,80 @@ async fn empty_queue_pushes_stopped_state_and_no_metadata() {
             Property::CanPlay(false),
         ]]
     );
+}
+
+fn stopped_batch() -> Vec<Property> {
+    vec![
+        Property::PlaybackStatus(PlaybackStatus::Stopped),
+        Property::CanGoNext(false),
+        Property::CanGoPrevious(false),
+        Property::CanPlay(false),
+    ]
+}
+
+async fn wait_for_pushes(pushed: &Arc<Mutex<Vec<Vec<Property>>>>) -> Vec<Vec<Property>> {
+    for _ in 0..200 {
+        let seen = pushed.lock().expect("recorder lock").clone();
+        if !seen.is_empty() {
+            return seen;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    Vec::new()
+}
+
+#[tokio::test]
+#[serial]
+async fn track_change_event_pushes_the_properties() {
+    let td = TestDaemon::new().await;
+    let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(td.core.clone()));
+    let ds = tui_mirror("https://example.com");
+    let recorder = Recorder::new(MprisPlayer::new(
+        ds.clone(),
+        new_shared_client_state(&Config::new()),
+        client.clone(),
+    ));
+    let pushed = recorder.pushed.clone();
+    let pump = spawn_mpris_pump(recorder, &client, ds);
+
+    td.core.broadcast_now_playing().await;
+
+    assert_eq!(wait_for_pushes(&pushed).await, [stopped_batch()]);
+    pump.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn lagged_event_stream_pushes_to_resync() {
+    let td = TestDaemon::new().await;
+    let client: Arc<dyn DaemonClient> = Arc::new(InProcessClient::new(td.core.clone()));
+    let ds = tui_mirror("https://example.com");
+    let recorder = Recorder::new(MprisPlayer::new(
+        ds.clone(),
+        new_shared_client_state(&Config::new()),
+        client.clone(),
+    ));
+    let pushed = recorder.pushed.clone();
+    let pump = spawn_mpris_pump(recorder, &client, ds);
+
+    // The pump has not run yet on this single-thread runtime, so 100 events
+    // overflow the 32-slot channel; none of them is a track change.
+    for i in 0..100 {
+        td.core
+            .event_tx
+            .send(DaemonEvent::Notification {
+                message: format!("n{i}"),
+                is_error: false,
+            })
+            .expect("a subscriber exists");
+    }
+
+    assert_eq!(
+        wait_for_pushes(&pushed).await,
+        [stopped_batch()],
+        "the lag alone triggers one push; the notifications trigger none"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(pushed.lock().expect("recorder lock").len(), 1);
+    pump.abort();
 }

@@ -13,7 +13,7 @@ use tracing::{debug, info, warn};
 
 use crate::app::state::{SharedClientState, SharedDaemonState};
 use crate::daemon::state::{NowPlaying, PlaybackState};
-use crate::ipc::{DaemonClient, DaemonRequest, DaemonResponse};
+use crate::ipc::{DaemonClient, DaemonEvent, DaemonRequest, DaemonResponse};
 use crate::subsonic::models::Child;
 
 /// Edge length, in pixels, of the cover art fetched for MPRIS metadata.
@@ -505,6 +505,35 @@ impl PropertySink for Server<MprisPlayer> {
     async fn push(&self, props: Vec<Property>) -> Result<()> {
         self.properties_changed(props).await
     }
+}
+
+/// Push MPRIS properties to `sink` on every track or queue change, and after a
+/// lagged receiver, which may have missed one. Ends when the daemon shuts down
+/// or its event channel closes.
+pub fn spawn_mpris_pump<S>(
+    sink: S,
+    client: &Arc<dyn DaemonClient>,
+    daemon_state: SharedDaemonState,
+) -> tokio::task::JoinHandle<()>
+where
+    S: PropertySink + Send + 'static,
+{
+    use tokio::sync::broadcast::error::RecvError;
+    let mut rx = client.subscribe();
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(DaemonEvent::NowPlayingChanged(_) | DaemonEvent::QueueChanged { .. })
+                | Err(RecvError::Lagged(_)) => {
+                    if let Err(e) = update_mpris_properties(&sink, &daemon_state).await {
+                        warn!("MPRIS property update failed: {e}");
+                    }
+                }
+                Ok(DaemonEvent::Shutdown) | Err(RecvError::Closed) => break,
+                Ok(_) => {}
+            }
+        }
+    })
 }
 
 /// Push the playback state, then the track metadata with its local cover.

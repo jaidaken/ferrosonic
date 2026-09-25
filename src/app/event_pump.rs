@@ -11,7 +11,11 @@ use crate::app::state::{SharedClientState, SharedDaemonState};
 use crate::ipc::{DaemonClient, DaemonEvent, DaemonRequest, DaemonResponse};
 use crate::ui::cover_art::CoverArtState;
 
-pub(crate) async fn run_event_pump(
+/// Daemon mode: apply each daemon event to the TUI's state.
+///
+/// After a lagged receiver, take a fresh snapshot and reload the library
+/// views, since the missed events are gone. Ends when the event channel closes.
+pub async fn run_event_pump(
     client: Arc<dyn DaemonClient>,
     daemon_state: SharedDaemonState,
     client_state: SharedClientState,

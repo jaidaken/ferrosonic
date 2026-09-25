@@ -37,7 +37,7 @@ use crate::config::Config;
 use crate::daemon::DaemonCore;
 use crate::error::{Error, UiError};
 use crate::ipc::{DaemonClient, DaemonRequest, EnqueueMode, InProcessClient};
-use crate::mpris::server::{start_mpris_server, update_mpris_properties};
+use crate::mpris::server::{spawn_mpris_pump, start_mpris_server};
 use crate::ui;
 
 pub use event_pump::apply_event;
@@ -223,7 +223,7 @@ impl App {
         {
             Ok(server) => {
                 info!("MPRIS server started");
-                self.spawn_mpris_pump(server);
+                let _mpris_pump = spawn_mpris_pump(server, &self.client, self.daemon_state.clone());
             }
             Err(e) => {
                 warn!(
@@ -430,30 +430,6 @@ impl App {
         let cover_art = self.cover_art.clone();
         tokio::spawn(async move {
             event_pump::run_event_pump(client, daemon_state, client_state, cover_art, rx).await;
-        });
-    }
-
-    // Recv outcomes kept explicit; merging the two break arms would cross the Ok/Err boundary.
-    #[allow(clippy::match_same_arms)]
-    fn spawn_mpris_pump(&self, server: mpris_server::Server<crate::mpris::server::MprisPlayer>) {
-        use crate::ipc::DaemonEvent;
-        let mut rx = self.client.subscribe();
-        let daemon_state = self.daemon_state.clone();
-        tokio::spawn(async move {
-            let server = server;
-            loop {
-                match rx.recv().await {
-                    Ok(DaemonEvent::NowPlayingChanged(_) | DaemonEvent::QueueChanged { .. }) => {
-                        if let Err(e) = update_mpris_properties(&server, &daemon_state).await {
-                            tracing::warn!("MPRIS property update failed: {e}");
-                        }
-                    }
-                    Ok(DaemonEvent::Shutdown) => break,
-                    Ok(_) => {}
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                }
-            }
         });
     }
 
