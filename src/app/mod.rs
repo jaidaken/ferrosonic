@@ -199,8 +199,8 @@ impl App {
             .core
             .as_ref()
             .map(super::daemon::core::DaemonCore::spawn_library_watch);
-        if self.core.is_some() {
-            self.spawn_library_reset_listener();
+        if let Some(core) = self.core.clone() {
+            self.spawn_library_reset_listener(core);
         }
 
         self.start_mpv_with_notification().await;
@@ -452,7 +452,7 @@ impl App {
 
     /// In-process mode has no event pump: reload expanded artists and the album
     /// list on a library reset (or a lagged receiver, which may have missed one).
-    fn spawn_library_reset_listener(&self) {
+    fn spawn_library_reset_listener(&self, core: Arc<crate::daemon::core::DaemonCore>) {
         use crate::ipc::DaemonEvent;
         let mut rx = self.client.subscribe();
         let daemon_state = self.daemon_state.clone();
@@ -460,7 +460,12 @@ impl App {
         let client = self.client.clone();
         tokio::spawn(async move {
             loop {
-                match rx.recv().await {
+                let event = tokio::select! {
+                    biased;
+                    () = core.shutdown_signal() => break,
+                    event = rx.recv() => event,
+                };
+                match event {
                     Ok(DaemonEvent::LibraryInvalidated)
                     | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                         event_pump::apply_library_invalidated(

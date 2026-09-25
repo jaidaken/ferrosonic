@@ -163,6 +163,9 @@ pub struct DaemonCore {
     queue_save_tx: tokio::sync::mpsc::Sender<()>,
     /// Bounded at `COVER_ART_CACHE_CAP`, keyed `"<coverArt-id>@<size>"`.
     pub(super) cover_art_cache: RwLock<crate::daemon::library::LruCache<Vec<u8>>>,
+    /// Bumped under the `cover_art_cache` write lock on every clear; a cover
+    /// fetch caches its bytes only if this is unchanged.
+    pub(super) cover_epoch: std::sync::atomic::AtomicU64,
     /// Cancellation flag for the in-flight pre-buffer task. Replaced
     /// (and the old one flipped) on each new request so rapid track
     /// switches don't stack downloads.
@@ -261,6 +264,7 @@ impl DaemonCore {
             event_tx,
             queue_save_tx,
             cover_art_cache: RwLock::new(crate::daemon::library::LruCache::new()),
+            cover_epoch: std::sync::atomic::AtomicU64::new(0),
             prebuffer_cancel: Arc::new(Mutex::new(None)),
             prebuffer_files: Mutex::new(Vec::new()),
             prebuffer_loading: Mutex::new(None),
@@ -455,6 +459,17 @@ impl DaemonCore {
     pub fn bump_config_gen_for_test(&self) {
         self.config_gen
             .fetch_add(1, std::sync::atomic::Ordering::Release);
+    }
+
+    /// The configured client with the cache generation, both read under one
+    /// `subsonic` read lock: `config_gen` only moves under the write lock, so
+    /// the pair always describes the same server.
+    pub(super) async fn client_and_generation(&self) -> Option<(SubsonicClient, (u64, u64))> {
+        let slot = self.subsonic.read().await;
+        let client = slot.clone()?;
+        let gen = self.cache_generation();
+        drop(slot);
+        Some((client, gen))
     }
 
     /// `(config_gen, library_gen)`; a loader caches its fetch only if this is unchanged.

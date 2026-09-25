@@ -502,6 +502,37 @@ impl FakeSubsonic {
             .await;
     }
 
+    /// Flat album list with release years, answered after `delay_ms`.
+    pub async fn expect_album_list2_slow(&self, albums: &[(&str, &str, i32)], delay_ms: u64) {
+        let list: Vec<Value> = albums
+            .iter()
+            .map(|(id, name, year)| json!({"id": id, "name": name, "year": year}))
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/rest/getAlbumList2"))
+            .respond_with(
+                ok_body(json!({ "albumList2": { "album": list } }))
+                    .set_delay(std::time::Duration::from_millis(delay_ms)),
+            )
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Cover art bytes answered after `delay_ms`.
+    pub async fn expect_get_cover_art_slow(&self, id: &str, body: Vec<u8>, delay_ms: u64) {
+        Mock::given(method("GET"))
+            .and(path("/rest/getCoverArt"))
+            .and(wiremock::matchers::query_param("id", id))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(body)
+                    .insert_header("content-type", "image/png")
+                    .set_delay(std::time::Duration::from_millis(delay_ms)),
+            )
+            .mount(&self.server)
+            .await;
+    }
+
     /// Drop every mounted mock and the request log, so a test can change what the server holds.
     pub async fn reset(&self) {
         self.server.reset().await;

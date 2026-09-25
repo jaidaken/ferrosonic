@@ -17,7 +17,9 @@
   those caches, and the daemon polls `getScanStatus` every 30 s and refreshes
   the library when a finished server scan changed it. Expanded artists and an
   open album list reload on their own, and a fetch that started before a
-  reset no longer refills the cache with the old result.
+  reset no longer refills the cache with the old result. A refresh that
+  fails is retried on the next poll, and a scan already running when the
+  daemon starts refreshes the library when it finishes.
 
 ## [0.7.1] - 2026-09-24
 

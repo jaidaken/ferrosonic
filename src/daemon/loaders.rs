@@ -1,5 +1,6 @@
 //! Subsonic delegate loaders: album, playlist, search, cover art.
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use tracing::{debug, error};
@@ -27,10 +28,9 @@ impl DaemonCore {
         {
             return songs.clone();
         }
-        let Some(client) = self.subsonic.read().await.clone() else {
+        let Some((client, gen)) = self.client_and_generation().await else {
             return Vec::new();
         };
-        let gen = self.cache_generation();
         match client.get_album(album_id).await {
             Ok((_album, songs)) => {
                 let cached = {
@@ -99,10 +99,9 @@ impl DaemonCore {
         self: &Arc<Self>,
         playlist_id: &str,
     ) -> Vec<crate::subsonic::models::Child> {
-        let Some(client) = self.subsonic.read().await.clone() else {
+        let Some((client, gen)) = self.client_and_generation().await else {
             return Vec::new();
         };
-        let gen = self.cache_generation();
         match client.get_playlist(playlist_id).await {
             Ok((_pl, songs)) => {
                 let cached = {
@@ -153,14 +152,20 @@ impl DaemonCore {
         let Some(client) = self.subsonic.read().await.clone() else {
             return Vec::new();
         };
+        let epoch = self.cover_epoch.load(Ordering::Acquire);
         match client.get_cover_art(id, size).await {
             Ok(bytes) => {
                 let mut cache = self.cover_art_cache.write().await;
-                cache.insert(
-                    key,
-                    bytes.clone(),
-                    crate::daemon::library::COVER_ART_CACHE_CAP,
-                );
+                if self.cover_epoch.load(Ordering::Acquire) == epoch {
+                    cache.insert(
+                        key,
+                        bytes.clone(),
+                        crate::daemon::library::COVER_ART_CACHE_CAP,
+                    );
+                } else {
+                    debug!("cover {id} fetched across a cover cache clear; not cached");
+                }
+                drop(cache);
                 bytes
             }
             Err(e) => {
@@ -174,6 +179,10 @@ impl DaemonCore {
     /// picking up artwork changed there. Called on a library refresh (which the
     /// TUI runs at startup) and whenever the queue is replaced.
     pub(super) async fn clear_cover_cache(&self) {
-        self.cover_art_cache.write().await.clear();
+        let mut cache = self.cover_art_cache.write().await;
+        cache.clear();
+        // Under the cache lock: `get_cover_art` compares it under the same lock.
+        self.cover_epoch.fetch_add(1, Ordering::Release);
+        drop(cache);
     }
 }

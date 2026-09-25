@@ -220,7 +220,7 @@ pub(crate) async fn apply_library_invalidated(
         lib.all_albums.clear();
         drop(ds);
     }
-    let (expanded, reload_album_list, sort) = {
+    let (expanded, reload_album_list) = {
         let mut cs = client_state.write().await;
         let reload = cs.artists.view == LibraryView::AlbumList;
         if !reload {
@@ -228,13 +228,49 @@ pub(crate) async fn apply_library_invalidated(
             cs.artists.albums.clear();
         }
         let expanded: Vec<String> = cs.artists.expanded.iter().cloned().collect();
-        (expanded, reload, cs.artists.album_sort)
+        (expanded, reload)
     };
-    for artist_id in expanded {
-        match client
-            .request(DaemonRequest::LoadArtist(artist_id.clone()))
-            .await
-        {
+    let reload = async {
+        reload_expanded_artists(daemon_state, client, expanded).await;
+        if reload_album_list {
+            reload_album_list_view(client_state, client).await;
+        }
+    };
+    if tokio::time::timeout(LIBRARY_RELOAD_TIMEOUT, reload)
+        .await
+        .is_err()
+    {
+        warn!(
+            "Library reload after a reset exceeded {}s; the rest loads on demand",
+            LIBRARY_RELOAD_TIMEOUT.as_secs()
+        );
+    }
+}
+
+/// Upper bound on the post-reset reload, so a stalled server cannot hold the event pump.
+const LIBRARY_RELOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Artist album fetches in flight at once during the post-reset reload.
+const ARTIST_RELOAD_CONCURRENCY: usize = 4;
+
+/// Refetch the albums of each expanded artist, a few at a time. A failed
+/// fetch stays uncached so the next expand retries it.
+async fn reload_expanded_artists(
+    daemon_state: &SharedDaemonState,
+    client: &Arc<dyn DaemonClient>,
+    expanded: Vec<String>,
+) {
+    use futures::StreamExt;
+    let mut replies = futures::stream::iter(expanded)
+        .map(|artist_id| async move {
+            let reply = client
+                .request(DaemonRequest::LoadArtist(artist_id.clone()))
+                .await;
+            (artist_id, reply)
+        })
+        .buffer_unordered(ARTIST_RELOAD_CONCURRENCY);
+    while let Some((artist_id, reply)) = replies.next().await {
+        match reply {
             Ok(DaemonResponse::ArtistAlbums(albums)) => {
                 let mut ds = daemon_state.write().await;
                 let lib = &mut ds.library;
@@ -248,34 +284,37 @@ pub(crate) async fn apply_library_invalidated(
                 drop(ds);
             }
             Ok(other) => warn!("LoadArtist after a library reset: unexpected {:?}", other),
-            Err(e) => warn!("LoadArtist after a library reset failed: {}", e),
+            Err(e) => warn!("LoadArtist {artist_id} after a library reset failed: {e}"),
         }
     }
-    if reload_album_list {
-        match client.request(DaemonRequest::LoadAllAlbums).await {
-            Ok(DaemonResponse::AllAlbums(mut albums)) => {
-                sort_albums(&mut albums, sort);
-                let mut cs = client_state.write().await;
-                let selected_id = cs
-                    .artists
-                    .album_selected
-                    .and_then(|i| cs.artists.albums.get(i))
-                    .map(|a| a.id.clone());
-                cs.artists.album_selected = selected_id
-                    .and_then(|id| albums.iter().position(|a| a.id == id))
-                    .or_else(|| (!albums.is_empty()).then_some(0));
-                cs.artists.album_scroll_offset = cs
-                    .artists
-                    .album_scroll_offset
-                    .min(albums.len().saturating_sub(1));
-                cs.artists.albums = albums;
-            }
-            Ok(other) => warn!(
-                "LoadAllAlbums after a library reset: unexpected {:?}",
-                other
-            ),
-            Err(e) => warn!("LoadAllAlbums after a library reset failed: {}", e),
+}
+
+/// Refetch the flat album list and sort it by the order chosen at store time,
+/// so a sort change made during the fetch applies to the new list.
+async fn reload_album_list_view(client_state: &SharedClientState, client: &Arc<dyn DaemonClient>) {
+    match client.request(DaemonRequest::LoadAllAlbums).await {
+        Ok(DaemonResponse::AllAlbums(mut albums)) => {
+            let mut cs = client_state.write().await;
+            sort_albums(&mut albums, cs.artists.album_sort);
+            let selected_id = cs
+                .artists
+                .album_selected
+                .and_then(|i| cs.artists.albums.get(i))
+                .map(|a| a.id.clone());
+            cs.artists.album_selected = selected_id
+                .and_then(|id| albums.iter().position(|a| a.id == id))
+                .or_else(|| (!albums.is_empty()).then_some(0));
+            cs.artists.album_scroll_offset = cs
+                .artists
+                .album_scroll_offset
+                .min(albums.len().saturating_sub(1));
+            cs.artists.albums = albums;
         }
+        Ok(other) => warn!(
+            "LoadAllAlbums after a library reset: unexpected {:?}",
+            other
+        ),
+        Err(e) => warn!("LoadAllAlbums after a library reset failed: {}", e),
     }
 }
 

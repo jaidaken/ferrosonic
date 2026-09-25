@@ -10,17 +10,16 @@ use crate::error::Error;
 use crate::ipc::protocol::DaemonEvent;
 
 impl DaemonCore {
-    /// Re-fetch starred songs and broadcast the new list.
-    pub async fn refresh_starred(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else {
-            return;
+    /// Re-fetch starred songs and broadcast the new list; `true` when stored.
+    pub async fn refresh_starred(self: &Arc<Self>) -> bool {
+        let Some((client, (gen_at_start, _))) = self.client_and_generation().await else {
+            return false;
         };
-        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_starred_songs().await {
             Ok(songs) => {
                 if self.config_gen_changed(gen_at_start) {
                     debug!("refresh_starred: config changed mid-request, discarding");
-                    return;
+                    return false;
                 }
                 let mut state = self.state.write().await;
                 state.library.starred_songs.clone_from(&songs);
@@ -28,6 +27,7 @@ impl DaemonCore {
                 drop(state);
                 self.emit(DaemonEvent::StarredChanged(songs));
                 self.bump_library_version();
+                true
             }
             Err(e) => {
                 error!("Failed to load starred songs: {}", e);
@@ -35,16 +35,16 @@ impl DaemonCore {
                     message: format!("Failed to load starred songs: {e}"),
                     is_error: true,
                 });
+                false
             }
         }
     }
 
     /// Re-fetch the internet radio stations and broadcast the new list.
     pub async fn refresh_radio_stations(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else {
+        let Some((client, (gen_at_start, _))) = self.client_and_generation().await else {
             return;
         };
-        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_internet_radio_stations().await {
             Ok(stations) => {
                 if self.config_gen_changed(gen_at_start) {
@@ -77,10 +77,9 @@ impl DaemonCore {
 
     /// Re-fetch the random-songs batch and broadcast the new list.
     pub async fn refresh_random(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else {
+        let Some((client, (gen_at_start, _))) = self.client_and_generation().await else {
             return;
         };
-        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_random_songs().await {
             Ok(songs) => {
                 if self.config_gen_changed(gen_at_start) {
@@ -103,20 +102,19 @@ impl DaemonCore {
         }
     }
 
-    /// Re-fetch the artist index and broadcast the new list.
-    pub async fn refresh_artists(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else {
-            return;
+    /// Re-fetch the artist index and broadcast the new list; `true` when stored.
+    pub async fn refresh_artists(self: &Arc<Self>) -> bool {
+        let Some((client, (gen_at_start, _))) = self.client_and_generation().await else {
+            return false;
         };
         // Drop cached cover art so a refresh (or startup) re-pulls art that
         // changed on the server.
         self.clear_cover_cache().await;
-        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_artists().await {
             Ok(artists) => {
                 if self.config_gen_changed(gen_at_start) {
                     debug!("refresh_artists: config changed mid-request, discarding");
-                    return;
+                    return false;
                 }
                 let mut state = self.state.write().await;
                 let count = artists.len();
@@ -125,6 +123,7 @@ impl DaemonCore {
                 info!("Loaded {} artists", count);
                 self.emit(DaemonEvent::ArtistsChanged(artists));
                 self.bump_library_version();
+                true
             }
             Err(e) => {
                 error!("Failed to load artists: {}", e);
@@ -132,21 +131,21 @@ impl DaemonCore {
                     message: format!("Failed to load artists: {e}"),
                     is_error: true,
                 });
+                false
             }
         }
     }
 
-    /// Re-fetch the playlist list and broadcast the new list.
-    pub async fn refresh_playlists(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else {
-            return;
+    /// Re-fetch the playlist list and broadcast the new list; `true` when stored.
+    pub async fn refresh_playlists(self: &Arc<Self>) -> bool {
+        let Some((client, (gen_at_start, _))) = self.client_and_generation().await else {
+            return false;
         };
-        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         match client.get_playlists().await {
             Ok(playlists) => {
                 if self.config_gen_changed(gen_at_start) {
                     debug!("refresh_playlists: config changed mid-request, discarding");
-                    return;
+                    return false;
                 }
                 let mut state = self.state.write().await;
                 let count = playlists.len();
@@ -155,27 +154,33 @@ impl DaemonCore {
                 info!("Loaded {} playlists", count);
                 self.emit(DaemonEvent::PlaylistsChanged(playlists));
                 self.bump_library_version();
+                true
             }
             Err(e) => {
                 error!("Failed to load playlists: {}", e);
+                false
             }
         }
     }
 
-    /// Re-fetch the server's music folders and broadcast the new list. On first
-    /// run (the user has not chosen a library), default to the server's first
-    /// (default) library rather than browsing all libraries.
-    pub async fn refresh_music_folders(self: &Arc<Self>) {
-        let Some(client) = self.subsonic.read().await.clone() else {
-            return;
+    /// Re-fetch the server's music folders and broadcast the new list; `true`
+    /// when stored. On first run (the user has not chosen a library), default
+    /// to the server's first (default) library rather than browsing all libraries.
+    pub async fn refresh_music_folders(self: &Arc<Self>) -> bool {
+        let Some((client, (gen_at_start, _))) = self.client_and_generation().await else {
+            return false;
         };
         let folders = match client.get_music_folders().await {
             Ok(folders) => folders,
             Err(e) => {
                 error!("Failed to load music folders: {}", e);
-                return;
+                return false;
             }
         };
+        if self.config_gen_changed(gen_at_start) {
+            debug!("refresh_music_folders: config changed mid-request, discarding");
+            return false;
+        }
         let default_to = {
             let mut state = self.state.write().await;
             state.library.music_folders.clone_from(&folders);
@@ -190,8 +195,11 @@ impl DaemonCore {
         };
         self.emit(DaemonEvent::MusicFoldersChanged(folders));
         if let Some(id) = default_to {
-            let _ = self.apply_music_folder(Some(id), false).await;
+            if let Err(e) = self.apply_music_folder(Some(id), false).await {
+                warn!("Could not apply the default library {id}: {e}");
+            }
         }
+        true
     }
 
     /// Select the library to browse (`None` = all); persist, re-scope the live
@@ -219,8 +227,6 @@ impl DaemonCore {
             }
             state.config.save_default().map_err(Error::Config)?;
         }
-        // The flat album list and expanded artists belong to the previous library.
-        self.invalidate_library_caches().await;
         {
             // Bump gen under the subsonic lock so any refresh in flight with the
             // previous folder is discarded by its config_gen_changed guard.
@@ -231,6 +237,8 @@ impl DaemonCore {
                 client.set_music_folder(id);
             }
         }
+        // After the client switch: subscribers reload at once, and must hit the new library.
+        self.invalidate_library_caches().await;
         self.emit_config_changed().await;
         self.refresh_artists().await;
         self.refresh_random().await;
@@ -363,14 +371,13 @@ impl DaemonCore {
     // significant_drop_tightening: tokio guard held to scope; not tightened (early-drop is borrow-blocked, spans a trailing await, or saves nothing before return).
     #[allow(clippy::significant_drop_tightening)]
     pub async fn toggle_star_song(self: &Arc<Self>, song_id: &str) -> Result<bool, Error> {
-        let Some(client) = self.subsonic.read().await.clone() else {
+        let Some((client, (gen_at_start, _))) = self.client_and_generation().await else {
             return Err(Error::Subsonic(crate::error::SubsonicError::Api {
                 code: 0,
                 message: "Subsonic client not configured".to_string(),
             }));
         };
 
-        let gen_at_start = self.config_gen.load(std::sync::atomic::Ordering::Acquire);
         // R1: read currently_starred under the same write lock that will commit the toggle so a concurrent toggle cannot flip the bit between read and the cache mutation below.
         let (currently_starred, new_starred) = {
             let mut state = self.state.write().await;
@@ -421,15 +428,14 @@ impl DaemonCore {
         Ok(new_starred)
     }
 
-    /// Fetch one artist's albums, cache and broadcast them, and return them; empty on failure.
+    /// Fetch one artist's albums, cache and broadcast them, and return them.
+    /// `None` when no server is configured or the fetch fails, so a caller
+    /// never mistakes a failure for an artist with no albums.
     pub async fn load_artist(
         self: &Arc<Self>,
         artist_id: &str,
-    ) -> Vec<crate::subsonic::models::Album> {
-        let Some(client) = self.subsonic.read().await.clone() else {
-            return Vec::new();
-        };
-        let gen = self.cache_generation();
+    ) -> Option<Vec<crate::subsonic::models::Album>> {
+        let (client, gen) = self.client_and_generation().await?;
         match client.get_artist(artist_id).await {
             Ok((_artist, mut albums)) => {
                 // Discography order: oldest original-release year first, undated last.
@@ -459,7 +465,7 @@ impl DaemonCore {
                 } else {
                     debug!("artist {artist_id} fetched across a library reset; not cached");
                 }
-                albums
+                Some(albums)
             }
             Err(e) => {
                 error!("Failed to load albums: {}", e);
@@ -467,7 +473,7 @@ impl DaemonCore {
                     message: format!("Failed to load albums: {e}"),
                     is_error: true,
                 });
-                Vec::new()
+                None
             }
         }
     }
@@ -475,10 +481,9 @@ impl DaemonCore {
     /// Fetch the full album library for the flat album-list view and cache it.
     /// Returns the albums so the IPC caller can reply directly.
     pub async fn load_all_albums(self: &Arc<Self>) -> Vec<crate::subsonic::models::Album> {
-        let Some(client) = self.subsonic.read().await.clone() else {
+        let Some((client, gen)) = self.client_and_generation().await else {
             return Vec::new();
         };
-        let gen = self.cache_generation();
         match client.get_all_albums().await {
             Ok(albums) => {
                 let mut state = self.state.write().await;

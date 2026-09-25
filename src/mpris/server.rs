@@ -9,7 +9,7 @@ use mpris_server::{
 };
 use tempfile::NamedTempFile;
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use crate::app::state::{SharedClientState, SharedDaemonState};
 use crate::daemon::state::{NowPlaying, PlaybackState};
@@ -97,15 +97,42 @@ impl MprisPlayer {
             .await
         {
             Ok(DaemonResponse::CoverArt(bytes)) if !bytes.is_empty() => bytes,
-            _ => return None,
+            // The daemon logs the failed fetch itself; empty means no art to publish.
+            Ok(DaemonResponse::CoverArt(_)) => {
+                debug!("MPRIS cover {cover_id}: no art bytes");
+                return None;
+            }
+            Ok(other) => {
+                warn!("MPRIS cover {cover_id}: unexpected reply {other:?}");
+                return None;
+            }
+            Err(e) => {
+                warn!("MPRIS cover {cover_id}: fetch failed: {e}");
+                return None;
+            }
         };
 
-        let file = NamedTempFile::with_prefix("ferrosonic-mpris-").ok()?;
+        let file = match NamedTempFile::with_prefix("ferrosonic-mpris-") {
+            Ok(file) => file,
+            Err(e) => {
+                warn!("MPRIS cover {cover_id}: temp file failed: {e}");
+                return None;
+            }
+        };
         let path = file.path().to_path_buf();
-        tokio::task::spawn_blocking(move || crate::io_util::atomic_write_bytes(&path, &bytes))
+        match tokio::task::spawn_blocking(move || crate::io_util::atomic_write_bytes(&path, &bytes))
             .await
-            .ok()?
-            .ok()?;
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                warn!("MPRIS cover {cover_id}: write failed: {e}");
+                return None;
+            }
+            Err(e) => {
+                warn!("MPRIS cover {cover_id}: write task failed: {e}");
+                return None;
+            }
+        }
 
         let uri = format!("file://{}", file.path().display());
         *guard = Some(CoverCache {

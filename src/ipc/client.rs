@@ -321,9 +321,11 @@ impl InProcessClient {
     }
 
     async fn handle_load_artist(&self, id: &str) -> Result<DaemonResponse, IpcError> {
-        Ok(DaemonResponse::ArtistAlbums(
-            self.core.load_artist(id).await,
-        ))
+        self.core
+            .load_artist(id)
+            .await
+            .map(DaemonResponse::ArtistAlbums)
+            .ok_or_else(|| IpcError::Daemon(format!("failed to load albums for artist {id}")))
     }
 
     async fn handle_fetch_cover_art(
