@@ -228,6 +228,7 @@ pub(crate) async fn apply_library_invalidated(
             cs.artists.albums.clear();
         }
         let expanded: Vec<String> = cs.artists.expanded.iter().cloned().collect();
+        drop(cs);
         (expanded, reload)
     };
     let reload = async {
@@ -245,6 +246,35 @@ pub(crate) async fn apply_library_invalidated(
             LIBRARY_RELOAD_TIMEOUT.as_secs()
         );
     }
+}
+
+/// In-process mode has no event pump: reload expanded artists and the album
+/// list on a library reset (or a lagged receiver, which may have missed one),
+/// until the daemon shuts down.
+pub fn spawn_library_reset_listener(
+    core: Arc<crate::daemon::core::DaemonCore>,
+    daemon_state: SharedDaemonState,
+    client_state: SharedClientState,
+    client: Arc<dyn DaemonClient>,
+) -> tokio::task::JoinHandle<()> {
+    let mut rx = client.subscribe();
+    tokio::spawn(async move {
+        loop {
+            let event = tokio::select! {
+                biased;
+                () = core.shutdown_signal() => break,
+                event = rx.recv() => event,
+            };
+            match event {
+                Ok(DaemonEvent::LibraryInvalidated)
+                | Err(broadcast::error::RecvError::Lagged(_)) => {
+                    apply_library_invalidated(&daemon_state, &client_state, &client).await;
+                }
+                Ok(DaemonEvent::Shutdown) | Err(broadcast::error::RecvError::Closed) => break,
+                Ok(_) => {}
+            }
+        }
+    })
 }
 
 /// Upper bound on the post-reset reload, so a stalled server cannot hold the event pump.
