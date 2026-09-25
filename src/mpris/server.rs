@@ -488,36 +488,53 @@ fn build_metadata_for(song: &Child) -> Metadata {
     metadata
 }
 
+/// Where MPRIS property changes go: the D-Bus server, or a recorder in tests.
+pub trait PropertySink: Sync {
+    /// The player whose cover cache supplies the local art file.
+    fn player(&self) -> &MprisPlayer;
+
+    /// Announce `props` as changed to MPRIS clients.
+    fn push(&self, props: Vec<Property>) -> impl std::future::Future<Output = Result<()>> + Send;
+}
+
+impl PropertySink for Server<MprisPlayer> {
+    fn player(&self) -> &MprisPlayer {
+        self.imp()
+    }
+
+    async fn push(&self, props: Vec<Property>) -> Result<()> {
+        self.properties_changed(props).await
+    }
+}
+
+/// Push the playback state, then the track metadata with its local cover.
 /// Releases the daemon read lock before the D-Bus await so a slow
 /// D-Bus doesn't block the render-path write lock.
 ///
 /// # Errors
 /// Returns an error if the D-Bus call fails.
 pub async fn update_mpris_properties(
-    server: &Server<MprisPlayer>,
+    sink: &impl PropertySink,
     daemon_state: &SharedDaemonState,
 ) -> Result<()> {
     let snap = build_property_snapshot(daemon_state).await;
 
-    server
-        .properties_changed([
-            Property::PlaybackStatus(snap.playback),
-            Property::CanGoNext(snap.can_go_next),
-            Property::CanGoPrevious(snap.can_go_prev),
-            Property::CanPlay(snap.can_play),
-        ])
-        .await?;
+    sink.push(vec![
+        Property::PlaybackStatus(snap.playback),
+        Property::CanGoNext(snap.can_go_next),
+        Property::CanGoPrevious(snap.can_go_prev),
+        Property::CanPlay(snap.can_play),
+    ])
+    .await?;
 
     if let Some(mut metadata) = snap.metadata {
         // The only art URL MPRIS publishes: a local file fetched through the daemon.
         if let Some(cid) = &snap.cover_id {
-            if let Some(file_url) = server.imp().cover_file_uri(cid).await {
+            if let Some(file_url) = sink.player().cover_file_uri(cid).await {
                 metadata.set_art_url(Some(file_url));
             }
         }
-        server
-            .properties_changed([Property::Metadata(metadata)])
-            .await?;
+        sink.push(vec![Property::Metadata(metadata)]).await?;
     }
 
     Ok(())

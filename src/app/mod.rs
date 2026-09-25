@@ -444,7 +444,9 @@ impl App {
             loop {
                 match rx.recv().await {
                     Ok(DaemonEvent::NowPlayingChanged(_) | DaemonEvent::QueueChanged { .. }) => {
-                        let _ = update_mpris_properties(&server, &daemon_state).await;
+                        if let Err(e) = update_mpris_properties(&server, &daemon_state).await {
+                            tracing::warn!("MPRIS property update failed: {e}");
+                        }
                     }
                     Ok(DaemonEvent::Shutdown) => break,
                     Ok(_) => {}
